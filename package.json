@@ -1,0 +1,39 @@
+{
+  "name": "the-company",
+  "version": "0.1.0",
+  "description": "AI 에이전트로 운영되는 회사를 만드는 플랫폼",
+  "type": "module",
+  "bin": {
+    "tc": "./dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "tc": "tsx src/cli/index.ts"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "orchestration",
+    "company"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "tsup": "^8.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.0.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "commander": "^12.0.0",
+    "fast-glob": "^3.3.0",
+    "js-yaml": "^4.1.0",
+    "minimatch": "^10.0.0"
+  }
+}
