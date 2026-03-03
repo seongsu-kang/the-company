@@ -1,0 +1,60 @@
+{
+  "name": "the-company",
+  "version": "0.1.0",
+  "description": "Build an AI company. Watch them work.",
+  "type": "module",
+  "bin": {
+    "the-company": "./bin/cli.js"
+  },
+  "files": [
+    "bin/",
+    "src/api/src/",
+    "src/api/package.json",
+    "src/web/dist/",
+    "templates/"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "npm run dev:api & npm run dev:web",
+    "dev:api": "npm run dev --prefix src/api",
+    "dev:web": "npm run dev --prefix src/web",
+    "build:web": "npm run build --prefix src/web",
+    "typecheck": "npm run typecheck:api && npm run typecheck:web",
+    "typecheck:api": "cd src/api && npx tsc --noEmit",
+    "typecheck:web": "cd src/web && npx tsc --noEmit",
+    "start": "node bin/cli.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^5.0.1",
+    "glob": "^11.0.1",
+    "gray-matter": "^4.0.3",
+    "marked": "^15.0.6",
+    "tsx": "^4.19.3",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.13.4",
+    "typescript": "^5.7.3"
+  },
+  "keywords": [
+    "ai",
+    "company",
+    "organization",
+    "roles",
+    "claude",
+    "agent"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/seongsu-kang/the-company.git"
+  },
+  "homepage": "https://github.com/seongsu-kang/the-company#readme"
+}

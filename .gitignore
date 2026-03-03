@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# Build output (keep src/web/dist/ for npm package)
+build/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Temp
+tmp/
+.tmp/
+
+# Runtime state
+operations/activity/
+operations/sessions/
+
+# Screenshots
+*.png
+
+# Claude Code worktrees
+.claude/worktrees/
+
+# npm pack output
+*.tgz

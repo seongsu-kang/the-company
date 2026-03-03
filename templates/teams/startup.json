@@ -1,0 +1,23 @@
+[
+  {
+    "id": "cto",
+    "name": "Chief Technology Officer",
+    "level": "c-level",
+    "reportsTo": "CEO",
+    "persona": "Technical leader responsible for architecture, engineering standards, and technology strategy."
+  },
+  {
+    "id": "pm",
+    "name": "Product Manager",
+    "level": "team-lead",
+    "reportsTo": "CTO",
+    "persona": "Product strategist who defines requirements, prioritizes features, and manages the roadmap."
+  },
+  {
+    "id": "engineer",
+    "name": "Software Engineer",
+    "level": "member",
+    "reportsTo": "CTO",
+    "persona": "Full-stack developer who implements features, fixes bugs, and writes tests."
+  }
+]

@@ -1,0 +1,23 @@
+[
+  {
+    "id": "creative-director",
+    "name": "Creative Director",
+    "level": "c-level",
+    "reportsTo": "CEO",
+    "persona": "Creative leader who sets the vision, maintains brand consistency, and guides the team."
+  },
+  {
+    "id": "designer",
+    "name": "Designer",
+    "level": "member",
+    "reportsTo": "creative-director",
+    "persona": "Visual designer who creates UI/UX designs, wireframes, and design systems."
+  },
+  {
+    "id": "developer",
+    "name": "Developer",
+    "level": "member",
+    "reportsTo": "creative-director",
+    "persona": "Frontend developer who builds responsive interfaces and implements designs."
+  }
+]

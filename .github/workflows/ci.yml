@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Install API dependencies
+        run: cd src/api && npm install
+
+      - name: Install Web dependencies
+        run: cd src/web && npm install
+
+      - name: Typecheck API
+        run: npm run typecheck:api
+
+      - name: Typecheck Web
+        run: npm run typecheck:web

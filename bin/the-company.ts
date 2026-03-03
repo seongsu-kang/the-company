@@ -1,0 +1,187 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import net from 'node:net';
+import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
+import { detectAuth } from './auth-detect.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const VERSION = JSON.parse(
+  fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8')
+).version;
+
+function printHelp(): void {
+  console.log(`
+  the-company v${VERSION}
+
+  Build an AI company. Watch them work.
+
+  Usage:
+    the-company              Start the server and open dashboard
+    the-company init         Initialize a new company in current directory
+    the-company init -y      Use defaults (skip prompts)
+    the-company init --name "Acme Corp"  Set company name
+    the-company --help       Show this help message
+    the-company --version    Show version
+
+  AI Engine (auto-detected):
+    1. Claude Code CLI       Install from https://claude.ai/download (recommended)
+    2. ANTHROPIC_API_KEY     Set in .env for direct API mode (BYOK)
+
+  Environment:
+    PORT                     Server port (default: auto-detect free port)
+    COMPANY_ROOT             Company directory (default: current directory)
+`);
+}
+
+function findFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.listen(0, () => {
+      const addr = server.address();
+      if (addr && typeof addr === 'object') {
+        const port = addr.port;
+        server.close(() => resolve(port));
+      } else {
+        reject(new Error('Could not find free port'));
+      }
+    });
+    server.on('error', reject);
+  });
+}
+
+function openBrowser(url: string): void {
+  try {
+    const platform = process.platform;
+    if (platform === 'darwin') {
+      execSync(`open "${url}"`);
+    } else if (platform === 'win32') {
+      execSync(`start "" "${url}"`);
+    } else {
+      execSync(`xdg-open "${url}"`);
+    }
+  } catch {
+    // silently fail — user can open manually
+  }
+}
+
+function printBanner(companyName: string, port: number, url: string, engine: string): void {
+  const w = 45;
+  const pad = (s: string) => s.padEnd(w - 6);
+  const engineLabel = engine === 'claude-cli' ? 'Claude Code CLI' : 'Direct API (BYOK)';
+  console.log(`
+  ┌${'─'.repeat(w)}┐
+  │${' '.repeat(w)}│
+  │   the-company v${VERSION.padEnd(w - 18)}│
+  │${' '.repeat(w)}│
+  │   Company:  ${pad(companyName)}│
+  │   Engine:   ${pad(engineLabel)}│
+  │   Port:     ${pad(String(port))}│
+  │   URL:      ${pad(url)}│
+  │${' '.repeat(w)}│
+  │   Press Ctrl+C to stop${' '.repeat(w - 25)}│
+  │${' '.repeat(w)}│
+  └${'─'.repeat(w)}┘
+`);
+}
+
+async function startServer(): Promise<void> {
+  // Load .env from current directory
+  const dotenvPath = path.resolve(process.cwd(), '.env');
+  if (fs.existsSync(dotenvPath)) {
+    const { config } = await import('dotenv');
+    config({ path: dotenvPath });
+  }
+
+  // Set COMPANY_ROOT to cwd if not set
+  if (!process.env.COMPANY_ROOT) {
+    process.env.COMPANY_ROOT = process.cwd();
+  }
+
+  // Check for CLAUDE.md
+  const claudeMdPath = path.join(process.env.COMPANY_ROOT, 'CLAUDE.md');
+  if (!fs.existsSync(claudeMdPath)) {
+    console.error(`
+  No company found in current directory.
+  Run "the-company init" to create one, or cd into a company directory.
+`);
+    process.exit(1);
+  }
+
+  // Production mode + auto-detect execution engine
+  process.env.NODE_ENV = 'production';
+  const auth = detectAuth();
+  if (auth.engine === 'none') {
+    console.error(`
+  No AI engine available.
+  Either install Claude Code (https://claude.ai/download)
+  or set ANTHROPIC_API_KEY in your .env file.
+`);
+    process.exit(1);
+  }
+  process.env.EXECUTION_ENGINE = auth.engine === 'claude-cli' ? 'claude-cli' : 'direct-api';
+
+  // Determine port
+  const port = process.env.PORT ? Number(process.env.PORT) : await findFreePort();
+  process.env.PORT = String(port);
+
+  // Detect company name from CLAUDE.md
+  let companyName = 'My Company';
+  try {
+    const claudeContent = fs.readFileSync(claudeMdPath, 'utf-8');
+    const titleMatch = claudeContent.match(/^#\s+(.+)/m);
+    if (titleMatch) companyName = titleMatch[1].trim();
+  } catch {
+    // ignore
+  }
+
+  const url = `http://localhost:${port}`;
+  printBanner(companyName, port, url, auth.engine);
+
+  // Import and start server
+  const { createHttpServer } = await import('../src/api/src/create-server.js');
+  const server = createHttpServer();
+
+  server.listen(port, () => {
+    openBrowser(url);
+  });
+
+  // Graceful shutdown
+  const shutdown = () => {
+    console.log('\n  Shutting down...');
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(1), 5000);
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+}
+
+export async function main(args: string[]): Promise<void> {
+  const command = args[0];
+
+  if (command === '--help' || command === '-h') {
+    printHelp();
+    return;
+  }
+
+  if (command === '--version' || command === '-v') {
+    console.log(VERSION);
+    return;
+  }
+
+  if (command === 'init') {
+    const { runInit } = await import('./init.js');
+    await runInit(args.slice(1));
+    return;
+  }
+
+  if (command && !command.startsWith('-')) {
+    console.error(`  Unknown command: ${command}`);
+    printHelp();
+    process.exit(1);
+  }
+
+  await startServer();
+}

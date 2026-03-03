@@ -1,0 +1,58 @@
+# {{COMPANY_NAME}}
+
+> {{DESCRIPTION}}
+
+---
+
+## Organization
+
+| Role | Assignee | Level | Reports To | Status |
+|------|----------|-------|------------|--------|
+
+---
+
+## Task Routing
+
+| Task | Read First | Role |
+|------|-----------|------|
+| Product planning | `projects/` | PM |
+| Technical design | `architecture/` | CTO |
+| Implementation | `projects/*/tasks.md` | Engineer |
+| UI/UX Design | `projects/*/design/` | Designer |
+| Testing/QA | `projects/*/tasks.md` | QA |
+| Operations | `operations/` | PM |
+| Business/Revenue | `company/` | CBO |
+| Domain knowledge | `knowledge/` | CBO |
+
+---
+
+## Folder Structure
+
+```
+{{COMPANY_NAME}}/
+├── CLAUDE.md                ← AI entry point
+├── company/
+│   └── company.md           ← Mission, vision
+├── roles/
+│   ├── roles.md             ← Role listing (Hub)
+│   └── {role-id}/
+│       ├── role.yaml        ← Role definition
+│       ├── profile.md       ← Role profile
+│       └── journal/         ← Work journal
+├── projects/
+│   └── projects.md          ← Project listing (Hub)
+├── architecture/
+│   └── architecture.md      ← Technical architecture (Hub)
+├── operations/
+│   ├── standup/             ← Daily standups
+│   ├── waves/               ← Wave execution logs
+│   └── decisions/           ← Decision log
+├── knowledge/
+│   └── knowledge.md         ← Domain knowledge (Hub)
+└── .claude/skills/
+    └── {role-id}/SKILL.md   ← Role skill guides
+```
+
+---
+
+*Powered by [the-company](https://github.com/seongsu-kang/the-company-inc)*
