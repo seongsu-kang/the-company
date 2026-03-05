@@ -543,12 +543,56 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
 
   if (loading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-[var(--floor-light)]">
-        <div className="text-center" style={{ fontFamily: 'var(--pixel-font)' }}>
-          <div className="text-4xl mb-3">{'\u{1F3E2}'}</div>
-          <div className="text-gray-600 font-semibold text-xs">LOADING OFFICE...</div>
+      <div className="h-screen flex flex-col bg-[var(--floor-light)]" style={{ fontFamily: 'var(--pixel-font)' }}>
+        {/* Import banner even during loading */}
+        {(importBanner || importLogs.length > 0) && (
+          <div className="shrink-0 z-[44]">
+            <div
+              className="flex items-center gap-3 px-5 py-2 text-xs cursor-pointer select-none"
+              style={{ background: 'var(--accent)', color: '#fff', fontFamily: 'var(--pixel-font)' }}
+              onClick={() => setImportPanelOpen(prev => !prev)}
+            >
+              {importBanner ? (
+                <div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin shrink-0" />
+              ) : (
+                <span className="shrink-0">{'\u2705'}</span>
+              )}
+              <span className="flex-1">{importBanner || 'Knowledge import finished'}</span>
+              {importProgress && (
+                <div className="w-24 h-1.5 rounded-full overflow-hidden shrink-0" style={{ background: 'rgba(255,255,255,0.3)' }}>
+                  <div className="h-full rounded-full transition-all" style={{ width: `${(importProgress.index / importProgress.total) * 100}%`, background: '#fff' }} />
+                </div>
+              )}
+              <span className="text-[10px] opacity-70 shrink-0">{importPanelOpen ? '\u25B2' : '\u25BC'}</span>
+            </div>
+            {importPanelOpen && (
+              <div className="overflow-y-auto text-xs" style={{ background: 'var(--terminal-bg)', borderBottom: '2px solid var(--accent)', maxHeight: 240, fontFamily: 'var(--pixel-font)' }}>
+                {importLogs.map(log => (
+                  <div key={log.id} className="flex items-start gap-2 px-5 py-1.5" style={{ borderBottom: '1px solid var(--terminal-border)' }}>
+                    <span className="shrink-0 mt-0.5" style={{ width: 14, textAlign: 'center' }}>
+                      {log.type === 'scan' && '\uD83D\uDD0D'}
+                      {log.type === 'process' && '\u2699\uFE0F'}
+                      {log.type === 'created' && '\u2705'}
+                      {log.type === 'done' && '\uD83C\uDF89'}
+                      {log.type === 'error' && '\u274C'}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div style={{ color: log.type === 'error' ? '#EF4444' : log.type === 'done' ? 'var(--active-green)' : 'var(--terminal-text)' }}>{log.text}</div>
+                      {log.detail && <div className="text-[10px] truncate" style={{ color: 'var(--terminal-text-muted)' }}>{log.detail}</div>}
+                    </div>
+                  </div>
+                ))}
+                <div ref={importLogEnd} />
+              </div>
+            )}
+          </div>
+        )}
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="text-4xl mb-3">{'\u{1F3E2}'}</div>
+            <div className="text-gray-600 font-semibold text-xs">LOADING OFFICE...</div>
+          </div>
         </div>
-      </div>
     );
   }
 
