@@ -114,7 +114,8 @@ knowledgeRouter.get('/', (_req: Request, res: Response, next: NextFunction) => {
 
 knowledgeRouter.get('/{*path}', (req: Request, res: Response, next: NextFunction) => {
   try {
-    const docId = (req.params as Record<string, string>).path;
+    const rawPath = (req.params as Record<string, unknown>).path;
+    const docId = Array.isArray(rawPath) ? rawPath.join('/') : String(rawPath ?? '');
     if (!docId) {
       res.status(400).json({ error: 'Document ID required' });
       return;
