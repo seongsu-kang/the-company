@@ -73,7 +73,11 @@ function KnowledgeGraph({ docs, onNodeClick }: { docs: KnowledgeDoc[]; onNodeCli
     const links: GLink[] = [];
     for (const doc of docs) {
       for (const link of doc.links) {
-        const targetId = link.href.replace(/^.*knowledge\//, '').replace(/^\.\.\//, '');
+        // Normalize: ./foo.md → foo.md, ../knowledge/foo.md → foo.md, full paths
+        const targetId = link.href
+          .replace(/^.*knowledge\//, '')  // absolute or deep relative paths
+          .replace(/^\.\.\/.*$/, '')       // skip links outside knowledge/
+          .replace(/^\.\//, '');           // ./foo.md → foo.md
         if (idSet.has(targetId) && targetId !== doc.id) {
           // Avoid duplicate edges
           if (!links.some((l) => (l.source === doc.id && l.target === targetId) || (l.source === targetId && l.target === doc.id))) {
