@@ -112,10 +112,9 @@ knowledgeRouter.get('/', (_req: Request, res: Response, next: NextFunction) => {
 
 /* ─── Single document endpoint ────────────────────── */
 
-knowledgeRouter.get('/*', (req: Request, res: Response, next: NextFunction) => {
+knowledgeRouter.get('/{*path}', (req: Request, res: Response, next: NextFunction) => {
   try {
-    // req.params[0] captures the wildcard after /api/knowledge/
-    const docId = (req.params as Record<string, string>)[0];
+    const docId = (req.params as Record<string, string>).path;
     if (!docId) {
       res.status(400).json({ error: 'Document ID required' });
       return;
