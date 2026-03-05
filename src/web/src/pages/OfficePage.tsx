@@ -116,10 +116,9 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
     if (importPanelOpen) importLogEnd.current?.scrollIntoView({ behavior: 'smooth' });
   }, [importLogs, importPanelOpen]);
 
-  /* Knowledge import SSE */
+  /* Knowledge import SSE — fire-and-forget, no abort on unmount */
   useEffect(() => {
     if (!importJob) return;
-    // Guard against double-fire in React strict mode
     if (importStarted.current) return;
     importStarted.current = true;
 
@@ -127,13 +126,10 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
     setImportLogs([{ id: 0, type: 'scan', text: 'Starting knowledge import...' }]);
     logId.current = 1;
 
-    const controller = new AbortController();
-
     fetch('/api/setup/import-knowledge', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ paths: importJob.paths, companyRoot: importJob.companyRoot }),
-      signal: controller.signal,
     }).then(async (res) => {
       const reader = res.body?.getReader();
       if (!reader) return;
@@ -193,15 +189,13 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
         }
       }
     }).catch((err) => {
-      if (err.name !== 'AbortError') {
-        setImportBanner(null);
-        addImportLog('error', err.message);
-        addToast(`Import error: ${err.message}`, '#B71C1C');
-        onImportDone?.();
-      }
+      setImportBanner(null);
+      addImportLog('error', err.message);
+      addToast(`Import error: ${err.message}`, '#B71C1C');
+      onImportDone?.();
     });
 
-    return () => controller.abort();
+    // No cleanup abort — import runs in background on server
   }, [importJob]);
 
   /* View mode: card grid vs isometric */
