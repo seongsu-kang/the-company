@@ -426,12 +426,13 @@ interface Props {
   docs: KnowledgeDoc[];
   onClose: () => void;
   terminalWidth?: number;
+  initialDocId?: string;
 }
 
-export default function KnowledgePanel({ docs, onClose, terminalWidth = 0 }: Props) {
+export default function KnowledgePanel({ docs, onClose, terminalWidth = 0, initialDocId }: Props) {
   const [view, setView] = useState<'list' | 'graph'>('list');
   const [category, setCategory] = useState<string>('all');
-  const [openDocId, setOpenDocId] = useState<string | null>(null);
+  const [openDocId, setOpenDocId] = useState<string | null>(initialDocId ?? null);
 
   const { panelRight, panelWidth, isResizing, handleResizeStart } = usePanelResize(terminalWidth);
 

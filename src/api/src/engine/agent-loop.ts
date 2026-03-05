@@ -1,6 +1,6 @@
 import { LLMAdapter, type LLMMessage, type ToolResult, type MessageContent } from './llm-adapter.js';
 import { type OrgTree, getSubordinates } from './org-tree.js';
-import { assembleContext } from './context-assembler.js';
+import { assembleContext, type TeamStatus } from './context-assembler.js';
 import { validateDispatch } from './authority-validator.js';
 import { getToolsForRole } from './tools/definitions.js';
 import { executeTool, type ToolExecutorOptions } from './tools/executor.js';
@@ -19,6 +19,7 @@ export interface AgentConfig {
   depth?: number;             // Current dispatch depth (default 0)
   visitedRoles?: Set<string>; // Circular dispatch detection
   abortSignal?: AbortSignal;  // Abort signal for cancellation
+  teamStatus?: TeamStatus;    // Current team member statuses
   // Callbacks
   onText?: (text: string) => void;
   onToolExec?: (name: string, input: Record<string, unknown>) => void;
@@ -73,7 +74,7 @@ export async function runAgentLoop(config: AgentConfig): Promise<AgentResult> {
   const llm = config.llm ?? new LLMAdapter();
 
   // 1. Assemble context
-  const context = assembleContext(companyRoot, roleId, task, sourceRole, orgTree);
+  const context = assembleContext(companyRoot, roleId, task, sourceRole, orgTree, { teamStatus: config.teamStatus });
 
   // 2. Determine tools
   const subordinates = getSubordinates(orgTree, roleId);

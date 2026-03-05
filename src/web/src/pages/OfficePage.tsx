@@ -64,7 +64,7 @@ type PanelState =
   | { type: 'project'; projectId: string }
   | { type: 'bulletin' }
   | { type: 'decisions' }
-  | { type: 'knowledge' };
+  | { type: 'knowledge'; docId?: string };
 
 /* ─── Page ───────────────────────────────── */
 
@@ -91,7 +91,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
 
   /* Phase 3: Live status */
   const [roleStatuses, setRoleStatuses] = useState<Record<string, string>>({});
-  const [activeExecs, setActiveExecs] = useState<{ roleId: string; task: string }[]>([]);
+  const [activeExecs, setActiveExecs] = useState<{ roleId: string; task: string; id?: string; jobId?: string; startedAt?: string }[]>([]);
   const [toasts, setToasts] = useState<{ id: number; message: string; color: string }[]>([]);
 
   /* Knowledge import state */
@@ -235,8 +235,9 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
       .finally(() => setLoading(false));
   }, []);
 
-  /* Load sessions on mount */
+  /* Load sessions on mount — auto-clean empty sessions */
   useEffect(() => {
+    api.deleteEmptySessions().catch(() => {});
     api.getSessions().then((metas) => {
       if (metas.length > 0) {
         Promise.all(metas.map((m) => api.getSession(m.id))).then((full) => {
@@ -280,14 +281,6 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   const closePanel = () => setPanel({ type: 'none' });
 
   /* Phase 2 handlers */
-  const handleAssignTask = (roleId: string, roleName: string) => {
-    setAssignModal({ roleId, roleName, mode: 'assign' });
-  };
-
-  const handleAskRole = (roleId: string, roleName: string) => {
-    setAssignModal({ roleId, roleName, mode: 'ask' });
-  };
-
   const handleExecutionStart = async (roleId: string, task: string) => {
     const role = roles.find((r) => r.id === roleId);
     const isAsk = assignModal?.mode === 'ask';
@@ -371,6 +364,27 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
     }
   };
 
+  // Silent version: creates session without opening terminal (used by SidePanel inline input)
+  const handleCreateSessionSilent = async (roleId: string) => {
+    try {
+      const session = await api.createSession(roleId, 'talk');
+      setSessions((prev) => [session, ...prev]);
+      setActiveSessionId(session.id);
+    } catch (err) {
+      console.error('Failed to create session', err);
+      addToast(`Failed to create session: ${err instanceof Error ? err.message : 'API unreachable'}`, '#B71C1C');
+    }
+  };
+
+  // Focus terminal on a specific role's session (open terminal + switch to session)
+  const handleFocusTerminal = (roleId: string) => {
+    const session = sessions.find(s => s.roleId === roleId);
+    if (session) {
+      setActiveSessionId(session.id);
+    }
+    setTerminalOpen(true);
+  };
+
   const handleCloseSession = async (sessionId: string) => {
     try {
       await api.deleteSession(sessionId);
@@ -383,13 +397,37 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
       });
     } catch (err) {
       console.error('Failed to delete session', err);
+      addToast(`Failed to close session: ${err instanceof Error ? err.message : 'API error'}`, '#B71C1C');
+    }
+  };
+
+  const handleClearEmptySessions = async () => {
+    try {
+      const { ids } = await api.deleteEmptySessions();
+      if (ids.length === 0) return;
       setSessions((prev) => {
-        const remaining = prev.filter((s) => s.id !== sessionId);
-        if (activeSessionId === sessionId) {
+        const remaining = prev.filter((s) => !ids.includes(s.id));
+        if (activeSessionId && ids.includes(activeSessionId)) {
           setActiveSessionId(remaining[0]?.id ?? null);
         }
         return remaining;
       });
+      addToast(`Cleared ${ids.length} empty session${ids.length !== 1 ? 's' : ''}`, '#2E7D32');
+    } catch (err) {
+      addToast(`Failed to clear empty sessions: ${err instanceof Error ? err.message : 'API error'}`, '#B71C1C');
+    }
+  };
+
+  const handleCloseAllSessions = async () => {
+    if (!confirm('Close all sessions? This cannot be undone.')) return;
+    const ids = sessions.map((s) => s.id);
+    try {
+      await api.deleteSessions(ids);
+      setSessions([]);
+      setActiveSessionId(null);
+      addToast('All sessions closed', '#2E7D32');
+    } catch (err) {
+      addToast(`Failed to close sessions: ${err instanceof Error ? err.message : 'API error'}`, '#B71C1C');
     }
   };
 
@@ -463,6 +501,41 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
       onDispatch: (roleId, task) => {
         pushStreamEvent(sessionId, { type: 'dispatch', timestamp: Date.now(), roleId, task });
       },
+      onDispatchProgress: (roleId, progressType, data) => {
+        if (progressType === 'tool') {
+          pushStreamEvent(sessionId, {
+            type: 'dispatch:progress',
+            timestamp: Date.now(),
+            roleId,
+            progressType: 'tool',
+            toolName: data.name as string,
+            toolInput: data.input as Record<string, unknown>,
+          });
+        } else if (progressType === 'thinking') {
+          pushStreamEvent(sessionId, {
+            type: 'dispatch:progress',
+            timestamp: Date.now(),
+            roleId,
+            progressType: 'thinking',
+            text: data.text as string,
+          });
+        } else if (progressType === 'text') {
+          pushStreamEvent(sessionId, {
+            type: 'dispatch:progress',
+            timestamp: Date.now(),
+            roleId,
+            progressType: 'text',
+            text: (data.text as string)?.slice(-200),
+          });
+        } else if (progressType === 'done' || progressType === 'error') {
+          pushStreamEvent(sessionId, {
+            type: 'dispatch:progress',
+            timestamp: Date.now(),
+            roleId,
+            progressType,
+          });
+        }
+      },
       onTurn: (turn) => {
         pushStreamEvent(sessionId, { type: 'turn', timestamp: Date.now(), turn });
       },
@@ -501,15 +574,17 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   const mainProject = projects[0];
 
   /* Find recent speech for a role from standups */
+  const ROLE_SECTION: Record<string, string> = {
+    cto: 'Chief Technology Officer',
+    cbo: 'Chief Business Officer',
+    pm: 'Product Manager',
+    engineer: 'Software Engineer',
+    designer: 'UI/UX Designer',
+    qa: 'QA Engineer',
+  };
+
+  /** Short one-liner for desk sprite speech */
   const getRoleSpeech = (roleId: string): string => {
-    const ROLE_SECTION: Record<string, string> = {
-      cto: 'Chief Technology Officer',
-      cbo: 'Chief Business Officer',
-      pm: 'Product Manager',
-      engineer: 'Software Engineer',
-      designer: 'UI/UX Designer',
-      qa: 'QA Engineer',
-    };
     const sectionName = ROLE_SECTION[roleId];
     if (!sectionName) return '';
 
@@ -535,6 +610,28 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           return trimmed.slice(0, 80);
         }
       }
+    }
+    return '';
+  };
+
+  /** Full standup section for SidePanel speech bubble */
+  const getRoleSpeechFull = (roleId: string): string => {
+    const sectionName = ROLE_SECTION[roleId];
+    if (!sectionName) return '';
+
+    for (const s of standups) {
+      const content = s.content;
+      const sectionStart = content.indexOf(`## ${sectionName}`);
+      if (sectionStart === -1) continue;
+
+      const nextSection = content.indexOf('\n## ', sectionStart + 10);
+      const section = nextSection === -1
+        ? content.slice(sectionStart)
+        : content.slice(sectionStart, nextSection);
+
+      // Strip the ## heading line itself, return the body
+      const body = section.replace(/^## .+\n/, '').trim();
+      if (body) return body.slice(0, 1500);
     }
     return '';
   };
@@ -743,6 +840,8 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
               onProjectClick={(id) => setPanel({ type: 'project', projectId: id })}
               onBulletinClick={() => setPanel({ type: 'bulletin' })}
               onDecisionsClick={() => setPanel({ type: 'decisions' })}
+              onKnowledgeClick={() => setPanel({ type: 'knowledge' })}
+              knowledgeDocsCount={knowledgeDocs.length}
               getRoleSpeech={getRoleSpeech}
             />
           ) : (
@@ -903,6 +1002,8 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
               onSwitchSession={setActiveSessionId}
               onCloseSession={handleCloseSession}
               onCreateSession={handleCreateSession}
+              onClearEmpty={handleClearEmptySessions}
+              onCloseAll={handleCloseAllSessions}
               onSendMessage={handleSendMessage}
               onModeChange={handleModeChange}
               onCloseTerminal={() => setTerminalOpen(false)}
@@ -956,19 +1057,29 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
       </div>
 
       {/* ─── Side Panels ─── */}
-      {panel.type === 'role' && selectedRole && (
+      {panel.type === 'role' && selectedRole && (() => {
+        const roleExec = activeExecs.find(e => e.roleId === selectedRole.id);
+        return (
         <SidePanel
           role={selectedRole}
           allRoles={roles}
-          recentActivity={getRoleSpeech(selectedRole.id)}
+          recentActivity={getRoleSpeechFull(selectedRole.id)}
           onClose={closePanel}
-          onAssignTask={handleAssignTask}
-          onAskRole={handleAskRole}
-          onOpenTerminal={handleOpenTerminal}
           onFireRole={(id, name) => { setFireTarget({ roleId: id, roleName: name }); closePanel(); }}
           terminalWidth={terminalOpen ? terminalWidth : 0}
+          activeJobId={roleExec?.id}
+          activeTask={roleExec?.task}
+          isWorking={roleStatuses[selectedRole.id] === 'working'}
+          jobStartedAt={roleExec?.startedAt}
+          onStopJob={(jobId) => api.abortJob(jobId)}
+          sessions={sessions}
+          streamingSessionId={streamingSessionId}
+          onCreateSessionSilent={handleCreateSessionSilent}
+          onSendMessage={handleSendMessage}
+          onFocusTerminal={handleFocusTerminal}
         />
-      )}
+        );
+      })()}
       {panel.type === 'project' && mainProject && (
         <ProjectPanel projectId={mainProject.id} onClose={closePanel} terminalWidth={terminalOpen ? terminalWidth : 0} />
       )}
@@ -987,6 +1098,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           docs={knowledgeDocs}
           onClose={closePanel}
           terminalWidth={terminalOpen ? terminalWidth : 0}
+          initialDocId={panel.docId}
         />
       )}
 
@@ -1026,6 +1138,11 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
                   color: childColor,
                 }]);
               }).catch(console.error);
+            }}
+            onOpenKnowledgeDoc={(docId) => {
+              setJobStack([]);
+              setPanel({ type: 'knowledge', docId });
+              api.getKnowledge().then(setKnowledgeDocs).catch(() => {});
             }}
           />
         );

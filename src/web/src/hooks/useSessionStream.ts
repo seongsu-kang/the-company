@@ -5,6 +5,7 @@ interface StreamCallbacks {
   onThinking?: (text: string) => void;
   onToolUse?: (name: string, input?: Record<string, unknown>) => void;
   onDispatch?: (roleId: string, task: string) => void;
+  onDispatchProgress?: (roleId: string, type: string, data: Record<string, unknown>) => void;
   onTurn?: (turn: number) => void;
   onDone: (data: { roleMessageId: string }) => void;
   onError: (message: string) => void;
@@ -90,6 +91,13 @@ export default function useSessionStream() {
                 callbacks.onDispatch?.(
                   data.roleId as string,
                   data.task as string,
+                );
+                break;
+              case 'dispatch:progress':
+                callbacks.onDispatchProgress?.(
+                  data.roleId as string,
+                  data.type as string,
+                  data as Record<string, unknown>,
                 );
                 break;
               case 'turn':

@@ -170,3 +170,22 @@ export function deleteSession(id: string): boolean {
   if (fs.existsSync(p)) fs.unlinkSync(p);
   return true;
 }
+
+export function deleteMany(ids: string[]): number {
+  let count = 0;
+  for (const id of ids) {
+    if (deleteSession(id)) count++;
+  }
+  return count;
+}
+
+export function deleteEmpty(): { deleted: number; ids: string[] } {
+  const ids: string[] = [];
+  for (const [id, session] of cache) {
+    if (session.messages.length === 0) {
+      ids.push(id);
+    }
+  }
+  const deleted = deleteMany(ids);
+  return { deleted, ids };
+}

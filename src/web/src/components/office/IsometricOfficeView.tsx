@@ -64,16 +64,17 @@ interface FacilityConfig {
   id: string;
   col: number;
   row: number;
-  type: 'meeting' | 'bulletin' | 'decision';
+  type: 'meeting' | 'bulletin' | 'decision' | 'knowledge';
   label: string;
   icon: string;
   color: string;
 }
 
 const FACILITY_LAYOUT: FacilityConfig[] = [
-  { id: 'meeting',   col: 2, row: 2, type: 'meeting',  label: 'MEETING ROOM',   icon: '\u{1F3E2}', color: '#3B82F6' },
-  { id: 'bulletin',  col: 0, row: 0, type: 'bulletin', label: 'BULLETIN BOARD', icon: '\u{1F4CB}', color: '#64748b' },
-  { id: 'decisions', col: 4, row: 4, type: 'decision', label: 'DECISION LOG',   icon: '\u{1F4DC}', color: '#64748b' },
+  { id: 'meeting',   col: 2, row: 2, type: 'meeting',   label: 'MEETING ROOM',   icon: '\u{1F3E2}', color: '#3B82F6' },
+  { id: 'bulletin',  col: 0, row: 0, type: 'bulletin',  label: 'BULLETIN BOARD', icon: '\u{1F4CB}', color: '#64748b' },
+  { id: 'decisions', col: 4, row: 4, type: 'decision',  label: 'DECISION LOG',   icon: '\u{1F4DC}', color: '#64748b' },
+  { id: 'knowledge', col: 4, row: 0, type: 'knowledge', label: 'KNOWLEDGE BASE', icon: '\u{1F4DA}', color: '#0D9488' },
 ];
 
 /* ─── Floor grid tiles ──────────────────── */
@@ -178,10 +179,11 @@ interface FacilityTileProps {
   waves: Wave[];
   standups: Standup[];
   decisions: Decision[];
+  knowledgeDocsCount: number;
   onClick: () => void;
 }
 
-function IsoFacilityTile({ facility, project, waves, standups, decisions, onClick }: FacilityTileProps) {
+function IsoFacilityTile({ facility, project, waves, standups, decisions, knowledgeDocsCount, onClick }: FacilityTileProps) {
   const { x, y } = isoToScreen(facility.col, facility.row);
 
   let subtitle = '';
@@ -192,6 +194,8 @@ function IsoFacilityTile({ facility, project, waves, standups, decisions, onClic
     else if (standups[0]) subtitle = `Standup ${standups[0].date}`;
   } else if (facility.id === 'decisions') {
     subtitle = `${decisions.length} decisions`;
+  } else if (facility.id === 'knowledge') {
+    subtitle = `${knowledgeDocsCount} docs`;
   }
 
   return (
@@ -231,11 +235,13 @@ interface IsometricOfficeViewProps {
   standups: Standup[];
   decisions: Decision[];
   roleStatuses: Record<string, string>;
-  activeExecs: { roleId: string; task: string }[];
+  activeExecs: { roleId: string; task: string; id?: string; startedAt?: string }[];
   onRoleClick: (roleId: string) => void;
   onProjectClick: (projectId: string) => void;
   onBulletinClick: () => void;
   onDecisionsClick: () => void;
+  onKnowledgeClick: () => void;
+  knowledgeDocsCount: number;
   getRoleSpeech: (roleId: string) => string;
 }
 
@@ -253,6 +259,8 @@ export default function IsometricOfficeView({
   onProjectClick,
   onBulletinClick,
   onDecisionsClick,
+  onKnowledgeClick,
+  knowledgeDocsCount,
   getRoleSpeech,
 }: IsometricOfficeViewProps) {
   const mainProject = projects[0];
@@ -311,12 +319,15 @@ export default function IsometricOfficeView({
               waves={waves}
               standups={standups}
               decisions={decisions}
+              knowledgeDocsCount={knowledgeDocsCount}
               onClick={
                 facility.id === 'meeting'
                   ? () => mainProject && onProjectClick(mainProject.id)
                   : facility.id === 'bulletin'
                     ? onBulletinClick
-                    : onDecisionsClick
+                    : facility.id === 'knowledge'
+                      ? onKnowledgeClick
+                      : onDecisionsClick
               }
             />
           ))}

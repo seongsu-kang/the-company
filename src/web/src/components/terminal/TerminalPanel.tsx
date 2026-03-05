@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { Session, Role } from '../../types';
 import SessionTab from './SessionTab';
 import MessageList from './MessageList';
@@ -14,6 +14,8 @@ interface Props {
   onSwitchSession: (id: string) => void;
   onCloseSession: (id: string) => void;
   onCreateSession: (roleId: string) => void;
+  onClearEmpty?: () => void;
+  onCloseAll?: () => void;
   onSendMessage: (sessionId: string, content: string, mode: 'talk' | 'do') => void;
   onModeChange: (sessionId: string, mode: 'talk' | 'do') => void;
   onCloseTerminal: () => void;
@@ -29,15 +31,50 @@ const MAX_WIDTH = 800;
 
 export default function TerminalPanel({
   sessions, activeSessionId, roles, streamingSessionId, width, onWidthChange,
-  onSwitchSession, onCloseSession, onCreateSession, onSendMessage, onModeChange, onCloseTerminal,
+  onSwitchSession, onCloseSession, onCreateSession, onClearEmpty, onCloseAll,
+  onSendMessage, onModeChange, onCloseTerminal,
 }: Props) {
   const [showNewMenu, setShowNewMenu] = useState(false);
+  const [showManageMenu, setShowManageMenu] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
   const startXRef = useRef(0);
   const startWidthRef = useRef(0);
+  const tabScrollRef = useRef<HTMLDivElement>(null);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const isStreaming = streamingSessionId === activeSessionId;
+  const emptyCount = sessions.filter((s) => s.messages.length === 0).length;
+
+  // Update scroll overflow indicators
+  const updateScrollIndicators = useCallback(() => {
+    const el = tabScrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 0);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+  }, []);
+
+  // Auto-scroll active tab into view
+  useEffect(() => {
+    if (!activeSessionId || !tabScrollRef.current) return;
+    const activeTab = tabScrollRef.current.querySelector(`[data-session-id="${activeSessionId}"]`);
+    if (activeTab) {
+      activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    }
+    updateScrollIndicators();
+  }, [activeSessionId, sessions.length, updateScrollIndicators]);
+
+  // Track scroll state
+  useEffect(() => {
+    const el = tabScrollRef.current;
+    if (!el) return;
+    updateScrollIndicators();
+    el.addEventListener('scroll', updateScrollIndicators);
+    const obs = new ResizeObserver(updateScrollIndicators);
+    obs.observe(el);
+    return () => { el.removeEventListener('scroll', updateScrollIndicators); obs.disconnect(); };
+  }, [updateScrollIndicators]);
 
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -76,23 +113,34 @@ export default function TerminalPanel({
 
       {/* Tab bar */}
       <div className="flex items-center bg-[var(--terminal-bg-deeper)] border-b border-[var(--terminal-border)] shrink-0">
-        <div className="flex-1 flex items-center overflow-x-auto terminal-tab-scroll gap-px px-1 py-1">
-          {sessions.map((ses) => (
-            <SessionTab
-              key={ses.id}
-              roleId={ses.roleId}
-              title={ses.title}
-              roleColor={ROLE_COLORS[ses.roleId] ?? '#666'}
-              active={ses.id === activeSessionId}
-              onClick={() => onSwitchSession(ses.id)}
-              onClose={(e) => { e.stopPropagation(); onCloseSession(ses.id); }}
-            />
-          ))}
+        <div className="relative flex-1 min-w-0">
+          {/* Left fade */}
+          {canScrollLeft && (
+            <div className="absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-[var(--terminal-bg-deeper)] to-transparent z-10 pointer-events-none" />
+          )}
+          <div ref={tabScrollRef} className="flex items-center overflow-x-auto terminal-tab-scroll gap-px px-1 py-1">
+            {sessions.map((ses) => (
+              <SessionTab
+                key={ses.id}
+                roleId={ses.roleId}
+                title={ses.title}
+                roleColor={ROLE_COLORS[ses.roleId] ?? '#666'}
+                active={ses.id === activeSessionId}
+                onClick={() => onSwitchSession(ses.id)}
+                onClose={(e) => { e.stopPropagation(); onCloseSession(ses.id); }}
+                data-session-id={ses.id}
+              />
+            ))}
+          </div>
+          {/* Right fade */}
+          {canScrollRight && (
+            <div className="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-[var(--terminal-bg-deeper)] to-transparent z-10 pointer-events-none" />
+          )}
         </div>
         {/* New tab button */}
         <div className="relative shrink-0">
           <button
-            onClick={() => setShowNewMenu(!showNewMenu)}
+            onClick={() => { setShowNewMenu(!showNewMenu); setShowManageMenu(false); }}
             className="w-7 h-7 flex items-center justify-center text-[var(--terminal-text-muted)] hover:text-[var(--terminal-text-secondary)] text-lg cursor-pointer"
           >
             +
@@ -112,6 +160,44 @@ export default function TerminalPanel({
                   {r.id.toUpperCase()} — {r.name}
                 </button>
               ))}
+            </div>
+          )}
+        </div>
+        {/* Session manage menu */}
+        <div className="relative shrink-0">
+          <button
+            onClick={() => { setShowManageMenu(!showManageMenu); setShowNewMenu(false); }}
+            className="w-7 h-7 flex items-center justify-center text-[var(--terminal-text-muted)] hover:text-[var(--terminal-text-secondary)] text-xs cursor-pointer tracking-tight"
+            title="Manage sessions"
+          >
+            ···
+          </button>
+          {showManageMenu && (
+            <div className="absolute top-full right-0 mt-1 bg-[var(--terminal-surface)] border border-[var(--terminal-border)] rounded-lg shadow-xl z-50 py-1 min-w-[200px]">
+              <div className="px-3 py-1.5 text-[10px] text-[var(--terminal-text-muted)] border-b border-[var(--terminal-border)]">
+                {sessions.length} session{sessions.length !== 1 ? 's' : ''}
+              </div>
+              {emptyCount > 0 && onClearEmpty && (
+                <button
+                  onClick={() => { onClearEmpty(); setShowManageMenu(false); }}
+                  className="w-full text-left px-3 py-2 text-xs text-[var(--terminal-text-secondary)] hover:bg-[var(--terminal-surface-light)] cursor-pointer"
+                >
+                  Clear empty sessions ({emptyCount})
+                </button>
+              )}
+              {sessions.length > 0 && onCloseAll && (
+                <button
+                  onClick={() => { onCloseAll(); setShowManageMenu(false); }}
+                  className="w-full text-left px-3 py-2 text-xs text-[#E57373] hover:bg-[var(--terminal-surface-light)] cursor-pointer"
+                >
+                  Close all sessions
+                </button>
+              )}
+              {sessions.length === 0 && (
+                <div className="px-3 py-2 text-xs text-[var(--terminal-text-muted)]">
+                  No sessions
+                </div>
+              )}
             </div>
           )}
         </div>

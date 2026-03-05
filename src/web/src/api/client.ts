@@ -28,8 +28,13 @@ async function patch_<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
-async function del<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, { method: 'DELETE' });
+async function del<T>(path: string, body?: unknown): Promise<T> {
+  const opts: RequestInit = { method: 'DELETE' };
+  if (body !== undefined) {
+    opts.headers = { 'Content-Type': 'application/json' };
+    opts.body = JSON.stringify(body);
+  }
+  const res = await fetch(`${BASE}${path}`, opts);
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
 }
@@ -57,6 +62,8 @@ export const api = {
   createSession: (roleId: string, mode: 'talk' | 'do' = 'talk') =>
     post<Session>('/sessions', { roleId, mode }),
   deleteSession: (id: string) => del<{ ok: boolean }>(`/sessions/${id}`),
+  deleteSessions: (ids: string[]) => del<{ deleted: number }>('/sessions', { ids }),
+  deleteEmptySessions: () => del<{ deleted: number; ids: string[] }>('/sessions?empty=true'),
   updateSession: (id: string, patch: { title?: string; mode?: 'talk' | 'do' }) =>
     patch_<Session>(`/sessions/${id}`, patch),
 

@@ -794,6 +794,39 @@ body {
   white-space: nowrap;
 }
 
+/* ── Dispatch progress ── */
+.stream-event-dispatch-progress {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid #fbbf2444;
+  animation: stream-event-in 0.15s ease-out;
+}
+.stream-event-dispatch-progress-role {
+  font-size: 9px;
+  font-weight: 700;
+  font-family: var(--pixel-font);
+  color: #fbbf24;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+.stream-event-dispatch-progress-status {
+  font-size: 10px;
+  color: var(--terminal-text-muted);
+  font-style: italic;
+}
+.stream-event-dispatch-progress-done {
+  font-size: 9px;
+  color: #4ade80;
+  font-weight: 600;
+}
+.stream-event-dispatch-progress-error {
+  font-size: 9px;
+  color: #f87171;
+  font-weight: 600;
+}
+
 /* ── Slide-in animation ── */
 @keyframes stream-event-in {
   from { opacity: 0; transform: translateY(-4px); }
@@ -1021,4 +1054,23 @@ body {
   background: var(--terminal-bg);
   border-color: var(--terminal-border-hover);
   color: var(--active-green);
+}
+
+/* ── SidePanel chat (light theme override for MessageBubble) ── */
+.side-panel-chat {
+  --terminal-bg: #f8f9fa;
+  --terminal-bg-deeper: #f0f1f3;
+  --terminal-surface: #ffffff;
+  --terminal-surface-light: #eef0f4;
+  --terminal-border: rgba(0, 0, 0, 0.08);
+  --terminal-border-hover: rgba(0, 0, 0, 0.16);
+  --terminal-text: #1a1a2e;
+  --terminal-text-secondary: rgba(30, 40, 80, 0.55);
+  --terminal-text-muted: rgba(30, 40, 80, 0.3);
+  --terminal-scrollbar: rgba(0, 0, 0, 0.06);
+  --terminal-scrollbar-hover: rgba(0, 0, 0, 0.14);
+  --terminal-code-bg: #f0f1f3;
+  --terminal-code-text: #1565c0;
+  --terminal-code-border: rgba(0, 0, 0, 0.06);
+  --terminal-inline-bg: #f0f1f3;
 }

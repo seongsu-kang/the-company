@@ -4,6 +4,8 @@ import {
   getSession,
   listSessions,
   deleteSession,
+  deleteMany,
+  deleteEmpty,
   updateSession,
 } from '../services/session-store.js';
 
@@ -44,6 +46,22 @@ sessionsRouter.patch('/:id', (req, res) => {
     return;
   }
   res.json(session);
+});
+
+/* DELETE /api/sessions — bulk delete (body: { ids }) or ?empty=true */
+sessionsRouter.delete('/', (req, res) => {
+  if (req.query.empty === 'true') {
+    const result = deleteEmpty();
+    res.json(result);
+    return;
+  }
+  const { ids } = req.body ?? {};
+  if (!Array.isArray(ids) || ids.length === 0) {
+    res.status(400).json({ error: 'ids array is required' });
+    return;
+  }
+  const deleted = deleteMany(ids);
+  res.json({ deleted });
 });
 
 /* DELETE /api/sessions/:id — delete session */

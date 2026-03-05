@@ -30,13 +30,14 @@ function summarizeToolInput(_name: string, input?: Record<string, unknown>): str
 /* ─── Deduplicated events for display ──── */
 
 interface DisplayEvent {
-  type: 'thinking' | 'tool' | 'dispatch';
+  type: 'thinking' | 'tool' | 'dispatch' | 'dispatch:progress';
   text?: string;
   toolName?: string;
   toolSummary?: string;
   toolInput?: Record<string, unknown>;
   roleId?: string;
   task?: string;
+  progressType?: string;
 }
 
 function buildDisplayEvents(events: StreamEvent[]): DisplayEvent[] {
@@ -65,6 +66,34 @@ function buildDisplayEvents(events: StreamEvent[]): DisplayEvent[] {
         roleId: e.roleId,
         task: e.task,
       });
+    } else if (e.type === 'dispatch:progress') {
+      // Merge consecutive dispatch progress from same role
+      const lastDP = result.length > 0 ? result[result.length - 1] : null;
+      if (lastDP?.type === 'dispatch:progress' && lastDP.roleId === e.roleId) {
+        // Update existing
+        if (e.progressType === 'tool') {
+          lastDP.toolName = e.toolName;
+          lastDP.toolSummary = summarizeToolInput(e.toolName ?? '', e.toolInput);
+          lastDP.progressType = 'tool';
+        } else if (e.progressType === 'thinking') {
+          lastDP.text = e.text;
+          lastDP.progressType = 'thinking';
+        } else if (e.progressType === 'text') {
+          lastDP.text = e.text;
+          lastDP.progressType = 'text';
+        } else if (e.progressType === 'done' || e.progressType === 'error') {
+          lastDP.progressType = e.progressType;
+        }
+      } else {
+        result.push({
+          type: 'dispatch:progress',
+          roleId: e.roleId,
+          progressType: e.progressType,
+          text: e.text,
+          toolName: e.toolName,
+          toolSummary: e.toolName ? summarizeToolInput(e.toolName, e.toolInput) : undefined,
+        });
+      }
     }
     // Skip 'turn' — shown only in summary count
   }
@@ -143,6 +172,39 @@ function DisplayEventRow({ event, isStreaming }: { event: DisplayEvent; isStream
         </div>
       );
 
+    case 'dispatch:progress':
+      return (
+        <div className="stream-event-dispatch-progress">
+          <span className="stream-event-dispatch-progress-role">
+            {event.roleId?.toUpperCase()}
+          </span>
+          {event.progressType === 'thinking' && (
+            <span className="stream-event-dispatch-progress-status">
+              thinking{isStreaming ? '...' : ''}
+            </span>
+          )}
+          {event.progressType === 'tool' && (
+            <>
+              <span className="stream-event-tool-badge">{event.toolName}</span>
+              {event.toolSummary && (
+                <span className="stream-event-tool-path">{event.toolSummary}</span>
+              )}
+            </>
+          )}
+          {event.progressType === 'text' && event.text && (
+            <span className="stream-event-dispatch-progress-status">
+              responding...
+            </span>
+          )}
+          {event.progressType === 'done' && (
+            <span className="stream-event-dispatch-progress-done">done</span>
+          )}
+          {event.progressType === 'error' && (
+            <span className="stream-event-dispatch-progress-error">error</span>
+          )}
+        </div>
+      );
+
     default:
       return null;
   }
@@ -161,7 +223,7 @@ function ActivityLog({ events, isStreaming }: { events: StreamEvent[]; isStreami
   // Build summary
   const thinkingCount = events.filter((e) => e.type === 'thinking').length;
   const toolEvents = events.filter((e) => e.type === 'tool');
-  const dispatchEvents = events.filter((e) => e.type === 'dispatch');
+  const dispatchEvents = events.filter((e) => e.type === 'dispatch' || e.type === 'dispatch:progress');
   const maxTurn = events.filter((e) => e.type === 'turn').reduce((max, e) => Math.max(max, e.turn ?? 0), 0);
 
   const parts: string[] = [];

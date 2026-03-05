@@ -5,6 +5,7 @@ interface Props {
   active: boolean;
   onClick: () => void;
   onClose: (e: React.MouseEvent) => void;
+  'data-session-id'?: string;
 }
 
 const ROLE_ICONS: Record<string, string> = {
@@ -12,10 +13,11 @@ const ROLE_ICONS: Record<string, string> = {
   engineer: '\u{2699}\u{FE0F}', designer: '\u{1F3A8}', qa: '\u{1F50D}',
 };
 
-export default function SessionTab({ roleId, title, roleColor, active, onClick, onClose }: Props) {
+export default function SessionTab({ roleId, title, roleColor, active, onClick, onClose, 'data-session-id': sessionId }: Props) {
   return (
     <button
       onClick={onClick}
+      data-session-id={sessionId}
       className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] rounded-t-lg shrink-0 cursor-pointer transition-colors max-w-[180px] group ${
         active
           ? 'bg-[var(--terminal-bg)] text-[var(--terminal-text)]'

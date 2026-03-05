@@ -66,6 +66,13 @@ class JobManager {
   private jobs = new Map<string, Job>();
   private runner = createRunner();
   private nextId = 1;
+  private jobCreatedListeners = new Set<(job: Job) => void>();
+
+  /** Register a listener for new job creation. Returns unsubscribe function. */
+  onJobCreated(listener: (job: Job) => void): () => void {
+    this.jobCreatedListeners.add(listener);
+    return () => { this.jobCreatedListeners.delete(listener); };
+  }
 
   /** Start a new execution job. Returns the Job immediately (fire-and-forget). */
   startJob(params: StartJobParams): Job {
@@ -102,6 +109,14 @@ class JobManager {
 
     const model = params.model ?? orgTree.nodes.get(params.roleId)?.model;
 
+    // Build team status snapshot: which roles are currently busy
+    const teamStatus: Record<string, { status: string; task?: string }> = {};
+    for (const [, j] of this.jobs) {
+      if (j.status === 'running' && j.id !== jobId) {
+        teamStatus[j.roleId] = { status: 'working', task: j.task };
+      }
+    }
+
     const handle = this.runner.execute(
       {
         companyRoot: COMPANY_ROOT,
@@ -112,6 +127,7 @@ class JobManager {
         readOnly: params.readOnly,
         model,
         jobId,
+        teamStatus,
       },
       {
         onText: (text) => {
@@ -154,6 +170,11 @@ class JobManager {
     );
 
     job.abort = handle.abort;
+
+    // Notify listeners
+    for (const listener of this.jobCreatedListeners) {
+      try { listener(job); } catch { /* ignore */ }
+    }
 
     handle.promise
       .then((result: RunnerResult) => {

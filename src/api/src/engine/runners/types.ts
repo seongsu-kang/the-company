@@ -14,6 +14,8 @@ import type { OrgTree } from '../org-tree.js';
 
 /* ─── Config ──────────────────────────────────── */
 
+export type TeamStatus = Record<string, { status: string; task?: string }>;
+
 export interface RunnerConfig {
   companyRoot: string;
   roleId: string;
@@ -24,6 +26,7 @@ export interface RunnerConfig {
   maxTurns?: number;
   model?: string;
   jobId?: string;
+  teamStatus?: TeamStatus;
 }
 
 /* ─── Callbacks ───────────────────────────────── */

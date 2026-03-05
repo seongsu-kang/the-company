@@ -64,7 +64,7 @@ export interface Company {
 /* ─── Stream Event Types ───────────────── */
 
 export interface StreamEvent {
-  type: 'thinking' | 'tool' | 'dispatch' | 'turn';
+  type: 'thinking' | 'tool' | 'dispatch' | 'dispatch:progress' | 'turn';
   timestamp: number;
   text?: string;
   toolName?: string;
@@ -72,6 +72,7 @@ export interface StreamEvent {
   roleId?: string;
   task?: string;
   turn?: number;
+  progressType?: string; // 'text' | 'thinking' | 'tool' | 'done' | 'error'
 }
 
 /* ─── Terminal Session Types ─────────────── */

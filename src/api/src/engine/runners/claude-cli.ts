@@ -127,10 +127,10 @@ else:
  */
 export class ClaudeCliRunner implements ExecutionRunner {
   execute(config: RunnerConfig, callbacks: RunnerCallbacks): RunnerHandle {
-    const { companyRoot, roleId, task, sourceRole, orgTree, readOnly = false } = config;
+    const { companyRoot, roleId, task, sourceRole, orgTree, readOnly = false, teamStatus } = config;
 
     // 1. Context Assembly
-    const context = assembleContext(companyRoot, roleId, task, sourceRole, orgTree);
+    const context = assembleContext(companyRoot, roleId, task, sourceRole, orgTree, { teamStatus });
 
     // 2. System prompt를 임시 파일로 저장 (CLI arg 길이 제한 대비)
     const tmpDir = path.join(os.tmpdir(), 'the-company-engine');
@@ -138,16 +138,20 @@ export class ClaudeCliRunner implements ExecutionRunner {
     const promptFile = path.join(tmpDir, `ctx-${roleId}-${Date.now()}.md`);
     fs.writeFileSync(promptFile, context.systemPrompt);
 
-    // 3. readOnly면 시스템 프롬프트에 쓰기 금지 지시 추가
+    // 3. Dispatch Bridge 스크립트 생성 (하위 Role이 있는 경우)
+    // readOnly(talk mode)에서도 dispatch 허용 — 하위 Role에 "확인해봐" 같은 지시 가능
+    const subordinates = getSubordinates(orgTree, roleId);
+
+    // 4. readOnly면 시스템 프롬프트에 쓰기 금지 지시 추가
     let taskPrompt = task;
     if (readOnly) {
-      taskPrompt = `[READ-ONLY MODE: 파일 수정/생성 금지. 읽기와 분석만 수행]\n\n${task}`;
+      const dispatchNote = subordinates.length > 0
+        ? ' 단, 하위 Role에 대한 dispatch(python3 "$DISPATCH_CMD")는 가능합니다.'
+        : '';
+      taskPrompt = `[READ-ONLY MODE: 파일 수정/생성 금지. 읽기와 분석만 수행.${dispatchNote}]\n\n${task}`;
     }
-
-    // 4. Dispatch Bridge 스크립트 생성 (하위 Role이 있는 경우)
-    const subordinates = getSubordinates(orgTree, roleId);
     const dispatchScript = path.join(tmpDir, `dispatch-${roleId}-${Date.now()}.py`);
-    if (subordinates.length > 0 && !readOnly) {
+    if (subordinates.length > 0) {
       fs.writeFileSync(dispatchScript, DISPATCH_SCRIPT, { mode: 0o755 });
     }
 
@@ -227,10 +231,10 @@ export class ClaudeCliRunner implements ExecutionRunner {
                 // Detect dispatch calls via Bash (dispatch bridge)
                 if (name === 'Bash' && typeof input?.command === 'string') {
                   const cmd = input.command;
-                  const dispatchMatch = cmd.match(/dispatch(?:\.py)?\s+(\S+)\s+["'](.+?)["']/);
-                  if (dispatchMatch || cmd.includes('DISPATCH_CMD') || cmd.includes('dispatch')) {
-                    // Will fire onDispatch when we can parse the output
-                    // For now, mark as potential dispatch
+                  // Match: python3 "$DISPATCH_CMD" <roleId> "task" or dispatch <roleId> "task"
+                  const dispatchMatch = cmd.match(/(?:DISPATCH_CMD|dispatch(?:\.py)?)[^\n]*?\s+(\w+)\s+["'](.+?)["']/);
+                  if (dispatchMatch) {
+                    callbacks.onDispatch?.(dispatchMatch[1], dispatchMatch[2]);
                   }
                 }
               },

@@ -38,12 +38,15 @@ export interface AssembledContext {
  * 8. CEO Decisions (전사 공지 — Approved 결정만)
  * 9. Task
  */
+export type TeamStatus = Record<string, { status: string; task?: string }>;
+
 export function assembleContext(
   companyRoot: string,
   roleId: string,
   task: string,
   sourceRole: string,
   orgTree: OrgTree,
+  options?: { teamStatus?: TeamStatus },
 ): AssembledContext {
   const node = orgTree.nodes.get(roleId);
   if (!node) {
@@ -93,7 +96,7 @@ export function assembleContext(
 
   // Dispatch 도구 안내 (하위 Role이 있는 경우)
   if (subordinates.length > 0) {
-    sections.push(buildDispatchSection(orgTree, roleId, subordinates));
+    sections.push(buildDispatchSection(orgTree, roleId, subordinates, options?.teamStatus));
   }
 
   const systemPrompt = sections.join('\n\n---\n\n');
@@ -185,6 +188,10 @@ function buildKnowledgeSection(node: OrgNode): string {
   const reads = node.knowledge.reads.map((p) => `- \`${p}\``).join('\n');
   const writes = node.knowledge.writes.map((p) => `- \`${p}\``).join('\n');
 
+  const hasKnowledgeWrite = node.knowledge.writes.some((p) =>
+    p === '*' || p.startsWith('knowledge') || p === 'knowledge/*'
+  );
+
   return `# Knowledge Scope
 
 ## Readable Paths
@@ -193,7 +200,25 @@ ${reads || '- None'}
 ## Writable Paths
 ${writes || '- None'}
 
-Only access files within your knowledge scope. For information outside your scope, ask your manager.`;
+Only access files within your knowledge scope. For information outside your scope, ask your manager.${hasKnowledgeWrite ? `
+
+## Knowledge Base 문서 작성 규칙
+
+보고서, 분석 결과, 리서치 등 **공유 가치가 있는 문서**는 반드시 \`knowledge/\` 디렉토리에 작성하세요.
+
+\`\`\`yaml
+---
+title: "문서 제목"
+akb_type: node
+status: active
+tags: ["tag1", "tag2"]
+domain: tech|market|process|strategy|financial|competitor|general
+---
+\`\`\`
+
+- 파일 경로: \`knowledge/{category}/{filename}.md\`
+- 반드시 위 YAML frontmatter를 포함할 것
+- journal/에는 일지만, knowledge/에는 공유 문서를 작성` : ''}`;
 }
 
 function loadSkillMd(companyRoot: string, roleId: string): string | null {
@@ -270,10 +295,16 @@ function loadCeoDecisions(companyRoot: string): string | null {
   return `아래는 CEO가 승인한 전사 결정 사항입니다. 모든 Role은 이 결정을 인지하고 준수해야 합니다.\n\n${summaries.join('\n')}`;
 }
 
-function buildDispatchSection(orgTree: OrgTree, roleId: string, subordinates: string[]): string {
+function buildDispatchSection(orgTree: OrgTree, roleId: string, subordinates: string[], teamStatus?: TeamStatus): string {
   const subInfo = subordinates.map((id) => {
     const sub = orgTree.nodes.get(id);
-    return sub ? `- **${sub.name}** (\`${id}\`): ${sub.persona.split('\n')[0]}` : `- ${id}`;
+    const base = sub ? `- **${sub.name}** (\`${id}\`): ${sub.persona.split('\n')[0]}` : `- ${id}`;
+    const st = teamStatus?.[id];
+    if (st && st.status === 'working') {
+      const taskHint = st.task ? `: "${st.task.slice(0, 60)}"` : '';
+      return `${base} — **Working**${taskHint}`;
+    }
+    return `${base} — Idle`;
   }).join('\n');
 
   const exampleSubId = subordinates[0] ?? 'engineer';

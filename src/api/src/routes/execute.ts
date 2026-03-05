@@ -9,8 +9,8 @@ import {
   updateMessage,
   type Message,
 } from '../services/session-store.js';
-import { jobManager } from '../services/job-manager.js';
-import { ActivityStream, type ActivityEvent } from '../services/activity-stream.js';
+import { jobManager, type Job } from '../services/job-manager.js';
+import { ActivityStream, type ActivityEvent, type ActivitySubscriber } from '../services/activity-stream.js';
 
 /* ─── Shared Runner instance (for session messages that still use direct SSE) ── */
 
@@ -566,6 +566,63 @@ function handleSessionMessage(
   roleStatus.set(roleId, 'working');
   setActivity(roleId, content.slice(0, 80));
 
+  // Track child job subscriptions for cleanup
+  const childSubscriptions: Array<{ job: Job; subscriber: ActivitySubscriber }> = [];
+  const pendingDispatches = new Set<string>(); // roleIds we expect child jobs for
+
+  // Watch for child jobs created via dispatch bridge
+  const unwatchJobs = jobManager.onJobCreated((childJob) => {
+    // Only match jobs for roles we dispatched to from this session
+    if (childJob.type !== 'assign') return;
+    if (roleMsg.status !== 'streaming') return;
+    if (!pendingDispatches.has(childJob.roleId)) return;
+    pendingDispatches.delete(childJob.roleId);
+
+    const subscriber: ActivitySubscriber = (event) => {
+      switch (event.type) {
+        case 'text':
+          sendSSE(res, 'dispatch:progress', {
+            roleId: event.roleId,
+            type: 'text',
+            text: event.data.text,
+          });
+          break;
+        case 'thinking':
+          sendSSE(res, 'dispatch:progress', {
+            roleId: event.roleId,
+            type: 'thinking',
+            text: event.data.text,
+          });
+          break;
+        case 'tool:start':
+          sendSSE(res, 'dispatch:progress', {
+            roleId: event.roleId,
+            type: 'tool',
+            name: event.data.name,
+            input: event.data.input,
+          });
+          break;
+        case 'job:done':
+          sendSSE(res, 'dispatch:progress', {
+            roleId: event.roleId,
+            type: 'done',
+          });
+          childJob.stream.unsubscribe(subscriber);
+          break;
+        case 'job:error':
+          sendSSE(res, 'dispatch:progress', {
+            roleId: event.roleId,
+            type: 'error',
+            message: event.data.message,
+          });
+          childJob.stream.unsubscribe(subscriber);
+          break;
+      }
+    };
+    childJob.stream.subscribe(subscriber);
+    childSubscriptions.push({ job: childJob, subscriber });
+  });
+
   const handle = runner.execute(
     { companyRoot: COMPANY_ROOT, roleId, task: fullTask, sourceRole: 'ceo', orgTree, readOnly, model: orgTree.nodes.get(roleId)?.model },
     {
@@ -583,6 +640,7 @@ function handleSessionMessage(
       onDispatch: (subRoleId, subTask) => {
         roleStatus.set(subRoleId, 'working');
         setActivity(subRoleId, subTask);
+        pendingDispatches.add(subRoleId);
         sendSSE(res, 'dispatch', { roleId: subRoleId, task: subTask });
       },
       onTurnComplete: (turn) => {
@@ -594,8 +652,17 @@ function handleSessionMessage(
     },
   );
 
+  const cleanupChildSubscriptions = () => {
+    unwatchJobs();
+    for (const { job, subscriber } of childSubscriptions) {
+      job.stream.unsubscribe(subscriber);
+    }
+    childSubscriptions.length = 0;
+  };
+
   handle.promise
     .then((result: RunnerResult) => {
+      cleanupChildSubscriptions();
       updateMessage(sessionId, roleMsg.id, { content: roleMsg.content, status: 'done' });
       roleStatus.set(roleId, 'idle');
       completeActivity(roleId);
@@ -612,6 +679,7 @@ function handleSessionMessage(
       res.end();
     })
     .catch((err: Error) => {
+      cleanupChildSubscriptions();
       updateMessage(sessionId, roleMsg.id, { status: 'error' });
       roleStatus.set(roleId, 'idle');
       completeActivity(roleId);
@@ -620,6 +688,7 @@ function handleSessionMessage(
     });
 
   req.on('close', () => {
+    cleanupChildSubscriptions();
     if (roleMsg.status === 'streaming') {
       handle.abort();
       updateMessage(sessionId, roleMsg.id, { status: 'error' });
