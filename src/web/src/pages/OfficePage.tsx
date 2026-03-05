@@ -118,11 +118,14 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
 
   /* Knowledge import SSE */
   useEffect(() => {
-    if (!importJob || importStarted.current) return;
+    if (!importJob) return;
+    // Guard against double-fire in React strict mode
+    if (importStarted.current) return;
     importStarted.current = true;
 
     setImportBanner('Scanning knowledge sources...');
-    addImportLog('scan', 'Starting knowledge import...');
+    setImportLogs([{ id: 0, type: 'scan', text: 'Starting knowledge import...' }]);
+    logId.current = 1;
 
     const controller = new AbortController();
 
