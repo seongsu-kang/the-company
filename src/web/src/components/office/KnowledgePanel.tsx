@@ -36,9 +36,17 @@ interface GLink extends SimulationLinkDatum<GNode> {
   target: string | GNode;
 }
 
-/* ─── Graph View (d3-force + SVG) ──────────────────── */
+/* ─── Graph View (d3-force + SVG with zoom/pan/drag) ─ */
 
-function KnowledgeGraph({ docs, onNodeClick }: { docs: KnowledgeDoc[]; onNodeClick: (doc: KnowledgeDoc) => void }) {
+function KnowledgeGraph({
+  docs,
+  onNodeClick,
+  selectedDocId,
+}: {
+  docs: KnowledgeDoc[];
+  onNodeClick: (doc: KnowledgeDoc) => void;
+  selectedDocId?: string | null;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [dimensions, setDimensions] = useState({ width: 600, height: 400 });
@@ -46,13 +54,25 @@ function KnowledgeGraph({ docs, onNodeClick }: { docs: KnowledgeDoc[]; onNodeCli
   const [hoveredNode, setHoveredNode] = useState<GNode | null>(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
+  // Zoom/pan state
+  const [viewBox, setViewBox] = useState({ x: 0, y: 0, w: 600, h: 400 });
+  const isPanningRef = useRef(false);
+  const panStartRef = useRef({ x: 0, y: 0, vx: 0, vy: 0 });
+
+  // Drag state
+  const dragNodeRef = useRef<GNode | null>(null);
+  const simRef = useRef<ReturnType<typeof forceSimulation<GNode>> | null>(null);
+
   // Observe container size
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
       const { width, height } = entries[0].contentRect;
-      if (width > 0 && height > 0) setDimensions({ width, height });
+      if (width > 0 && height > 0) {
+        setDimensions({ width, height });
+        setViewBox((v) => ({ ...v, w: width, h: height }));
+      }
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -73,13 +93,11 @@ function KnowledgeGraph({ docs, onNodeClick }: { docs: KnowledgeDoc[]; onNodeCli
     const links: GLink[] = [];
     for (const doc of docs) {
       for (const link of doc.links) {
-        // Normalize: ./foo.md → foo.md, ../knowledge/foo.md → foo.md, full paths
         const targetId = link.href
-          .replace(/^.*knowledge\//, '')  // absolute or deep relative paths
-          .replace(/^\.\.\/.*$/, '')       // skip links outside knowledge/
-          .replace(/^\.\//, '');           // ./foo.md → foo.md
+          .replace(/^.*knowledge\//, '')
+          .replace(/^\.\.\/.*$/, '')
+          .replace(/^\.\//, '');
         if (idSet.has(targetId) && targetId !== doc.id) {
-          // Avoid duplicate edges
           if (!links.some((l) => (l.source === doc.id && l.target === targetId) || (l.source === targetId && l.target === doc.id))) {
             links.push({ source: doc.id, target: targetId });
           }
@@ -90,23 +108,24 @@ function KnowledgeGraph({ docs, onNodeClick }: { docs: KnowledgeDoc[]; onNodeCli
     const { width, height } = dimensions;
 
     const sim = forceSimulation<GNode>(nodes)
-      .force('link', forceLink<GNode, GLink>(links).id((d) => d.id).distance(100))
-      .force('charge', forceManyBody().strength(-300))
+      .force('link', forceLink<GNode, GLink>(links).id((d) => d.id).distance(140))
+      .force('charge', forceManyBody().strength(-400))
       .force('center', forceCenter(width / 2, height / 2))
-      .force('collide', forceCollide(30));
+      .force('collide', forceCollide(50));
+
+    simRef.current = sim;
 
     sim.on('tick', () => {
-      // Clamp to bounds
       for (const n of nodes) {
-        n.x = Math.max(40, Math.min(width - 40, n.x ?? width / 2));
-        n.y = Math.max(40, Math.min(height - 40, n.y ?? height / 2));
+        n.x = Math.max(60, Math.min(width - 60, n.x ?? width / 2));
+        n.y = Math.max(60, Math.min(height - 60, n.y ?? height / 2));
       }
       setGraphData({ nodes: [...nodes], links: [...links] });
     });
 
-    // Run 120 ticks quickly then stop
+    // Run ticks
     sim.alpha(1).restart();
-    for (let i = 0; i < 120; i++) sim.tick();
+    for (let i = 0; i < 150; i++) sim.tick();
     sim.stop();
     setGraphData({ nodes: [...nodes], links: [...links] });
 
@@ -121,16 +140,88 @@ function KnowledgeGraph({ docs, onNodeClick }: { docs: KnowledgeDoc[]; onNodeCli
     return { x: n.x ?? 0, y: n.y ?? 0 };
   };
 
+  // Zoom handler
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const factor = e.deltaY > 0 ? 1.1 : 0.9;
+    setViewBox((v) => {
+      const newW = Math.max(200, Math.min(dimensions.width * 3, v.w * factor));
+      const newH = Math.max(150, Math.min(dimensions.height * 3, v.h * factor));
+      // Zoom toward center
+      const dx = (newW - v.w) / 2;
+      const dy = (newH - v.h) / 2;
+      return { x: v.x - dx, y: v.y - dy, w: newW, h: newH };
+    });
+  }, [dimensions]);
+
+  // Pan handlers
+  const handleBgMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    isPanningRef.current = true;
+    panStartRef.current = { x: e.clientX, y: e.clientY, vx: viewBox.x, vy: viewBox.y };
+  }, [viewBox]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    // Drag node
+    if (dragNodeRef.current) {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      const scaleX = viewBox.w / rect.width;
+      const scaleY = viewBox.h / rect.height;
+      const nx = viewBox.x + (e.clientX - rect.left) * scaleX;
+      const ny = viewBox.y + (e.clientY - rect.top) * scaleY;
+      dragNodeRef.current.fx = nx;
+      dragNodeRef.current.fy = ny;
+      simRef.current?.alpha(0.3).restart();
+      return;
+    }
+
+    // Pan
+    if (isPanningRef.current) {
+      const dx = (e.clientX - panStartRef.current.x) * (viewBox.w / dimensions.width);
+      const dy = (e.clientY - panStartRef.current.y) * (viewBox.h / dimensions.height);
+      setViewBox((v) => ({ ...v, x: panStartRef.current.vx - dx, y: panStartRef.current.vy - dy }));
+    }
+  }, [viewBox, dimensions]);
+
+  const handleMouseUp = useCallback(() => {
+    isPanningRef.current = false;
+    if (dragNodeRef.current) {
+      dragNodeRef.current.fx = null;
+      dragNodeRef.current.fy = null;
+      dragNodeRef.current = null;
+    }
+  }, []);
+
+  // Node drag start
+  const handleNodeMouseDown = useCallback((e: React.MouseEvent, node: GNode) => {
+    e.stopPropagation();
+    dragNodeRef.current = node;
+    simRef.current?.alpha(0.3).restart();
+  }, []);
+
   return (
     <div ref={containerRef} className="relative flex-1 overflow-hidden" style={{ background: '#1e1e2e' }}>
-      <svg ref={svgRef} width={dimensions.width} height={dimensions.height} style={{ display: 'block' }}>
+      <svg
+        ref={svgRef}
+        width={dimensions.width}
+        height={dimensions.height}
+        viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
+        style={{ display: 'block', cursor: isPanningRef.current ? 'grabbing' : 'grab' }}
+        onWheel={handleWheel}
+        onMouseDown={handleBgMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+      >
         {/* Grid dots */}
         <defs>
           <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
             <circle cx="0" cy="0" r="0.5" fill="rgba(255,255,255,0.06)" />
           </pattern>
         </defs>
-        <rect width="100%" height="100%" fill="url(#grid)" />
+        <rect x={viewBox.x - 100} y={viewBox.y - 100} width={viewBox.w + 200} height={viewBox.h + 200} fill="url(#grid)" pointerEvents="none" />
 
         {/* Edges */}
         {graphData.links.map((link, i) => {
@@ -151,18 +242,22 @@ function KnowledgeGraph({ docs, onNodeClick }: { docs: KnowledgeDoc[]; onNodeCli
         {graphData.nodes.map((node) => {
           const color = DOMAIN_COLORS[node.category] ?? DOMAIN_COLORS.general;
           const isHub = node.akb_type === 'hub';
-          const size = isHub ? 16 : 10;
+          const size = isHub ? 24 : 16;
           const isHovered = hoveredNode?.id === node.id;
+          const isSelected = selectedDocId === node.id;
+          const scale = isHovered ? 1.2 : isSelected ? 1.15 : 1;
 
           return (
             <g
               key={node.id}
-              transform={`translate(${node.x ?? 0}, ${node.y ?? 0})`}
-              style={{ cursor: 'pointer' }}
-              onClick={() => {
+              transform={`translate(${node.x ?? 0}, ${node.y ?? 0}) scale(${scale})`}
+              style={{ cursor: 'pointer', transition: 'transform 0.15s ease' }}
+              onClick={(e) => {
+                e.stopPropagation();
                 const doc = docs.find((d) => d.id === node.id);
                 if (doc) onNodeClick(doc);
               }}
+              onMouseDown={(e) => handleNodeMouseDown(e, node)}
               onMouseEnter={(e) => {
                 setHoveredNode(node);
                 const rect = containerRef.current?.getBoundingClientRect();
@@ -170,35 +265,50 @@ function KnowledgeGraph({ docs, onNodeClick }: { docs: KnowledgeDoc[]; onNodeCli
               }}
               onMouseLeave={() => setHoveredNode(null)}
             >
+              {/* Glow for selected */}
+              {isSelected && (
+                <rect
+                  x={-size / 2 - 4}
+                  y={-size / 2 - 4}
+                  width={size + 8}
+                  height={size + 8}
+                  fill="none"
+                  stroke="#22c55e"
+                  strokeWidth={2}
+                  rx={isHub ? 5 : 2}
+                  opacity={0.6}
+                />
+              )}
               {/* Outer */}
               <rect
-                x={-size / 2 - (isHovered ? 2 : 0)}
-                y={-size / 2 - (isHovered ? 2 : 0)}
-                width={size + (isHovered ? 4 : 0)}
-                height={size + (isHovered ? 4 : 0)}
+                x={-size / 2}
+                y={-size / 2}
+                width={size}
+                height={size}
                 fill={color.border}
-                rx={isHub ? 3 : 1}
+                rx={isHub ? 4 : 2}
                 opacity={isHovered ? 1 : 0.9}
               />
               {/* Inner */}
               <rect
-                x={-size / 2 + 2}
-                y={-size / 2 + 2}
-                width={Math.max(0, size - 4)}
-                height={Math.max(0, size - 4)}
+                x={-size / 2 + 3}
+                y={-size / 2 + 3}
+                width={Math.max(0, size - 6)}
+                height={Math.max(0, size - 6)}
                 fill={color.bg}
-                rx={isHub ? 2 : 0}
+                rx={isHub ? 3 : 1}
               />
               {/* Label */}
               <text
-                y={size / 2 + 12}
+                y={size / 2 + 14}
                 textAnchor="middle"
-                fill="#94a3b8"
-                fontSize={9}
+                fill={isSelected ? '#e2e8f0' : '#94a3b8'}
+                fontSize={11}
                 fontFamily="monospace"
+                fontWeight={isSelected ? 'bold' : 'normal'}
                 style={{ pointerEvents: 'none' }}
               >
-                {node.title.length > 18 ? node.title.slice(0, 16) + '..' : node.title}
+                {node.title.length > 24 ? node.title.slice(0, 22) + '..' : node.title}
               </text>
             </g>
           );
@@ -206,11 +316,11 @@ function KnowledgeGraph({ docs, onNodeClick }: { docs: KnowledgeDoc[]; onNodeCli
       </svg>
 
       {/* Tooltip */}
-      {hoveredNode && (
+      {hoveredNode && !dragNodeRef.current && (
         <div
-          className="absolute z-10 pointer-events-none p-2.5 rounded text-xs max-w-[220px]"
+          className="absolute z-10 pointer-events-none p-2.5 rounded text-xs max-w-[240px]"
           style={{
-            left: Math.min(mousePos.x + 16, dimensions.width - 230),
+            left: Math.min(mousePos.x + 16, dimensions.width - 250),
             top: Math.max(mousePos.y - 30, 8),
             background: '#16213e',
             border: '1px solid #334155',
@@ -223,7 +333,7 @@ function KnowledgeGraph({ docs, onNodeClick }: { docs: KnowledgeDoc[]; onNodeCli
           {docs.find((d) => d.id === hoveredNode.id)?.tldr && (
             <div className="text-[10px] opacity-80 mb-1">{docs.find((d) => d.id === hoveredNode.id)!.tldr}</div>
           )}
-          <div className="text-[10px] text-green-400">Click to open</div>
+          <div className="text-[10px] text-green-400">Click to open | Drag to move</div>
         </div>
       )}
 
@@ -240,14 +350,21 @@ function KnowledgeGraph({ docs, onNodeClick }: { docs: KnowledgeDoc[]; onNodeCli
 
 function KnowledgeCard({
   doc,
+  allDocs,
   onOpen,
+  onNavigateDoc,
 }: {
   doc: KnowledgeDoc;
+  allDocs: KnowledgeDoc[];
   onOpen: (doc: KnowledgeDoc) => void;
+  onNavigateDoc: (docId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const color = getDomainColor(doc.category);
   const isHub = doc.akb_type === 'hub';
+
+  // Build a map for clickable cross-links
+  const docIdSet = new Set(allDocs.map((d) => d.id));
 
   return (
     <div
@@ -304,15 +421,32 @@ function KnowledgeCard({
             <div className="mt-2">
               <div className="text-[9px] font-bold text-gray-400 uppercase mb-1">Cross-links</div>
               <div className="flex flex-wrap gap-1">
-                {doc.links.slice(0, 5).map((link, i) => (
-                  <span
-                    key={i}
-                    className="px-1.5 py-0.5 text-[9px] rounded"
-                    style={{ background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0' }}
-                  >
-                    {'\u{1F517}'} {link.text}
-                  </span>
-                ))}
+                {doc.links.slice(0, 5).map((link, i) => {
+                  const targetId = link.href
+                    .replace(/^.*knowledge\//, '')
+                    .replace(/^\.\.\/.*$/, '')
+                    .replace(/^\.\//, '');
+                  const isClickable = docIdSet.has(targetId);
+                  return (
+                    <span
+                      key={i}
+                      className={`px-1.5 py-0.5 text-[9px] rounded ${isClickable ? 'cursor-pointer hover:opacity-70' : ''}`}
+                      style={{
+                        background: isClickable ? '#dcfce7' : '#f1f5f9',
+                        color: isClickable ? '#16a34a' : '#64748b',
+                        border: `1px solid ${isClickable ? '#86efac' : '#e2e8f0'}`,
+                      }}
+                      onClick={(e) => {
+                        if (isClickable) {
+                          e.stopPropagation();
+                          onNavigateDoc(targetId);
+                        }
+                      }}
+                    >
+                      {'\u{1F517}'} {link.text}
+                    </span>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -329,18 +463,60 @@ function KnowledgeCard({
   );
 }
 
-/* ─── Doc Detail View ────────────────────────────── */
+/* ─── Doc Detail View (view + edit) ─────────────── */
 
-function DocDetail({ docId, onBack }: { docId: string; onBack: () => void }) {
+function DocDetail({
+  docId,
+  onBack,
+  onDocUpdated,
+  onDelete,
+}: {
+  docId: string;
+  onBack: () => void;
+  onDocUpdated: () => void;
+  onDelete: (docId: string) => void;
+}) {
   const [detail, setDetail] = useState<KnowledgeDocDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [editContent, setEditContent] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    setLoading(true);
     api.getKnowledgeDoc(docId)
-      .then(setDetail)
+      .then((d) => {
+        setDetail(d);
+        setEditContent(d.content);
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [docId]);
+
+  const handleSave = async () => {
+    if (!detail) return;
+    setSaving(true);
+    try {
+      await api.updateKnowledgeDoc(docId, editContent);
+      setDetail({ ...detail, content: editContent });
+      setEditing(false);
+      onDocUpdated();
+    } catch (err) {
+      console.error('Save failed:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm(`Delete "${detail?.title}"?`)) return;
+    try {
+      await api.deleteKnowledgeDoc(docId);
+      onDelete(docId);
+    } catch (err) {
+      console.error('Delete failed:', err);
+    }
+  };
 
   if (loading) {
     return (
@@ -359,20 +535,187 @@ function DocDetail({ docId, onBack }: { docId: string; onBack: () => void }) {
   }
 
   return (
+    <div className="flex-1 overflow-y-auto flex flex-col">
+      {/* Toolbar */}
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--office-border)] shrink-0">
+        <button
+          onClick={onBack}
+          className="text-xs font-semibold cursor-pointer hover:opacity-70"
+          style={{ color: '#16a34a' }}
+        >
+          {'\u2190'} Back
+        </button>
+        <div className="flex-1" />
+        {editing ? (
+          <>
+            <button
+              onClick={() => { setEditing(false); setEditContent(detail.content); }}
+              className="px-2.5 py-1 text-[10px] rounded cursor-pointer"
+              style={{ background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0' }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="px-2.5 py-1 text-[10px] rounded cursor-pointer font-semibold text-white"
+              style={{ background: saving ? '#86efac' : '#16a34a' }}
+            >
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => setEditing(true)}
+              className="px-2.5 py-1 text-[10px] rounded cursor-pointer font-semibold"
+              style={{ background: '#dbeafe', color: '#1d4ed8', border: '1px solid #93c5fd' }}
+            >
+              Edit
+            </button>
+            <button
+              onClick={handleDelete}
+              className="px-2.5 py-1 text-[10px] rounded cursor-pointer font-semibold"
+              style={{ background: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5' }}
+            >
+              Delete
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-5">
+        <h2 className="text-sm font-bold text-gray-800 mb-1">{detail.title}</h2>
+        {detail.tldr && !editing && (
+          <div className="mb-3 text-xs text-gray-500 italic">{detail.tldr}</div>
+        )}
+
+        {editing ? (
+          <textarea
+            className="w-full h-full min-h-[400px] p-3 text-xs leading-relaxed rounded border resize-y"
+            style={{
+              fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace',
+              background: '#1e1e2e',
+              color: '#e2e8f0',
+              border: '1px solid #334155',
+            }}
+            value={editContent}
+            onChange={(e) => setEditContent(e.target.value)}
+            spellCheck={false}
+          />
+        ) : (
+          <div className="text-xs text-gray-700 leading-relaxed">
+            <OfficeMarkdown content={detail.content} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── New Doc Form ──────────────────────────────── */
+
+function NewDocForm({
+  onCreated,
+  onCancel,
+}: {
+  onCreated: (id: string) => void;
+  onCancel: () => void;
+}) {
+  const [title, setTitle] = useState('');
+  const [filename, setFilename] = useState('');
+  const [category, setCategory] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState('');
+
+  // Auto-generate filename from title
+  useEffect(() => {
+    if (!title) { setFilename(''); return; }
+    const auto = title
+      .toLowerCase()
+      .replace(/[^a-z0-9가-힣\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .slice(0, 60);
+    setFilename(auto);
+  }, [title]);
+
+  const handleCreate = async () => {
+    if (!title.trim() || !filename.trim()) {
+      setError('Title and filename are required');
+      return;
+    }
+    setCreating(true);
+    setError('');
+    try {
+      const result = await api.createKnowledgeDoc({ filename, title, category: category || undefined });
+      onCreated(result.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
     <div className="flex-1 overflow-y-auto p-5">
-      <button
-        onClick={onBack}
-        className="mb-3 text-xs font-semibold cursor-pointer hover:opacity-70 flex items-center gap-1"
-        style={{ color: '#16a34a' }}
-      >
-        {'\u2190'} Back to list
-      </button>
-      <h2 className="text-sm font-bold text-gray-800 mb-1">{detail.title}</h2>
-      {detail.tldr && (
-        <div className="mb-3 text-xs text-gray-500 italic">{detail.tldr}</div>
-      )}
-      <div className="text-xs text-gray-700 leading-relaxed">
-        <OfficeMarkdown content={detail.content} />
+      <div className="flex items-center gap-2 mb-4">
+        <button
+          onClick={onCancel}
+          className="text-xs font-semibold cursor-pointer hover:opacity-70"
+          style={{ color: '#16a34a' }}
+        >
+          {'\u2190'} Cancel
+        </button>
+        <h2 className="text-sm font-bold text-gray-800">New Document</h2>
+      </div>
+
+      <div className="space-y-3">
+        <div>
+          <label className="block text-[10px] font-semibold text-gray-500 mb-1">TITLE</label>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Document title..."
+            className="w-full px-3 py-2 text-xs rounded border border-gray-200 focus:outline-none focus:border-[#16a34a]"
+          />
+        </div>
+        <div>
+          <label className="block text-[10px] font-semibold text-gray-500 mb-1">FILENAME</label>
+          <div className="flex items-center gap-1">
+            <input
+              type="text"
+              value={filename}
+              onChange={(e) => setFilename(e.target.value)}
+              className="flex-1 px-3 py-2 text-xs rounded border border-gray-200 focus:outline-none focus:border-[#16a34a] font-mono"
+            />
+            <span className="text-[10px] text-gray-400">.md</span>
+          </div>
+        </div>
+        <div>
+          <label className="block text-[10px] font-semibold text-gray-500 mb-1">CATEGORY (optional)</label>
+          <input
+            type="text"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            placeholder="e.g., tech, market, strategy"
+            className="w-full px-3 py-2 text-xs rounded border border-gray-200 focus:outline-none focus:border-[#16a34a]"
+          />
+        </div>
+
+        {error && (
+          <div className="text-[10px] text-red-600 bg-red-50 px-3 py-1.5 rounded">{error}</div>
+        )}
+
+        <button
+          onClick={handleCreate}
+          disabled={creating || !title.trim()}
+          className="w-full py-2 text-xs font-semibold rounded cursor-pointer text-white"
+          style={{ background: creating ? '#86efac' : '#16a34a' }}
+        >
+          {creating ? 'Creating...' : 'Create Document'}
+        </button>
       </div>
     </div>
   );
@@ -425,21 +768,54 @@ function usePanelResize(terminalWidth: number) {
 interface Props {
   docs: KnowledgeDoc[];
   onClose: () => void;
+  onRefresh: () => void;
   terminalWidth?: number;
   initialDocId?: string;
 }
 
-export default function KnowledgePanel({ docs, onClose, terminalWidth = 0, initialDocId }: Props) {
+export default function KnowledgePanel({ docs, onClose, onRefresh, terminalWidth = 0, initialDocId }: Props) {
   const [view, setView] = useState<'list' | 'graph'>('list');
   const [category, setCategory] = useState<string>('all');
   const [openDocId, setOpenDocId] = useState<string | null>(initialDocId ?? null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showNewForm, setShowNewForm] = useState(false);
+  const [graphSelectedDocId, setGraphSelectedDocId] = useState<string | null>(null);
 
   const { panelRight, panelWidth, isResizing, handleResizeStart } = usePanelResize(terminalWidth);
 
   // Gather unique categories
   const categories = ['all', ...Array.from(new Set(docs.map((d) => d.category))).sort()];
 
-  const filtered = category === 'all' ? docs : docs.filter((d) => d.category === category);
+  // Filter by category and search
+  const filtered = docs.filter((d) => {
+    if (category !== 'all' && d.category !== category) return false;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      return (
+        d.title.toLowerCase().includes(q) ||
+        (d.tldr ?? '').toLowerCase().includes(q) ||
+        d.tags.some((t) => t.toLowerCase().includes(q))
+      );
+    }
+    return true;
+  });
+
+  const handleDocCreated = (id: string) => {
+    setShowNewForm(false);
+    onRefresh();
+    setOpenDocId(id);
+  };
+
+  const handleDocDeleted = (_docId: string) => {
+    setOpenDocId(null);
+    onRefresh();
+  };
+
+  const handleGraphNodeClick = (doc: KnowledgeDoc) => {
+    setGraphSelectedDocId(doc.id);
+  };
+
+  const selectedGraphDoc = graphSelectedDocId ? docs.find((d) => d.id === graphSelectedDocId) : null;
 
   return (
     <>
@@ -472,12 +848,31 @@ export default function KnowledgePanel({ docs, onClose, terminalWidth = 0, initi
 
         {/* View toggle */}
         <div className="flex border-b border-[var(--office-border)]">
-          <TabBtn label="List" active={view === 'list'} onClick={() => setView('list')} />
+          <TabBtn label="List" active={view === 'list'} onClick={() => { setView('list'); setGraphSelectedDocId(null); }} />
           <TabBtn label="Graph" active={view === 'graph'} onClick={() => setView('graph')} />
         </div>
 
-        {view === 'list' && !openDocId && (
+        {/* ─── LIST VIEW ─── */}
+        {view === 'list' && !openDocId && !showNewForm && (
           <>
+            {/* Search + New button */}
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--office-border)] shrink-0">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search docs..."
+                className="flex-1 px-2.5 py-1.5 text-[11px] rounded border border-gray-200 focus:outline-none focus:border-[#16a34a]"
+              />
+              <button
+                onClick={() => setShowNewForm(true)}
+                className="px-2.5 py-1.5 text-[10px] font-semibold rounded cursor-pointer text-white shrink-0"
+                style={{ background: '#16a34a' }}
+              >
+                + New
+              </button>
+            </div>
+
             {/* Category tabs */}
             <div className="flex overflow-x-auto border-b border-[var(--office-border)] shrink-0" style={{ scrollbarWidth: 'none' }}>
               {categories.map((cat) => (
@@ -498,26 +893,86 @@ export default function KnowledgePanel({ docs, onClose, terminalWidth = 0, initi
             {/* List */}
             <div className="flex-1 overflow-y-auto p-4">
               {filtered.length === 0 ? (
-                <div className="text-center text-xs text-gray-400 py-8">No documents in this category</div>
+                <div className="text-center text-xs text-gray-400 py-8">
+                  {searchQuery ? 'No matching documents' : 'No documents in this category'}
+                </div>
               ) : (
                 filtered.map((doc) => (
-                  <KnowledgeCard key={doc.id} doc={doc} onOpen={(d) => setOpenDocId(d.id)} />
+                  <KnowledgeCard
+                    key={doc.id}
+                    doc={doc}
+                    allDocs={docs}
+                    onOpen={(d) => setOpenDocId(d.id)}
+                    onNavigateDoc={(id) => setOpenDocId(id)}
+                  />
                 ))
               )}
             </div>
           </>
         )}
 
-        {view === 'list' && openDocId && (
-          <DocDetail docId={openDocId} onBack={() => setOpenDocId(null)} />
+        {/* ─── DOC DETAIL VIEW ─── */}
+        {view === 'list' && openDocId && !showNewForm && (
+          <DocDetail
+            docId={openDocId}
+            onBack={() => setOpenDocId(null)}
+            onDocUpdated={onRefresh}
+            onDelete={handleDocDeleted}
+          />
         )}
 
+        {/* ─── NEW DOC FORM ─── */}
+        {view === 'list' && showNewForm && (
+          <NewDocForm
+            onCreated={handleDocCreated}
+            onCancel={() => setShowNewForm(false)}
+          />
+        )}
+
+        {/* ─── GRAPH VIEW ─── */}
         {view === 'graph' && (
           <div className="flex-1 overflow-hidden flex flex-col">
-            <KnowledgeGraph
-              docs={docs}
-              onNodeClick={(doc) => { setView('list'); setOpenDocId(doc.id); }}
-            />
+            <div className="flex-1 flex overflow-hidden">
+              <KnowledgeGraph
+                docs={docs}
+                onNodeClick={handleGraphNodeClick}
+                selectedDocId={graphSelectedDocId}
+              />
+              {/* Graph detail sidebar */}
+              {selectedGraphDoc && (
+                <div
+                  className="shrink-0 overflow-y-auto border-l border-[var(--office-border)] p-3"
+                  style={{ width: 200, background: 'var(--wall)' }}
+                >
+                  <div className="text-[10px] font-bold text-gray-400 uppercase mb-1">Selected</div>
+                  <div className="text-xs font-bold text-gray-800 mb-1">{selectedGraphDoc.title}</div>
+                  <div
+                    className="w-2 h-2 rounded-full mb-2"
+                    style={{
+                      background: selectedGraphDoc.status === 'active' ? '#16a34a' : selectedGraphDoc.status === 'draft' ? '#f59e0b' : '#94a3b8',
+                    }}
+                  />
+                  {selectedGraphDoc.tldr && (
+                    <div className="text-[10px] text-gray-500 mb-2 leading-relaxed">{selectedGraphDoc.tldr}</div>
+                  )}
+                  {selectedGraphDoc.links.length > 0 && (
+                    <div className="mb-2">
+                      <div className="text-[9px] font-bold text-gray-400 mb-1">Links</div>
+                      {selectedGraphDoc.links.slice(0, 5).map((link, i) => (
+                        <div key={i} className="text-[9px] text-gray-500 mb-0.5 truncate">{'\u{1F517}'} {link.text}</div>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    className="w-full py-1.5 text-[10px] font-semibold rounded cursor-pointer text-white"
+                    style={{ background: '#16a34a' }}
+                    onClick={() => { setView('list'); setOpenDocId(selectedGraphDoc.id); setGraphSelectedDocId(null); }}
+                  >
+                    Open Document
+                  </button>
+                </div>
+              )}
+            </div>
             {/* Legend */}
             <div className="shrink-0 p-2 border-t border-[var(--office-border)]">
               <div className="flex flex-wrap gap-2">

@@ -92,4 +92,14 @@ export const api = {
   // Knowledge Base
   getKnowledge: () => get<KnowledgeDoc[]>('/knowledge'),
   getKnowledgeDoc: (id: string) => get<KnowledgeDocDetail>(`/knowledge/${id}`),
+  createKnowledgeDoc: (params: { filename: string; title: string; category?: string; content?: string }) =>
+    post<{ id: string; title: string }>('/knowledge', params),
+  updateKnowledgeDoc: (id: string, content: string) => {
+    return fetch(`${BASE}/knowledge/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    }).then(r => { if (!r.ok) throw new Error(`API error: ${r.status}`); return r.json(); });
+  },
+  deleteKnowledgeDoc: (id: string) => del<{ id: string; status: string }>(`/knowledge/${id}`),
 };

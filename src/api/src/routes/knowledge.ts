@@ -112,6 +112,128 @@ knowledgeRouter.get('/', (_req: Request, res: Response, next: NextFunction) => {
 
 /* ─── Single document endpoint ────────────────────── */
 
+/* ─── Create document endpoint ───────────────────── */
+
+knowledgeRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { filename, title, category, content } = req.body as {
+      filename?: string;
+      title?: string;
+      category?: string;
+      content?: string;
+    };
+
+    if (!filename || !title) {
+      res.status(400).json({ error: 'filename and title required' });
+      return;
+    }
+
+    // Sanitize filename
+    const safeName = filename.replace(/[^a-zA-Z0-9가-힣_\-. ]/g, '').replace(/\s+/g, '-');
+    const fullName = safeName.endsWith('.md') ? safeName : `${safeName}.md`;
+    const absPath = path.join(knowledgeDir, fullName);
+
+    if (!absPath.startsWith(knowledgeDir)) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
+
+    if (fs.existsSync(absPath)) {
+      res.status(409).json({ error: 'Document already exists' });
+      return;
+    }
+
+    // Build file with frontmatter
+    const frontmatter = {
+      title,
+      status: 'draft',
+      akb_type: 'node',
+      tags: category ? [category] : [],
+    };
+
+    const fileContent = matter.stringify(content || `# ${title}\n`, frontmatter);
+    fs.mkdirSync(path.dirname(absPath), { recursive: true });
+    fs.writeFileSync(absPath, fileContent);
+
+    res.status(201).json({ id: fullName, title });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* ─── Update document endpoint ───────────────────── */
+
+knowledgeRouter.put('/{*path}', (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const rawPath = (req.params as Record<string, unknown>).path;
+    const docId = Array.isArray(rawPath) ? rawPath.join('/') : String(rawPath ?? '');
+    if (!docId) {
+      res.status(400).json({ error: 'Document ID required' });
+      return;
+    }
+
+    const absPath = path.join(knowledgeDir, docId);
+    if (!absPath.startsWith(knowledgeDir)) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
+
+    if (!fs.existsSync(absPath)) {
+      res.status(404).json({ error: `Document not found: ${docId}` });
+      return;
+    }
+
+    const { content } = req.body as { content?: string };
+    if (content === undefined) {
+      res.status(400).json({ error: 'content required' });
+      return;
+    }
+
+    // Read existing frontmatter
+    const raw = fs.readFileSync(absPath, 'utf-8');
+    const { data } = matter(raw);
+
+    // Preserve frontmatter, update content
+    const updated = matter.stringify(content, data);
+    fs.writeFileSync(absPath, updated);
+
+    res.json({ id: docId, status: 'updated' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* ─── Delete document endpoint ───────────────────── */
+
+knowledgeRouter.delete('/{*path}', (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const rawPath = (req.params as Record<string, unknown>).path;
+    const docId = Array.isArray(rawPath) ? rawPath.join('/') : String(rawPath ?? '');
+    if (!docId) {
+      res.status(400).json({ error: 'Document ID required' });
+      return;
+    }
+
+    const absPath = path.join(knowledgeDir, docId);
+    if (!absPath.startsWith(knowledgeDir)) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
+
+    if (!fs.existsSync(absPath)) {
+      res.status(404).json({ error: `Document not found: ${docId}` });
+      return;
+    }
+
+    fs.unlinkSync(absPath);
+    res.json({ id: docId, status: 'deleted' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* ─── Single document endpoint ────────────────────── */
+
 knowledgeRouter.get('/{*path}', (req: Request, res: Response, next: NextFunction) => {
   try {
     const rawPath = (req.params as Record<string, unknown>).path;

@@ -1097,6 +1097,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
         <KnowledgePanel
           docs={knowledgeDocs}
           onClose={closePanel}
+          onRefresh={() => api.getKnowledge().then(setKnowledgeDocs).catch(() => {})}
           terminalWidth={terminalOpen ? terminalWidth : 0}
           initialDocId={panel.docId}
         />
