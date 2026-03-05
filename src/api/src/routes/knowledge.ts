@@ -65,7 +65,7 @@ knowledgeRouter.get('/', (_req: Request, res: Response, next: NextFunction) => {
       return;
     }
 
-    const files = glob.sync('**/*.md', { cwd: knowledgeDir })
+    const files = glob.sync('**/*.{md,html}', { cwd: knowledgeDir })
       .filter((f) => f !== 'knowledge.md')
       .sort();
 
@@ -73,6 +73,27 @@ knowledgeRouter.get('/', (_req: Request, res: Response, next: NextFunction) => {
       const absPath = path.join(knowledgeDir, f);
       let raw = '';
       try { raw = fs.readFileSync(absPath, 'utf-8'); } catch { return null; }
+
+      const isHtml = f.endsWith('.html');
+      const format: 'md' | 'html' = isHtml ? 'html' : 'md';
+
+      if (isHtml) {
+        // HTML files: extract <title>, no frontmatter
+        const titleMatch = raw.match(/<title>([^<]+)<\/title>/i);
+        const title = titleMatch ? titleMatch[1].trim() : path.basename(f, '.html');
+        const category = inferCategory(f, []);
+        return {
+          id: f.replace(/\\/g, '/'),
+          title,
+          akb_type: 'node' as const,
+          status: 'active' as const,
+          tags: [] as string[],
+          category,
+          tldr: '',
+          links: [] as { text: string; href: string }[],
+          format,
+        };
+      }
 
       const { data, content } = matter(raw);
 
@@ -101,6 +122,7 @@ knowledgeRouter.get('/', (_req: Request, res: Response, next: NextFunction) => {
         category,
         tldr,
         links,
+        format,
       };
     }).filter(Boolean);
 
@@ -257,6 +279,28 @@ knowledgeRouter.get('/{*path}', (req: Request, res: Response, next: NextFunction
     }
 
     const raw = fs.readFileSync(absPath, 'utf-8');
+    const isHtml = docId.endsWith('.html');
+    const format: 'md' | 'html' = isHtml ? 'html' : 'md';
+
+    if (isHtml) {
+      const titleMatch = raw.match(/<title>([^<]+)<\/title>/i);
+      const title = titleMatch ? titleMatch[1].trim() : path.basename(docId, '.html');
+      const category = inferCategory(docId, []);
+      res.json({
+        id: docId,
+        title,
+        akb_type: 'node',
+        status: 'active',
+        tags: [],
+        category,
+        tldr: '',
+        links: [],
+        content: raw,
+        format,
+      });
+      return;
+    }
+
     const { data, content } = matter(raw);
 
     const tags: string[] = Array.isArray(data.tags) ? data.tags : [];
@@ -284,6 +328,7 @@ knowledgeRouter.get('/{*path}', (req: Request, res: Response, next: NextFunction
       tldr,
       links,
       content,
+      format,
     });
   } catch (err) {
     next(err);

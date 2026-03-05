@@ -237,6 +237,7 @@ export interface KnowledgeDoc {
   category: string;
   tldr: string;
   links: { text: string; href: string }[];
+  format?: 'md' | 'html';
 }
 
 export interface KnowledgeDocDetail extends KnowledgeDoc {

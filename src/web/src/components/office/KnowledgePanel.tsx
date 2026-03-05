@@ -34,6 +34,7 @@ interface GNode extends SimulationNodeDatum {
 interface GLink extends SimulationLinkDatum<GNode> {
   source: string | GNode;
   target: string | GNode;
+  label?: string;
 }
 
 /* ─── Graph View (d3-force + SVG with zoom/pan/drag) ─ */
@@ -52,6 +53,7 @@ function KnowledgeGraph({
   const [dimensions, setDimensions] = useState({ width: 600, height: 400 });
   const [graphData, setGraphData] = useState<{ nodes: GNode[]; links: GLink[] }>({ nodes: [], links: [] });
   const [hoveredNode, setHoveredNode] = useState<GNode | null>(null);
+  const [hoveredEdgeIdx, setHoveredEdgeIdx] = useState<number | null>(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   // Zoom/pan state
@@ -99,7 +101,7 @@ function KnowledgeGraph({
           .replace(/^\.\//, '');
         if (idSet.has(targetId) && targetId !== doc.id) {
           if (!links.some((l) => (l.source === doc.id && l.target === targetId) || (l.source === targetId && l.target === doc.id))) {
-            links.push({ source: doc.id, target: targetId });
+            links.push({ source: doc.id, target: targetId, label: link.text });
           }
         }
       }
@@ -227,14 +229,43 @@ function KnowledgeGraph({
         {graphData.links.map((link, i) => {
           const s = getNodePos(link.source);
           const t = getNodePos(link.target);
+          const isEdgeHovered = hoveredEdgeIdx === i;
+          const mx = (s.x + t.x) / 2;
+          const my = (s.y + t.y) / 2;
           return (
-            <line
-              key={i}
-              x1={s.x} y1={s.y} x2={t.x} y2={t.y}
-              stroke="rgba(148,163,184,0.3)"
-              strokeWidth={1.5}
-              strokeDasharray="4 3"
-            />
+            <g key={i}>
+              {/* Invisible wider hit area for hover */}
+              <line
+                x1={s.x} y1={s.y} x2={t.x} y2={t.y}
+                stroke="transparent"
+                strokeWidth={12}
+                style={{ cursor: 'default' }}
+                onMouseEnter={() => setHoveredEdgeIdx(i)}
+                onMouseLeave={() => setHoveredEdgeIdx(null)}
+              />
+              <line
+                x1={s.x} y1={s.y} x2={t.x} y2={t.y}
+                stroke={isEdgeHovered ? 'rgba(148,163,184,0.7)' : 'rgba(148,163,184,0.3)'}
+                strokeWidth={isEdgeHovered ? 2 : 1.5}
+                strokeDasharray="4 3"
+                pointerEvents="none"
+              />
+              {isEdgeHovered && link.label && (
+                <text
+                  x={mx}
+                  y={my - 6}
+                  textAnchor="middle"
+                  fill="#e2e8f0"
+                  fontSize={9}
+                  fontFamily="monospace"
+                  style={{ pointerEvents: 'none' }}
+                >
+                  <tspan style={{ filter: 'drop-shadow(0 0 2px rgba(0,0,0,0.8))' }}>
+                    {link.label.length > 30 ? link.label.slice(0, 28) + '..' : link.label}
+                  </tspan>
+                </text>
+              )}
+            </g>
           );
         })}
 
@@ -379,7 +410,7 @@ function KnowledgeCard({
         onClick={() => setExpanded(!expanded)}
       >
         <div className="flex items-start gap-2">
-          <span className="shrink-0 text-sm">{isHub ? '\u{1F5C2}' : '\u{1F4C4}'}</span>
+          <span className="shrink-0 text-sm">{isHub ? '\u{1F5C2}' : doc.format === 'html' ? '\u{1F310}' : '\u{1F4C4}'}</span>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1 flex-wrap">
               <span className="font-semibold text-xs text-gray-800 truncate">{doc.title}</span>
@@ -591,7 +622,30 @@ function DocDetail({
           <div className="mb-3 text-xs text-gray-500 italic">{detail.tldr}</div>
         )}
 
-        {editing ? (
+        {detail.format === 'html' ? (
+          editing ? (
+            <textarea
+              className="w-full h-full min-h-[400px] p-3 text-xs leading-relaxed rounded border resize-y"
+              style={{
+                fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace',
+                background: '#1e1e2e',
+                color: '#e2e8f0',
+                border: '1px solid #334155',
+              }}
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              spellCheck={false}
+            />
+          ) : (
+            <iframe
+              srcDoc={detail.content}
+              sandbox="allow-same-origin"
+              className="w-full flex-1 min-h-[400px] rounded border border-gray-200 bg-white"
+              style={{ border: '1px solid #e2e8f0' }}
+              title={detail.title}
+            />
+          )
+        ) : editing ? (
           <textarea
             className="w-full h-full min-h-[400px] p-3 text-xs leading-relaxed rounded border resize-y"
             style={{
