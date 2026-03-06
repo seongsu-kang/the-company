@@ -22,6 +22,7 @@ interface Props {
   onCreateSessionSilent: (roleId: string) => void;
   onSendMessage: (sessionId: string, content: string, mode: 'talk' | 'do') => void;
   onFocusTerminal: (roleId: string) => void;
+  onCustomize?: (roleId: string) => void;
 }
 
 const ROLE_ICONS: Record<string, string> = {
@@ -52,7 +53,7 @@ const fmtElapsed = (seconds: number) => `${Math.floor(seconds / 60)}:${String(se
 export default function SidePanel({
   role, allRoles, recentActivity, onClose, onFireRole, terminalWidth = 0,
   activeJobId, activeTask, isWorking, jobStartedAt, onStopJob,
-  sessions, streamingSessionId, onCreateSessionSilent, onSendMessage, onFocusTerminal,
+  sessions, streamingSessionId, onCreateSessionSilent, onSendMessage, onFocusTerminal, onCustomize,
 }: Props) {
   const [panelW, setPanelW] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
@@ -179,10 +180,10 @@ export default function SidePanel({
     return (
       <>
         <div className="dimmer fixed top-0 left-0 bottom-0 bg-black/30 z-40 open" style={{ right: panelRight }} onClick={onClose} />
-        <div className="side-panel open fixed top-0 h-full z-50 flex items-center justify-center bg-[var(--wall)] border-l-[3px] border-gray-400"
-          style={{ right: panelRight, width: panelWidth }}
+        <div className="side-panel open fixed top-0 h-full z-50 flex items-center justify-center border-l-[3px]"
+          style={{ right: panelRight, width: panelWidth, background: 'var(--terminal-bg)', borderLeftColor: 'var(--pixel-border)' }}
         >
-          <div className="text-gray-400 text-sm">Loading role...</div>
+          <div className="text-sm" style={{ color: 'var(--terminal-text-muted)' }}>Loading role...</div>
         </div>
       </>
     );
@@ -198,23 +199,34 @@ export default function SidePanel({
     <>
       <div className="dimmer fixed top-0 left-0 bottom-0 bg-black/30 z-40 open" style={{ right: panelRight }} onClick={onClose} />
 
-      <div className={`side-panel open fixed top-0 h-full z-50 flex flex-col bg-[var(--wall)] border-l-[3px] shadow-[-4px_0_20px_rgba(0,0,0,0.2)] ${isResizing ? 'resizing' : ''}`}
-        style={{ borderLeftColor: color, right: panelRight, width: panelWidth }}
+      <div className={`side-panel open fixed top-0 h-full z-50 flex flex-col border-l-[3px] shadow-[-4px_0_20px_rgba(0,0,0,0.4)] ${isResizing ? 'resizing' : ''}`}
+        style={{ borderLeftColor: color, right: panelRight, width: panelWidth, background: 'var(--terminal-bg)' }}
       >
         {/* Resize handle */}
         <div
-          className={`absolute top-0 -left-[5px] w-[10px] h-full cursor-col-resize z-[60] transition-colors ${isResizing ? 'bg-black/10' : 'hover:bg-black/5'}`}
+          className={`absolute top-0 -left-[5px] w-[10px] h-full cursor-col-resize z-[60] transition-colors ${isResizing ? 'bg-white/10' : 'hover:bg-white/5'}`}
           onMouseDown={handleResizeStart}
         />
 
         {/* Header */}
         <div className="p-4 text-white relative shrink-0" style={{ background: `linear-gradient(135deg, ${color}, ${color}dd)` }}>
-          <button
-            onClick={onClose}
-            className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 text-white flex items-center justify-center text-lg hover:bg-white/30 cursor-pointer"
-          >
-            ×
-          </button>
+          <div className="absolute top-3 right-3 flex items-center gap-1.5">
+            {onCustomize && (
+              <button
+                onClick={() => onCustomize(role.id)}
+                className="w-7 h-7 rounded-full bg-white/20 text-white flex items-center justify-center text-sm hover:bg-white/30 cursor-pointer"
+                title="Customize"
+              >
+                {'\u{1F3A8}'}
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="w-7 h-7 rounded-full bg-white/20 text-white flex items-center justify-center text-lg hover:bg-white/30 cursor-pointer"
+            >
+              ×
+            </button>
+          </div>
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center text-2xl">
               {icon}
@@ -238,25 +250,27 @@ export default function SidePanel({
 
           {/* ─── STATUS (working) ─── */}
           {isWorking && (
-            <div className="px-4 py-3 border-b border-[var(--office-border)] bg-amber-50/50 shrink-0">
+            <div className="px-4 py-3 shrink-0" style={{ borderBottom: '1px solid var(--terminal-border)', background: 'var(--hud-bg-alt)' }}>
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
-                  <span className="text-xs font-semibold text-amber-800">
+                  <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--idle-amber)' }} />
+                  <span className="text-xs font-semibold" style={{ color: 'var(--idle-amber)' }}>
                     Working{elapsed > 0 ? ` · ${fmtElapsed(elapsed)}` : ''}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => onFocusTerminal(role.id)}
-                    className="text-[10px] text-gray-400 hover:text-gray-600 cursor-pointer"
+                    className="text-[10px] cursor-pointer hover:underline"
+                    style={{ color: 'var(--terminal-text-muted)' }}
                   >
                     Open chat ↗
                   </button>
                   {activeJobId && onStopJob && (
                     <button
                       onClick={() => onStopJob(activeJobId)}
-                      className="text-[10px] px-2 py-0.5 rounded bg-red-100 text-red-600 hover:bg-red-200 cursor-pointer font-semibold transition-colors"
+                      className="text-[10px] px-2 py-0.5 rounded cursor-pointer font-semibold transition-colors"
+                      style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}
                     >
                       Stop
                     </button>
@@ -264,66 +278,68 @@ export default function SidePanel({
                 </div>
               </div>
               {effectiveTask && (
-                <div className="text-xs text-amber-700 truncate">{effectiveTask}</div>
+                <div className="text-xs truncate" style={{ color: 'var(--terminal-text-secondary)' }}>{effectiveTask}</div>
               )}
             </div>
           )}
 
           {/* ─── ACTIVITY COMPACT (working) ─── */}
           {isWorking && activeJobId && activitySummary && (
-            <div className="px-4 py-2.5 border-b border-[var(--office-border)] shrink-0">
+            <div className="px-4 py-2.5 shrink-0" style={{ borderBottom: '1px solid var(--terminal-border)' }}>
               <div className="flex items-center justify-between mb-1.5">
-                <div className="text-[11px] font-bold text-[var(--desk-dark)] uppercase tracking-wider">Activity</div>
+                <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--terminal-text-secondary)' }}>Activity</div>
                 <button
                   onClick={() => onFocusTerminal(role.id)}
-                  className="text-[10px] text-gray-400 hover:text-gray-600 cursor-pointer"
+                  className="text-[10px] cursor-pointer hover:underline"
+                  style={{ color: 'var(--terminal-text-muted)' }}
                 >
                   View details ↗
                 </button>
               </div>
               <div className="flex items-center gap-1.5 flex-wrap">
                 {activitySummary.thinkCount > 0 && (
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-purple-100 text-purple-600">
-                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px]" style={{ background: 'rgba(168,85,247,0.15)', color: '#c084fc' }}>
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#a855f7' }} />
                     thinking ×{activitySummary.thinkCount}
                   </span>
                 )}
                 {activitySummary.tools.map(t => (
-                  <span key={t} className="px-1.5 py-0.5 rounded text-[10px] bg-blue-100 text-blue-600">
+                  <span key={t} className="px-1.5 py-0.5 rounded text-[10px]" style={{ background: 'rgba(59,130,246,0.15)', color: '#60a5fa' }}>
                     {t}
                   </span>
                 ))}
                 {activitySummary.dispatchCount > 0 && (
-                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-orange-100 text-orange-600">
+                  <span className="px-1.5 py-0.5 rounded text-[10px]" style={{ background: 'rgba(249,115,22,0.15)', color: '#fb923c' }}>
                     dispatch ×{activitySummary.dispatchCount}
                   </span>
                 )}
                 {activitySummary.textCount > 0 && (
-                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-green-100 text-green-600">
+                  <span className="px-1.5 py-0.5 rounded text-[10px]" style={{ background: 'rgba(34,197,94,0.15)', color: '#4ade80' }}>
                     output ×{activitySummary.textCount}
                   </span>
                 )}
                 {(activityStatus === 'streaming' || activityStatus === 'connecting') && (
-                  <span className="inline-block w-1.5 h-3 bg-green-400 animate-pulse rounded-sm" />
+                  <span className="inline-block w-1.5 h-3 animate-pulse rounded-sm" style={{ background: 'var(--active-green)' }} />
                 )}
               </div>
-              <div className="text-[10px] text-gray-400 mt-1">{activitySummary.total} events</div>
+              <div className="text-[10px] mt-1" style={{ color: 'var(--terminal-text-muted)' }}>{activitySummary.total} events</div>
             </div>
           )}
 
           {/* ─── LAST MESSAGE PREVIEW (working, has session) ─── */}
           {isWorking && lastRoleMessage && (
-            <div className="px-4 py-2.5 border-b border-[var(--office-border)] shrink-0">
+            <div className="px-4 py-2.5 shrink-0" style={{ borderBottom: '1px solid var(--terminal-border)' }}>
               <div className="flex items-center justify-between mb-1.5">
-                <div className="text-[11px] font-bold text-[var(--desk-dark)] uppercase tracking-wider">Last Message</div>
+                <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--terminal-text-secondary)' }}>Last Message</div>
                 <button
                   onClick={() => onFocusTerminal(role.id)}
-                  className="text-[10px] text-gray-400 hover:text-gray-600 cursor-pointer"
+                  className="text-[10px] cursor-pointer hover:underline"
+                  style={{ color: 'var(--terminal-text-muted)' }}
                 >
                   Open chat ↗
                 </button>
               </div>
-              <div className="bg-gray-50 rounded-lg p-2.5 border border-gray-200 text-xs text-gray-600 leading-relaxed line-clamp-3 overflow-hidden">
+              <div className="rounded-lg p-2.5 text-xs leading-relaxed line-clamp-3 overflow-hidden" style={{ background: 'var(--hud-bg-alt)', border: '1px solid var(--terminal-border)', color: 'var(--terminal-text-secondary)' }}>
                 {lastRoleMessage.slice(0, 200)}
                 {lastRoleMessage.length > 200 && '...'}
               </div>
@@ -332,7 +348,7 @@ export default function SidePanel({
 
           {/* ─── QUICK INPUT (working) ─── */}
           {isWorking && (
-            <div className="px-4 py-2.5 border-b border-[var(--office-border)] shrink-0">
+            <div className="px-4 py-2.5 shrink-0" style={{ borderBottom: '1px solid var(--terminal-border)' }}>
               <MiniInputBar
                 onSend={handleInlineSend}
                 disabled={!!isStreaming}
@@ -345,7 +361,7 @@ export default function SidePanel({
           {/* ─── SPEECH BUBBLE (idle) ─── */}
           {!isWorking && (
             <div className="px-4 pt-4 pb-2">
-              <div className="text-[11px] font-bold text-[var(--desk-dark)] uppercase tracking-wider mb-2">Latest</div>
+              <div className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--terminal-text-secondary)' }}>Latest</div>
               <SpeechBubble
                 icon={icon}
                 roleId={role.id}
@@ -358,19 +374,20 @@ export default function SidePanel({
 
           {/* ─── INLINE INPUT (idle) ─── */}
           {!isWorking && (
-            <div className="px-4 py-3 border-b border-[var(--office-border)]">
-              <div className="bg-gray-50 rounded-xl overflow-hidden border border-gray-200">
+            <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--terminal-border)' }}>
+              <div className="rounded-xl overflow-hidden" style={{ background: 'var(--hud-bg-alt)', border: '1px solid var(--terminal-border)' }}>
                 {/* Last message preview (idle, has prior conversation) */}
                 {lastRoleMessage && (
                   <div
-                    className="px-3 pt-2.5 pb-2 border-b border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors"
+                    className="px-3 pt-2.5 pb-2 cursor-pointer transition-colors"
+                    style={{ borderBottom: '1px solid var(--terminal-border)' }}
                     onClick={() => onFocusTerminal(role.id)}
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Last response</span>
-                      <span className="text-[10px] text-gray-400">View ↗</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--terminal-text-muted)' }}>Last response</span>
+                      <span className="text-[10px]" style={{ color: 'var(--terminal-text-muted)' }}>View ↗</span>
                     </div>
-                    <div className="text-xs text-gray-500 leading-relaxed line-clamp-2 overflow-hidden">
+                    <div className="text-xs leading-relaxed line-clamp-2 overflow-hidden" style={{ color: 'var(--terminal-text-secondary)' }}>
                       {lastRoleMessage.slice(0, 150)}
                       {lastRoleMessage.length > 150 && '...'}
                     </div>
@@ -378,24 +395,24 @@ export default function SidePanel({
                 )}
                 <div className="p-2">
                   <div className="flex items-center gap-2">
-                    <div className="flex rounded-lg overflow-hidden border border-gray-300 shrink-0">
+                    <div className="flex rounded-lg overflow-hidden shrink-0" style={{ border: '1px solid var(--pixel-border)' }}>
                       <button
                         onClick={() => setIdleMode('talk')}
-                        className={`px-2 py-1 text-[10px] font-semibold cursor-pointer transition-colors ${
-                          idleMode === 'talk'
-                            ? 'bg-[var(--desk-wood)] text-white'
-                            : 'bg-white text-gray-500 hover:text-gray-700'
-                        }`}
+                        className="px-2 py-1 text-[10px] font-semibold cursor-pointer transition-colors"
+                        style={{
+                          background: idleMode === 'talk' ? 'var(--accent)' : 'transparent',
+                          color: idleMode === 'talk' ? '#fff' : 'var(--terminal-text-secondary)',
+                        }}
                       >
                         Talk
                       </button>
                       <button
                         onClick={() => setIdleMode('do')}
-                        className={`px-2 py-1 text-[10px] font-semibold cursor-pointer transition-colors ${
-                          idleMode === 'do'
-                            ? 'bg-amber-700 text-white'
-                            : 'bg-white text-gray-500 hover:text-gray-700'
-                        }`}
+                        className="px-2 py-1 text-[10px] font-semibold cursor-pointer transition-colors"
+                        style={{
+                          background: idleMode === 'do' ? 'var(--idle-amber)' : 'transparent',
+                          color: idleMode === 'do' ? '#fff' : 'var(--terminal-text-secondary)',
+                        }}
                       >
                         Do
                       </button>
@@ -417,7 +434,7 @@ export default function SidePanel({
             {/* Profile */}
             <CollapsibleSection title={`Profile${role.persona ? '' : ' (empty)'}`} open={showProfile} onToggle={() => setShowProfile(v => !v)}>
               {role.persona && (
-                <div className="text-xs text-gray-600 leading-relaxed bg-white/50 rounded-lg p-3 border border-[var(--office-border)]">
+                <div className="text-xs leading-relaxed rounded-lg p-3" style={{ background: 'var(--hud-bg-alt)', border: '1px solid var(--terminal-border)', color: 'var(--terminal-text-secondary)' }}>
                   {role.persona}
                 </div>
               )}
@@ -428,17 +445,17 @@ export default function SidePanel({
               </div>
               {reports.length > 0 && (
                 <div className="mt-3">
-                  <div className="text-[11px] text-gray-500 font-semibold mb-1">Direct Reports</div>
+                  <div className="text-[11px] font-semibold mb-1" style={{ color: 'var(--terminal-text-muted)' }}>Direct Reports</div>
                   <div className="space-y-1">
                     {reports.map((r) => (
-                      <div key={r.id} className="flex items-center gap-2 p-1.5 bg-white rounded-lg">
+                      <div key={r.id} className="flex items-center gap-2 p-1.5 rounded-lg" style={{ background: 'var(--hud-bg-alt)' }}>
                         <div
                           className="w-6 h-6 rounded flex items-center justify-center text-white text-[10px] font-bold"
                           style={{ background: ROLE_COLORS[r.id] ?? '#666' }}
                         >
                           {r.id.slice(0, 2).toUpperCase()}
                         </div>
-                        <div className="text-xs">{r.name}</div>
+                        <div className="text-xs" style={{ color: 'var(--terminal-text)' }}>{r.name}</div>
                       </div>
                     ))}
                   </div>
@@ -451,17 +468,17 @@ export default function SidePanel({
               <CollapsibleSection title="Authority" open={showAuthority} onToggle={() => setShowAuthority(v => !v)}>
                 {role.authority.autonomous?.length > 0 && (
                   <div className="mb-2">
-                    <div className="text-xs text-green-700 font-semibold mb-1">Autonomous</div>
+                    <div className="text-xs font-semibold mb-1" style={{ color: 'var(--active-green)' }}>Autonomous</div>
                     {role.authority.autonomous.map((a, i) => (
-                      <div key={i} className="text-xs text-gray-600 pl-3 py-0.5">- {a}</div>
+                      <div key={i} className="text-xs pl-3 py-0.5" style={{ color: 'var(--terminal-text-secondary)' }}>- {a}</div>
                     ))}
                   </div>
                 )}
                 {role.authority.needsApproval?.length > 0 && (
                   <div>
-                    <div className="text-xs text-amber-700 font-semibold mb-1">Needs Approval</div>
+                    <div className="text-xs font-semibold mb-1" style={{ color: 'var(--idle-amber)' }}>Needs Approval</div>
                     {role.authority.needsApproval.map((a, i) => (
-                      <div key={i} className="text-xs text-gray-600 pl-3 py-0.5">- {a}</div>
+                      <div key={i} className="text-xs pl-3 py-0.5" style={{ color: 'var(--terminal-text-secondary)' }}>- {a}</div>
                     ))}
                   </div>
                 )}
@@ -475,9 +492,9 @@ export default function SidePanel({
                 open={showJournal}
                 onToggle={() => setShowJournal(v => !v)}
               >
-                <div className="text-xs text-gray-600 leading-relaxed bg-white rounded-lg p-3 border border-[var(--office-border)] max-h-[300px] overflow-y-auto">
+                <div className="text-xs leading-relaxed rounded-lg p-3 max-h-[300px] overflow-y-auto" style={{ background: 'var(--hud-bg-alt)', border: '1px solid var(--terminal-border)', color: 'var(--terminal-text-secondary)' }}>
                   <OfficeMarkdown content={role.journal.slice(0, 3000)} />
-                  {role.journal.length > 3000 && <div className="text-gray-400 italic mt-2">... (truncated)</div>}
+                  {role.journal.length > 3000 && <div className="italic mt-2" style={{ color: 'var(--terminal-text-muted)' }}>... (truncated)</div>}
                 </div>
               </CollapsibleSection>
             )}
@@ -488,7 +505,8 @@ export default function SidePanel({
             <div className="px-4 pb-4 mt-auto shrink-0">
               <button
                 onClick={() => { onFireRole(role.id, role.name); onClose(); }}
-                className="w-full p-2 text-center text-xs font-medium border-2 border-dashed border-red-300 text-red-400 rounded-lg cursor-pointer hover:bg-red-50 hover:text-red-600 hover:border-red-400 transition-colors"
+                className="w-full p-2 text-center text-xs font-medium border-2 border-dashed rounded-lg cursor-pointer transition-colors"
+                style={{ borderColor: 'rgba(239,68,68,0.3)', color: 'rgba(239,68,68,0.5)' }}
               >
                 Fire Role
               </button>
@@ -551,11 +569,11 @@ function SpeechBubble({ icon, roleId, roleName, color, text }: {
                 {roleName}
               </div>
               {hasText ? (
-                <div className="text-sm text-[#444] leading-relaxed">
+                <div className="text-sm leading-relaxed" style={{ color: 'var(--terminal-text)' }}>
                   <OfficeMarkdown content={text} />
                 </div>
               ) : (
-                <div className="text-sm text-gray-400 italic">No recent activity.</div>
+                <div className="text-sm italic" style={{ color: 'var(--terminal-text-muted)' }}>No recent activity.</div>
               )}
             </div>
           </div>
@@ -574,13 +592,14 @@ function CollapsibleSection({ title, open, onToggle, children }: {
   children: React.ReactNode;
 }) {
   return (
-    <div className="border border-[var(--office-border)] rounded-lg overflow-hidden">
+    <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--terminal-border)' }}>
       <button
         onClick={onToggle}
-        className="w-full px-3 py-2 flex items-center justify-between bg-white/50 hover:bg-white/80 cursor-pointer transition-colors"
+        className="w-full px-3 py-2 flex items-center justify-between cursor-pointer transition-colors"
+        style={{ background: 'var(--hud-bg-alt)' }}
       >
-        <span className="text-[11px] font-bold text-[var(--desk-dark)] uppercase tracking-wider">{title}</span>
-        <span className="text-xs text-gray-400">{open ? '\u25BC' : '\u25B6'}</span>
+        <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--terminal-text-secondary)' }}>{title}</span>
+        <span className="text-xs" style={{ color: 'var(--terminal-text-muted)' }}>{open ? '\u25BC' : '\u25B6'}</span>
       </button>
       {open && <div className="px-3 pb-3 pt-1">{children}</div>}
     </div>
@@ -613,7 +632,8 @@ function MiniInputBar({ onSend, disabled, placeholder, color }: {
         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSubmit(); } }}
         placeholder={disabled ? 'Waiting...' : placeholder}
         disabled={disabled}
-        className="flex-1 bg-white border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-gray-400 disabled:opacity-40"
+        className="flex-1 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none disabled:opacity-40"
+        style={{ background: 'var(--hud-bg)', border: '1px solid var(--pixel-border)', color: 'var(--terminal-text)' }}
       />
       <button
         onClick={handleSubmit}
@@ -634,9 +654,9 @@ function MiniInputBar({ onSend, disabled, placeholder, color }: {
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between py-1.5 border-b border-[var(--office-border)] text-xs">
-      <span className="text-gray-400">{label}</span>
-      <span className="font-semibold text-gray-800">{value}</span>
+    <div className="flex justify-between py-1.5 text-xs" style={{ borderBottom: '1px solid var(--terminal-border)' }}>
+      <span style={{ color: 'var(--terminal-text-muted)' }}>{label}</span>
+      <span className="font-semibold" style={{ color: 'var(--terminal-text)' }}>{value}</span>
     </div>
   );
 }

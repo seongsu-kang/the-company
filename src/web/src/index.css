@@ -8,12 +8,12 @@
   /* === Office (Cool Blue-Tint — Lively) === */
   --floor-light: #DFE6EE;
   --floor-dark: #CDD6E0;
-  --wall: #EEF1F7;
+  --wall: var(--terminal-bg, #EEF1F7);
   --wall-shadow: #B0B8C8;
   --desk-wood: #4A5568;
   --desk-dark: #374151;
-  --office-border: #CBD5E1;
-  --office-surface: #E8ECF4;
+  --office-border: var(--terminal-border, #CBD5E1);
+  --office-surface: var(--hud-bg-alt, #E8ECF4);
   --office-code-bg: #EDF0F7;
   --monitor-glow: #60A5FA;
   --active-green: #34D399;

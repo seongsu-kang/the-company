@@ -843,10 +843,6 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
               knowledgeDocsCount={knowledgeDocs.length}
               getRoleSpeech={getRoleSpeech}
               getAppearance={getAppearance}
-              onCustomize={(roleId) => {
-                const role = roles.find(r => r.id === roleId);
-                if (role) { setCustomizeInitialTab('character'); setCustomizeTarget(role); }
-              }}
             />
           ) : (
           <div className={`${terminalOpen ? 'max-w-full' : 'max-w-[1100px]'} mx-auto h-full p-4 flex flex-col gap-3 relative z-[1]`}>
@@ -868,7 +864,6 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
                         activeTask={activeExecs.find((e) => e.roleId === role.id)?.task}
                         featured
                         appearance={getAppearance(role.id)}
-                        onCustomize={() => { setCustomizeInitialTab('character'); setCustomizeTarget(role); }}
                       />
                     ))}
                   </div>
@@ -886,7 +881,6 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
                       liveStatus={roleStatuses[role.id]}
                       activeTask={activeExecs.find((e) => e.roleId === role.id)?.task}
                       appearance={getAppearance(role.id)}
-                      onCustomize={() => { setCustomizeInitialTab('character'); setCustomizeTarget(role); }}
                     />
                   ))}
                   {/* + HIRE card */}
@@ -1064,6 +1058,10 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           onCreateSessionSilent={handleCreateSessionSilent}
           onSendMessage={handleSendMessage}
           onFocusTerminal={handleFocusTerminal}
+          onCustomize={(roleId) => {
+            const r = roles.find(x => x.id === roleId);
+            if (r) { setCustomizeInitialTab('character'); setCustomizeTarget(r); }
+          }}
         />
         );
       })()}
@@ -1210,11 +1208,10 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
 
 /* ─── Pixel Card Component (Team) ─────────── */
 
-function PixelCard({ role, speech, onClick, liveStatus, activeTask, featured, appearance, onCustomize }: {
+function PixelCard({ role, speech, onClick, liveStatus, activeTask, featured, appearance }: {
   role: Role; speech: string; onClick: () => void;
   liveStatus?: string; activeTask?: string; featured?: boolean;
   appearance?: import('../types/appearance').CharacterAppearance;
-  onCustomize?: () => void;
 }) {
   const color = ROLE_COLORS[role.id] ?? hashColor(role.id);
   const level = ROLE_LEVELS[role.id] ?? 1;
@@ -1230,17 +1227,6 @@ function PixelCard({ role, speech, onClick, liveStatus, activeTask, featured, ap
       className={`pixel-card ${isWorking ? 'working' : ''} ${featured ? 'pixel-card--featured' : ''}`}
       onClick={onClick}
     >
-      {/* Customize button */}
-      {onCustomize && (
-        <button
-          className="pixel-card-customize"
-          onClick={(e) => { e.stopPropagation(); onCustomize(); }}
-          title="Customize"
-        >
-          {'\u{1F3A8}'}
-        </button>
-      )}
-
       {/* Header */}
       <div className="pixel-card-hdr" style={{ background: color }}>
         <span>{role.id.toUpperCase()} {'\u00B7'} {role.name.toUpperCase()}</span>
