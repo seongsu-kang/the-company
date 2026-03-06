@@ -8,14 +8,14 @@ import OfficeMarkdown from './OfficeMarkdown';
 /* ─── Domain color mapping ─────────────────────────── */
 
 const DOMAIN_COLORS: Record<string, { bg: string; border: string; text: string }> = {
-  tech:       { bg: '#dbeafe', border: '#3b82f6', text: '#1d4ed8' },
-  market:     { bg: '#fef3c7', border: '#f59e0b', text: '#92400e' },
-  strategy:   { bg: '#ede9fe', border: '#8b5cf6', text: '#5b21b6' },
-  financial:  { bg: '#dcfce7', border: '#22c55e', text: '#15803d' },
-  process:    { bg: '#fce7f3', border: '#ec4899', text: '#9d174d' },
-  competitor: { bg: '#fee2e2', border: '#ef4444', text: '#991b1b' },
-  domain:     { bg: '#e0f2fe', border: '#0ea5e9', text: '#0369a1' },
-  general:    { bg: '#f1f5f9', border: '#94a3b8', text: '#475569' },
+  tech:       { bg: 'rgba(59,130,246,0.15)', border: '#3b82f6', text: '#60a5fa' },
+  market:     { bg: 'rgba(245,158,11,0.15)', border: '#f59e0b', text: '#fbbf24' },
+  strategy:   { bg: 'rgba(139,92,246,0.15)', border: '#8b5cf6', text: '#a78bfa' },
+  financial:  { bg: 'rgba(34,197,94,0.15)',  border: '#22c55e', text: '#4ade80' },
+  process:    { bg: 'rgba(236,72,153,0.15)', border: '#ec4899', text: '#f472b6' },
+  competitor: { bg: 'rgba(239,68,68,0.15)',  border: '#ef4444', text: '#f87171' },
+  domain:     { bg: 'rgba(14,165,233,0.15)', border: '#0ea5e9', text: '#38bdf8' },
+  general:    { bg: 'rgba(148,163,184,0.12)', border: '#64748b', text: '#94a3b8' },
 };
 
 function getDomainColor(cat: string) {
@@ -353,9 +353,9 @@ function KnowledgeGraph({
           style={{
             left: Math.min(mousePos.x + 16, dimensions.width - 250),
             top: Math.max(mousePos.y - 30, 8),
-            background: '#16213e',
-            border: '1px solid #334155',
-            color: '#e2e8f0',
+            background: 'var(--hud-bg)',
+            border: '1px solid var(--terminal-border)',
+            color: 'var(--terminal-text)',
             boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
           }}
         >
@@ -369,7 +369,7 @@ function KnowledgeGraph({
       )}
 
       {docs.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center text-xs" style={{ color: '#475569' }}>
+        <div className="absolute inset-0 flex items-center justify-center text-xs" style={{ color: 'var(--terminal-text-muted)' }}>
           No knowledge documents found
         </div>
       )}
@@ -401,19 +401,19 @@ function KnowledgeCard({
     <div
       className="mb-2 rounded-lg overflow-hidden"
       style={{
-        background: isHub ? '#f0fdf4' : '#fff',
-        border: `2px solid ${isHub ? '#16a34a' : '#e2e8f0'}`,
+        background: isHub ? 'rgba(22,163,106,0.08)' : 'var(--hud-bg-alt)',
+        border: `2px solid ${isHub ? 'rgba(22,163,106,0.4)' : 'var(--terminal-border)'}`,
       }}
     >
       <div
-        className="p-3 cursor-pointer hover:bg-black/5"
+        className="p-3 cursor-pointer hover:bg-white/5"
         onClick={() => setExpanded(!expanded)}
       >
         <div className="flex items-start gap-2">
           <span className="shrink-0 text-sm">{isHub ? '\u{1F5C2}' : doc.format === 'html' ? '\u{1F310}' : '\u{1F4C4}'}</span>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1 flex-wrap">
-              <span className="font-semibold text-xs text-gray-800 truncate">{doc.title}</span>
+              <span className="font-semibold text-xs truncate" style={{ color: 'var(--terminal-text)' }}>{doc.title}</span>
               <span
                 className="w-2 h-2 rounded-full shrink-0"
                 style={{
@@ -434,23 +434,23 @@ function KnowledgeCard({
               ))}
             </div>
           </div>
-          <span className="text-gray-300 text-xs shrink-0">{expanded ? '\u25b2' : '\u25bc'}</span>
+          <span className="text-xs shrink-0" style={{ color: 'var(--terminal-text-muted)' }}>{expanded ? '\u25b2' : '\u25bc'}</span>
         </div>
         {!expanded && doc.tldr && (
-          <div className="mt-1.5 text-[10px] text-gray-500 line-clamp-2 ml-6">{doc.tldr}</div>
+          <div className="mt-1.5 text-[10px] line-clamp-2 ml-6" style={{ color: 'var(--terminal-text-secondary)' }}>{doc.tldr}</div>
         )}
       </div>
 
       {expanded && (
-        <div className="px-3 pb-3 border-t border-gray-100">
+        <div className="px-3 pb-3" style={{ borderTop: '1px solid var(--terminal-border)' }}>
           {doc.tldr && (
-            <div className="mt-2 text-[11px] text-gray-600 leading-relaxed italic">
+            <div className="mt-2 text-[11px] leading-relaxed italic" style={{ color: 'var(--terminal-text-secondary)' }}>
               {doc.tldr}
             </div>
           )}
           {doc.links.length > 0 && (
             <div className="mt-2">
-              <div className="text-[9px] font-bold text-gray-400 uppercase mb-1">Cross-links</div>
+              <div className="text-[9px] font-bold uppercase mb-1" style={{ color: 'var(--terminal-text-muted)' }}>Cross-links</div>
               <div className="flex flex-wrap gap-1">
                 {doc.links.slice(0, 5).map((link, i) => {
                   const targetId = link.href
@@ -463,9 +463,9 @@ function KnowledgeCard({
                       key={i}
                       className={`px-1.5 py-0.5 text-[9px] rounded ${isClickable ? 'cursor-pointer hover:opacity-70' : ''}`}
                       style={{
-                        background: isClickable ? '#dcfce7' : '#f1f5f9',
-                        color: isClickable ? '#16a34a' : '#64748b',
-                        border: `1px solid ${isClickable ? '#86efac' : '#e2e8f0'}`,
+                        background: isClickable ? 'rgba(22,163,106,0.15)' : 'rgba(148,163,184,0.1)',
+                        color: isClickable ? '#4ade80' : 'var(--terminal-text-muted)',
+                        border: `1px solid ${isClickable ? 'rgba(22,163,106,0.3)' : 'var(--terminal-border)'}`,
                       }}
                       onClick={(e) => {
                         if (isClickable) {
@@ -483,7 +483,7 @@ function KnowledgeCard({
           )}
           <button
             className="mt-2 text-[10px] font-semibold cursor-pointer hover:opacity-70"
-            style={{ color: '#16a34a' }}
+            style={{ color: 'var(--active-green)' }}
             onClick={(e) => { e.stopPropagation(); onOpen(doc); }}
           >
             Open full {'\u2192'}
@@ -613,7 +613,7 @@ function DocDetail({
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center text-xs text-gray-400">
+      <div className="flex-1 flex items-center justify-center text-xs" style={{ color: 'var(--terminal-text-muted)' }}>
         Loading...
       </div>
     );
@@ -621,7 +621,7 @@ function DocDetail({
 
   if (!detail) {
     return (
-      <div className="flex-1 flex items-center justify-center text-xs text-gray-400">
+      <div className="flex-1 flex items-center justify-center text-xs" style={{ color: 'var(--terminal-text-muted)' }}>
         Failed to load document
       </div>
     );
@@ -630,11 +630,11 @@ function DocDetail({
   return (
     <div className="flex-1 overflow-y-auto flex flex-col">
       {/* Toolbar */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--office-border)] shrink-0">
+      <div className="flex items-center gap-2 px-4 py-2 shrink-0" style={{ borderBottom: '1px solid var(--terminal-border)' }}>
         <button
           onClick={onBack}
           className="text-xs font-semibold cursor-pointer hover:opacity-70"
-          style={{ color: '#16a34a' }}
+          style={{ color: 'var(--active-green)' }}
         >
           {'\u2190'} Back
         </button>
@@ -644,7 +644,7 @@ function DocDetail({
             <button
               onClick={() => { setEditing(false); setEditContent(detail.content); }}
               className="px-2.5 py-1 text-[10px] rounded cursor-pointer"
-              style={{ background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0' }}
+              style={{ background: 'var(--hud-bg-alt)', color: 'var(--terminal-text-secondary)', border: '1px solid var(--terminal-border)' }}
             >
               Cancel
             </button>
@@ -662,14 +662,14 @@ function DocDetail({
             <button
               onClick={() => setEditing(true)}
               className="px-2.5 py-1 text-[10px] rounded cursor-pointer font-semibold"
-              style={{ background: '#dbeafe', color: '#1d4ed8', border: '1px solid #93c5fd' }}
+              style={{ background: 'rgba(59,130,246,0.15)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)' }}
             >
               Edit
             </button>
             <button
               onClick={handleDelete}
               className="px-2.5 py-1 text-[10px] rounded cursor-pointer font-semibold"
-              style={{ background: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5' }}
+              style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)' }}
             >
               Delete
             </button>
@@ -679,9 +679,9 @@ function DocDetail({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-5">
-        <h2 className="text-sm font-bold text-gray-800 mb-1">{detail.title}</h2>
+        <h2 className="text-sm font-bold mb-1" style={{ color: 'var(--terminal-text)' }}>{detail.title}</h2>
         {detail.tldr && !editing && (
-          <div className="mb-3 text-xs text-gray-500 italic">{detail.tldr}</div>
+          <div className="mb-3 text-xs italic" style={{ color: 'var(--terminal-text-secondary)' }}>{detail.tldr}</div>
         )}
 
         {detail.format === 'html' ? (
@@ -690,9 +690,9 @@ function DocDetail({
               className="w-full h-full min-h-[400px] p-3 text-xs leading-relaxed rounded border resize-y"
               style={{
                 fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace',
-                background: '#1e1e2e',
-                color: '#e2e8f0',
-                border: '1px solid #334155',
+                background: 'var(--hud-bg)',
+                color: 'var(--terminal-text)',
+                border: '1px solid var(--terminal-border)',
               }}
               value={editContent}
               onChange={(e) => setEditContent(e.target.value)}
@@ -702,8 +702,8 @@ function DocDetail({
             <iframe
               srcDoc={detail.content}
               sandbox="allow-same-origin"
-              className="w-full flex-1 min-h-[400px] rounded border border-gray-200 bg-white"
-              style={{ border: '1px solid #e2e8f0' }}
+              className="w-full flex-1 min-h-[400px] rounded"
+              style={{ border: '1px solid var(--terminal-border)', background: 'var(--hud-bg-alt)' }}
               title={detail.title}
             />
           )
@@ -721,7 +721,7 @@ function DocDetail({
             spellCheck={false}
           />
         ) : (
-          <div className="text-xs text-gray-700 leading-relaxed" onClick={handleContentClick}>
+          <div className="text-xs leading-relaxed" style={{ color: 'var(--terminal-text-secondary)' }} onClick={handleContentClick}>
             <OfficeMarkdown content={detail.content} />
           </div>
         )}
@@ -779,49 +779,52 @@ function NewDocForm({
         <button
           onClick={onCancel}
           className="text-xs font-semibold cursor-pointer hover:opacity-70"
-          style={{ color: '#16a34a' }}
+          style={{ color: 'var(--active-green)' }}
         >
           {'\u2190'} Cancel
         </button>
-        <h2 className="text-sm font-bold text-gray-800">New Document</h2>
+        <h2 className="text-sm font-bold" style={{ color: 'var(--terminal-text)' }}>New Document</h2>
       </div>
 
       <div className="space-y-3">
         <div>
-          <label className="block text-[10px] font-semibold text-gray-500 mb-1">TITLE</label>
+          <label className="block text-[10px] font-semibold mb-1" style={{ color: 'var(--terminal-text-muted)' }}>TITLE</label>
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Document title..."
-            className="w-full px-3 py-2 text-xs rounded border border-gray-200 focus:outline-none focus:border-[#16a34a]"
+            className="w-full px-3 py-2 text-xs rounded focus:outline-none"
+              style={{ background: 'var(--hud-bg)', border: '1px solid var(--terminal-border)', color: 'var(--terminal-text)' }}
           />
         </div>
         <div>
-          <label className="block text-[10px] font-semibold text-gray-500 mb-1">FILENAME</label>
+          <label className="block text-[10px] font-semibold mb-1" style={{ color: 'var(--terminal-text-muted)' }}>FILENAME</label>
           <div className="flex items-center gap-1">
             <input
               type="text"
               value={filename}
               onChange={(e) => setFilename(e.target.value)}
-              className="flex-1 px-3 py-2 text-xs rounded border border-gray-200 focus:outline-none focus:border-[#16a34a] font-mono"
+              className="flex-1 px-3 py-2 text-xs rounded focus:outline-none font-mono"
+              style={{ background: 'var(--hud-bg)', border: '1px solid var(--terminal-border)', color: 'var(--terminal-text)' }}
             />
-            <span className="text-[10px] text-gray-400">.md</span>
+            <span className="text-[10px]" style={{ color: 'var(--terminal-text-muted)' }}>.md</span>
           </div>
         </div>
         <div>
-          <label className="block text-[10px] font-semibold text-gray-500 mb-1">CATEGORY (optional)</label>
+          <label className="block text-[10px] font-semibold mb-1" style={{ color: 'var(--terminal-text-muted)' }}>CATEGORY (optional)</label>
           <input
             type="text"
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             placeholder="e.g., tech, market, strategy"
-            className="w-full px-3 py-2 text-xs rounded border border-gray-200 focus:outline-none focus:border-[#16a34a]"
+            className="w-full px-3 py-2 text-xs rounded focus:outline-none"
+              style={{ background: 'var(--hud-bg)', border: '1px solid var(--terminal-border)', color: 'var(--terminal-text)' }}
           />
         </div>
 
         {error && (
-          <div className="text-[10px] text-red-600 bg-red-50 px-3 py-1.5 rounded">{error}</div>
+          <div className="text-[10px] px-3 py-1.5 rounded" style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171' }}>{error}</div>
         )}
 
         <button
@@ -941,12 +944,12 @@ export default function KnowledgePanel({ docs, onClose, onRefresh, terminalWidth
         onClick={onClose}
       />
       <div
-        className={`side-panel open fixed top-0 h-full z-50 flex flex-col bg-[var(--wall)] border-l-[3px] border-[#16a34a] shadow-[-4px_0_20px_rgba(0,0,0,0.2)] ${isResizing ? 'resizing' : ''}`}
-        style={{ right: panelRight, width: panelWidth }}
+        className={`side-panel open fixed top-0 h-full z-50 flex flex-col border-l-[3px] shadow-[-4px_0_20px_rgba(0,0,0,0.4)] ${isResizing ? 'resizing' : ''}`}
+        style={{ right: panelRight, width: panelWidth, background: 'var(--terminal-bg)', borderLeftColor: '#16a34a' }}
       >
         {/* Resize handle */}
         <div
-          className={`absolute top-0 -left-[5px] w-[10px] h-full cursor-col-resize z-[60] transition-colors ${isResizing ? 'bg-black/10' : 'hover:bg-black/5'}`}
+          className={`absolute top-0 -left-[5px] w-[10px] h-full cursor-col-resize z-[60] transition-colors ${isResizing ? 'bg-white/10' : 'hover:bg-white/5'}`}
           onMouseDown={handleResizeStart}
         />
 
@@ -963,7 +966,7 @@ export default function KnowledgePanel({ docs, onClose, onRefresh, terminalWidth
         </div>
 
         {/* View toggle */}
-        <div className="flex border-b border-[var(--office-border)]">
+        <div className="flex" style={{ borderBottom: '1px solid var(--terminal-border)' }}>
           <TabBtn label="List" active={view === 'list'} onClick={() => { setView('list'); setGraphSelectedDocId(null); }} />
           <TabBtn label="Graph" active={view === 'graph'} onClick={() => setView('graph')} />
         </div>
@@ -972,13 +975,14 @@ export default function KnowledgePanel({ docs, onClose, onRefresh, terminalWidth
         {view === 'list' && !openDocId && !showNewForm && (
           <>
             {/* Search + New button */}
-            <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--office-border)] shrink-0">
+            <div className="flex items-center gap-2 px-4 py-2 shrink-0" style={{ borderBottom: '1px solid var(--terminal-border)' }}>
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search docs..."
-                className="flex-1 px-2.5 py-1.5 text-[11px] rounded border border-gray-200 focus:outline-none focus:border-[#16a34a]"
+                className="flex-1 px-2.5 py-1.5 text-[11px] rounded focus:outline-none"
+                style={{ background: 'var(--hud-bg)', border: '1px solid var(--terminal-border)', color: 'var(--terminal-text)' }}
               />
               <button
                 onClick={() => setShowNewForm(true)}
@@ -990,16 +994,16 @@ export default function KnowledgePanel({ docs, onClose, onRefresh, terminalWidth
             </div>
 
             {/* Category tabs */}
-            <div className="flex overflow-x-auto border-b border-[var(--office-border)] shrink-0" style={{ scrollbarWidth: 'none' }}>
+            <div className="flex overflow-x-auto shrink-0" style={{ borderBottom: '1px solid var(--terminal-border)', scrollbarWidth: 'none' }}>
               {categories.map((cat) => (
                 <button
                   key={cat}
                   onClick={() => setCategory(cat)}
-                  className={`px-3 py-1.5 text-[10px] font-medium cursor-pointer whitespace-nowrap ${
-                    category === cat
-                      ? 'text-[#16a34a] border-b-2 border-[#16a34a]'
-                      : 'text-gray-400 hover:text-gray-600'
-                  }`}
+                  className="px-3 py-1.5 text-[10px] font-medium cursor-pointer whitespace-nowrap"
+                  style={{
+                    color: category === cat ? '#4ade80' : 'var(--terminal-text-muted)',
+                    borderBottom: category === cat ? '2px solid #4ade80' : '2px solid transparent',
+                  }}
                 >
                   {cat === 'all' ? `All (${docs.length})` : `${cat} (${docs.filter((d) => d.category === cat).length})`}
                 </button>
@@ -1009,7 +1013,7 @@ export default function KnowledgePanel({ docs, onClose, onRefresh, terminalWidth
             {/* List */}
             <div className="flex-1 overflow-y-auto p-4">
               {filtered.length === 0 ? (
-                <div className="text-center text-xs text-gray-400 py-8">
+                <div className="text-center text-xs py-8" style={{ color: 'var(--terminal-text-muted)' }}>
                   {searchQuery ? 'No matching documents' : 'No documents in this category'}
                 </div>
               ) : (
@@ -1059,11 +1063,11 @@ export default function KnowledgePanel({ docs, onClose, onRefresh, terminalWidth
               {/* Graph detail sidebar */}
               {selectedGraphDoc && (
                 <div
-                  className="shrink-0 overflow-y-auto border-l border-[var(--office-border)] p-3"
-                  style={{ width: 200, background: 'var(--wall)' }}
+                  className="shrink-0 overflow-y-auto p-3"
+                  style={{ width: 200, background: 'var(--hud-bg-alt)', borderLeft: '1px solid var(--terminal-border)' }}
                 >
-                  <div className="text-[10px] font-bold text-gray-400 uppercase mb-1">Selected</div>
-                  <div className="text-xs font-bold text-gray-800 mb-1">{selectedGraphDoc.title}</div>
+                  <div className="text-[10px] font-bold uppercase mb-1" style={{ color: 'var(--terminal-text-muted)' }}>Selected</div>
+                  <div className="text-xs font-bold mb-1" style={{ color: 'var(--terminal-text)' }}>{selectedGraphDoc.title}</div>
                   <div
                     className="w-2 h-2 rounded-full mb-2"
                     style={{
@@ -1071,13 +1075,13 @@ export default function KnowledgePanel({ docs, onClose, onRefresh, terminalWidth
                     }}
                   />
                   {selectedGraphDoc.tldr && (
-                    <div className="text-[10px] text-gray-500 mb-2 leading-relaxed">{selectedGraphDoc.tldr}</div>
+                    <div className="text-[10px] mb-2 leading-relaxed" style={{ color: 'var(--terminal-text-secondary)' }}>{selectedGraphDoc.tldr}</div>
                   )}
                   {selectedGraphDoc.links.length > 0 && (
                     <div className="mb-2">
-                      <div className="text-[9px] font-bold text-gray-400 mb-1">Links</div>
+                      <div className="text-[9px] font-bold mb-1" style={{ color: 'var(--terminal-text-muted)' }}>Links</div>
                       {selectedGraphDoc.links.slice(0, 5).map((link, i) => (
-                        <div key={i} className="text-[9px] text-gray-500 mb-0.5 truncate">{'\u{1F517}'} {link.text}</div>
+                        <div key={i} className="text-[9px] mb-0.5 truncate" style={{ color: 'var(--terminal-text-secondary)' }}>{'\u{1F517}'} {link.text}</div>
                       ))}
                     </div>
                   )}
@@ -1092,12 +1096,12 @@ export default function KnowledgePanel({ docs, onClose, onRefresh, terminalWidth
               )}
             </div>
             {/* Legend */}
-            <div className="shrink-0 p-2 border-t border-[var(--office-border)]">
+            <div className="shrink-0 p-2" style={{ borderTop: '1px solid var(--terminal-border)' }}>
               <div className="flex flex-wrap gap-2">
                 {Object.entries(DOMAIN_COLORS).map(([name, c]) => (
                   <div key={name} className="flex items-center gap-1 text-[9px]">
                     <div className="w-2 h-2" style={{ background: c.border }} />
-                    <span style={{ color: '#64748b' }}>{name}</span>
+                    <span style={{ color: 'var(--terminal-text-muted)' }}>{name}</span>
                   </div>
                 ))}
               </div>
@@ -1113,11 +1117,11 @@ function TabBtn({ label, active, onClick }: { label: string; active: boolean; on
   return (
     <button
       onClick={onClick}
-      className={`px-4 py-2.5 text-sm font-medium cursor-pointer ${
-        active
-          ? 'text-[#16a34a] border-b-2 border-[#16a34a]'
-          : 'text-gray-400 hover:text-gray-600'
-      }`}
+      className="px-4 py-2.5 text-sm font-medium cursor-pointer"
+      style={{
+        color: active ? '#4ade80' : 'var(--terminal-text-muted)',
+        borderBottom: active ? '2px solid #4ade80' : '2px solid transparent',
+      }}
     >
       {label}
     </button>

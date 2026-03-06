@@ -23,10 +23,10 @@ export default function ProjectPanel({ projectId, onClose, terminalWidth = 0 }: 
     return (
       <>
         <div className="dimmer fixed top-0 left-0 bottom-0 bg-black/30 z-40 open" style={{ right: panelRight }} onClick={onClose} />
-        <div className="side-panel open fixed top-0 h-full z-50 flex items-center justify-center bg-[var(--wall)] border-l-[3px] border-[var(--meeting-blue)]"
-          style={{ right: panelRight, width: panelWidth }}
+        <div className="side-panel open fixed top-0 h-full z-50 flex items-center justify-center border-l-[3px] border-[var(--meeting-blue)]"
+          style={{ right: panelRight, width: panelWidth, background: 'var(--terminal-bg)' }}
         >
-          <div className="text-gray-400 text-sm">Loading project...</div>
+          <div className="text-sm" style={{ color: 'var(--terminal-text-muted)' }}>Loading project...</div>
         </div>
       </>
     );
@@ -40,12 +40,12 @@ export default function ProjectPanel({ projectId, onClose, terminalWidth = 0 }: 
     <>
       <div className="dimmer fixed top-0 left-0 bottom-0 bg-black/30 z-40 open" style={{ right: panelRight }} onClick={onClose} />
 
-      <div className={`side-panel open fixed top-0 h-full z-50 flex flex-col bg-[var(--wall)] border-l-[3px] border-[var(--meeting-blue)] shadow-[-4px_0_20px_rgba(0,0,0,0.2)] ${isResizing ? 'resizing' : ''}`}
-        style={{ right: panelRight, width: panelWidth }}
+      <div className={`side-panel open fixed top-0 h-full z-50 flex flex-col border-l-[3px] border-[var(--meeting-blue)] shadow-[-4px_0_20px_rgba(0,0,0,0.4)] ${isResizing ? 'resizing' : ''}`}
+        style={{ right: panelRight, width: panelWidth, background: 'var(--terminal-bg)' }}
       >
         {/* Resize handle */}
         <div
-          className={`absolute top-0 -left-[5px] w-[10px] h-full cursor-col-resize z-[60] transition-colors ${isResizing ? 'bg-black/10' : 'hover:bg-black/5'}`}
+          className={`absolute top-0 -left-[5px] w-[10px] h-full cursor-col-resize z-[60] transition-colors ${isResizing ? 'bg-white/10' : 'hover:bg-white/5'}`}
           onMouseDown={handleResizeStart}
         />
         {/* Header */}
@@ -74,8 +74,8 @@ export default function ProjectPanel({ projectId, onClose, terminalWidth = 0 }: 
           {/* PRD */}
           {project.prd && (
             <div className="mb-5">
-              <div className="text-[11px] font-bold text-[var(--desk-dark)] uppercase tracking-wider mb-2">PRD</div>
-              <div className="bg-white rounded-lg border border-[var(--office-border)] p-4 text-xs text-gray-600 leading-relaxed max-h-60 overflow-y-auto">
+              <div className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--terminal-text-muted)' }}>PRD</div>
+              <div className="rounded-lg p-4 text-xs leading-relaxed max-h-60 overflow-y-auto" style={{ background: 'var(--hud-bg-alt)', border: '1px solid var(--terminal-border)', color: 'var(--terminal-text-secondary)' }}>
                 <OfficeMarkdown content={project.prd} />
               </div>
             </div>
@@ -83,19 +83,19 @@ export default function ProjectPanel({ projectId, onClose, terminalWidth = 0 }: 
 
           {/* Tasks */}
           <div>
-            <div className="text-[11px] font-bold text-[var(--desk-dark)] uppercase tracking-wider mb-2">
+            <div className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--terminal-text-muted)' }}>
               Tasks ({totalTasks})
             </div>
             <div className="space-y-2">
               {project.tasks.map((task) => (
-                <div key={task.id} className="bg-white rounded-lg border border-[var(--office-border)] p-3">
+                <div key={task.id} className="rounded-lg p-3" style={{ background: 'var(--hud-bg-alt)', border: '1px solid var(--terminal-border)' }}>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-800">{task.title}</span>
+                    <span className="text-sm font-medium" style={{ color: 'var(--terminal-text)' }}>{task.title}</span>
                     <StatusBadge status={task.status} />
                   </div>
-                  <div className="text-xs text-gray-400 mt-1">{task.role}</div>
+                  <div className="text-xs mt-1" style={{ color: 'var(--terminal-text-muted)' }}>{task.role}</div>
                   {task.description && (
-                    <div className="text-xs text-gray-500 mt-1.5 line-clamp-2">{task.description}</div>
+                    <div className="text-xs mt-1.5 line-clamp-2" style={{ color: 'var(--terminal-text-secondary)' }}>{task.description}</div>
                   )}
                 </div>
               ))}
@@ -108,13 +108,14 @@ export default function ProjectPanel({ projectId, onClose, terminalWidth = 0 }: 
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    done: 'bg-green-100 text-green-700',
-    'in-progress': 'bg-blue-100 text-blue-700',
-    todo: 'bg-gray-100 text-gray-500',
+  const styles: Record<string, { bg: string; color: string }> = {
+    done: { bg: 'rgba(34,197,94,0.15)', color: '#4ade80' },
+    'in-progress': { bg: 'rgba(59,130,246,0.15)', color: '#60a5fa' },
+    todo: { bg: 'rgba(148,163,184,0.15)', color: 'var(--terminal-text-muted)' },
   };
+  const s = styles[status] ?? styles.todo;
   return (
-    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${styles[status] ?? styles.todo}`}>
+    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: s.bg, color: s.color }}>
       {status}
     </span>
   );

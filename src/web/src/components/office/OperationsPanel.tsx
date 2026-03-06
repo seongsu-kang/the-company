@@ -23,12 +23,12 @@ export default function OperationsPanel({ standups, waves, decisions, mode, onCl
     <>
       <div className="dimmer fixed top-0 left-0 bottom-0 bg-black/30 z-40 open" style={{ right: panelRight }} onClick={onClose} />
 
-      <div className={`side-panel open fixed top-0 h-full z-50 flex flex-col bg-[var(--wall)] border-l-[3px] border-[var(--desk-wood)] shadow-[-4px_0_20px_rgba(0,0,0,0.2)] ${isResizing ? 'resizing' : ''}`}
-        style={{ right: panelRight, width: panelWidth }}
+      <div className={`side-panel open fixed top-0 h-full z-50 flex flex-col border-l-[3px] shadow-[-4px_0_20px_rgba(0,0,0,0.4)] ${isResizing ? 'resizing' : ''}`}
+        style={{ right: panelRight, width: panelWidth, background: 'var(--terminal-bg)', borderLeftColor: 'var(--desk-wood)' }}
       >
         {/* Resize handle */}
         <div
-          className={`absolute top-0 -left-[5px] w-[10px] h-full cursor-col-resize z-[60] transition-colors ${isResizing ? 'bg-black/10' : 'hover:bg-black/5'}`}
+          className={`absolute top-0 -left-[5px] w-[10px] h-full cursor-col-resize z-[60] transition-colors ${isResizing ? 'bg-white/10' : 'hover:bg-white/5'}`}
           onMouseDown={handleResizeStart}
         />
         {/* Header */}
@@ -45,7 +45,7 @@ export default function OperationsPanel({ standups, waves, decisions, mode, onCl
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-[var(--office-border)]">
+        <div className="flex" style={{ borderBottom: '1px solid var(--terminal-border)' }}>
           {mode === 'bulletin' ? (
             <>
               <TabBtn label={`Standups (${standups.length})`} active={tab === 'standups'} onClick={() => setTab('standups')} />
@@ -77,11 +77,11 @@ function TabBtn({ label, active, onClick }: { label: string; active: boolean; on
   return (
     <button
       onClick={onClick}
-      className={`px-4 py-2.5 text-sm font-medium cursor-pointer ${
-        active
-          ? 'text-[var(--desk-wood)] border-b-2 border-[var(--desk-wood)]'
-          : 'text-gray-400 hover:text-gray-600'
-      }`}
+      className="px-4 py-2.5 text-sm font-medium cursor-pointer"
+      style={{
+        color: active ? 'var(--accent)' : 'var(--terminal-text-muted)',
+        borderBottom: active ? '2px solid var(--accent)' : '2px solid transparent',
+      }}
     >
       {label}
     </button>
@@ -112,24 +112,24 @@ function ContentCard({ title, subtitle, content }: { title: string; subtitle?: s
   const preview = stripMarkdown(content).slice(0, 160);
 
   return (
-    <div className="mb-3 bg-white rounded-lg border border-[var(--office-border)] overflow-hidden">
+    <div className="mb-3 rounded-lg overflow-hidden" style={{ background: 'var(--hud-bg-alt)', border: '1px solid var(--terminal-border)' }}>
       <div
-        className="p-3 cursor-pointer hover:bg-gray-50"
+        className="p-3 cursor-pointer hover:bg-white/5"
         onClick={() => setExpanded(!expanded)}
       >
         <div className="flex items-center justify-between">
-          <div className="font-medium text-sm text-gray-800">{title}</div>
-          <span className="text-gray-300 text-xs shrink-0 ml-2">{expanded ? '▲' : '▼'}</span>
+          <div className="font-medium text-sm" style={{ color: 'var(--terminal-text)' }}>{title}</div>
+          <span className="text-xs shrink-0 ml-2" style={{ color: 'var(--terminal-text-muted)' }}>{expanded ? '▲' : '▼'}</span>
         </div>
-        {subtitle && <div className="text-xs text-gray-400 mt-0.5">{subtitle}</div>}
+        {subtitle && <div className="text-xs mt-0.5" style={{ color: 'var(--terminal-text-muted)' }}>{subtitle}</div>}
       </div>
       {expanded && (
-        <div className="px-3 pb-3 text-xs text-gray-600 leading-relaxed border-t border-[var(--office-border)] pt-2">
+        <div className="px-3 pb-3 text-xs leading-relaxed pt-2" style={{ borderTop: '1px solid var(--terminal-border)', color: 'var(--terminal-text-secondary)' }}>
           <OfficeMarkdown content={content} />
         </div>
       )}
       {!expanded && hasMore && (
-        <div className="px-3 pb-2 text-xs text-gray-400 line-clamp-2 leading-relaxed">{preview}</div>
+        <div className="px-3 pb-2 text-xs line-clamp-2 leading-relaxed" style={{ color: 'var(--terminal-text-muted)' }}>{preview}</div>
       )}
     </div>
   );
