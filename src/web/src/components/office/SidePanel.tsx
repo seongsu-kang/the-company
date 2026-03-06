@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { RoleDetail, Session } from '../../types';
+import type { CharacterAppearance } from '../../types/appearance';
 import useActivityStream from '../../hooks/useActivityStream';
 import OfficeMarkdown from './OfficeMarkdown';
+import SpriteCanvas from './SpriteCanvas';
 
 interface Props {
   role: RoleDetail | null;
@@ -23,6 +25,7 @@ interface Props {
   onSendMessage: (sessionId: string, content: string, mode: 'talk' | 'do') => void;
   onFocusTerminal: (roleId: string) => void;
   onCustomize?: (roleId: string) => void;
+  appearance?: CharacterAppearance;
 }
 
 const ROLE_ICONS: Record<string, string> = {
@@ -33,6 +36,10 @@ const ROLE_ICONS: Record<string, string> = {
 const ROLE_COLORS: Record<string, string> = {
   cto: '#1565C0', cbo: '#E65100', pm: '#2E7D32',
   engineer: '#4A148C', designer: '#AD1457', qa: '#00695C',
+};
+
+const ROLE_LEVELS: Record<string, number> = {
+  cto: 8, cbo: 7, pm: 6, engineer: 5, designer: 5, qa: 4, 'data-analyst': 4,
 };
 
 const ROLE_NAMES: Record<string, string> = {
@@ -53,7 +60,7 @@ const fmtElapsed = (seconds: number) => `${Math.floor(seconds / 60)}:${String(se
 export default function SidePanel({
   role, allRoles, recentActivity, onClose, onFireRole, terminalWidth = 0,
   activeJobId, activeTask, isWorking, jobStartedAt, onStopJob,
-  sessions, streamingSessionId, onCreateSessionSilent, onSendMessage, onFocusTerminal, onCustomize,
+  sessions, streamingSessionId, onCreateSessionSilent, onSendMessage, onFocusTerminal, onCustomize, appearance,
 }: Props) {
   const [panelW, setPanelW] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
@@ -209,12 +216,18 @@ export default function SidePanel({
         />
 
         {/* Header */}
-        <div className="p-4 text-white relative shrink-0" style={{ background: `linear-gradient(135deg, ${color}, ${color}dd)` }}>
-          <div className="absolute top-3 right-3 flex items-center gap-1.5">
+        <div className="relative shrink-0 overflow-hidden" style={{ background: `linear-gradient(135deg, ${color}ee, ${color}99)` }}>
+          {/* Background pattern */}
+          <div className="absolute inset-0 opacity-[0.06]" style={{
+            backgroundImage: `repeating-linear-gradient(45deg, transparent, transparent 8px, white 8px, white 9px)`,
+          }} />
+
+          {/* Top controls */}
+          <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
             {onCustomize && (
               <button
                 onClick={() => onCustomize(role.id)}
-                className="w-7 h-7 rounded-full bg-white/20 text-white flex items-center justify-center text-sm hover:bg-white/30 cursor-pointer"
+                className="w-7 h-7 rounded-full bg-black/20 text-white flex items-center justify-center text-sm hover:bg-black/30 cursor-pointer backdrop-blur-sm"
                 title="Customize"
               >
                 {'\u{1F3A8}'}
@@ -222,26 +235,50 @@ export default function SidePanel({
             )}
             <button
               onClick={onClose}
-              className="w-7 h-7 rounded-full bg-white/20 text-white flex items-center justify-center text-lg hover:bg-white/30 cursor-pointer"
+              className="w-7 h-7 rounded-full bg-black/20 text-white flex items-center justify-center text-lg hover:bg-black/30 cursor-pointer backdrop-blur-sm"
             >
               ×
             </button>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center text-2xl">
-              {icon}
+
+          {/* Main header content */}
+          <div className="relative flex items-end gap-4 px-4 pt-4 pb-3">
+            {/* Sprite */}
+            <div className="shrink-0 relative" style={{ marginBottom: -2 }}>
+              <div className="rounded-lg p-1" style={{ background: 'rgba(0,0,0,0.2)' }}>
+                <SpriteCanvas roleId={role.id} appearance={appearance} scale={2.5} />
+              </div>
             </div>
-            <div>
-              <div className="text-lg font-bold flex items-center gap-2">
-                {role.id.toUpperCase()}
+
+            {/* Info */}
+            <div className="flex-1 min-w-0 text-white pb-1">
+              <div className="text-lg font-bold flex items-center gap-2" style={{ fontFamily: 'var(--pixel-font)' }}>
+                {icon} {role.id.toUpperCase()}
                 {isWorking && (
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-yellow-400/20 text-yellow-200 animate-pulse">
-                    Working
+                  <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full animate-pulse"
+                    style={{ background: 'rgba(251,191,36,0.25)', color: '#fde68a' }}>
+                    WORKING
                   </span>
                 )}
               </div>
-              <div className="text-sm opacity-80">{role.name} · {role.level}</div>
+              <div className="text-xs opacity-75 mt-0.5">{roleName}</div>
             </div>
+          </div>
+
+          {/* Stats bar */}
+          <div className="relative flex items-center gap-3 px-4 py-2 text-[10px] font-bold text-white/80" style={{ background: 'rgba(0,0,0,0.2)', fontFamily: 'var(--pixel-font)' }}>
+            <span>Lv.{ROLE_LEVELS[role.id] ?? 1}</span>
+            <span style={{ color: 'rgba(255,255,255,0.3)' }}>|</span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full" style={{ background: isWorking ? 'var(--idle-amber)' : 'var(--active-green)' }} />
+              {isWorking ? 'Working' : 'Idle'}
+            </span>
+            <span style={{ color: 'rgba(255,255,255,0.3)' }}>|</span>
+            <span>{role.level}</span>
+            {role.reportsTo && <>
+              <span style={{ color: 'rgba(255,255,255,0.3)' }}>|</span>
+              <span className="opacity-60">{'\u2192'} {role.reportsTo}</span>
+            </>}
           </div>
         </div>
 
@@ -595,13 +632,13 @@ function CollapsibleSection({ title, open, onToggle, children }: {
     <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--terminal-border)' }}>
       <button
         onClick={onToggle}
-        className="w-full px-3 py-2 flex items-center justify-between cursor-pointer transition-colors"
+        className="w-full px-3 py-2.5 flex items-center justify-between cursor-pointer transition-colors group"
         style={{ background: 'var(--hud-bg-alt)' }}
       >
-        <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--terminal-text-secondary)' }}>{title}</span>
-        <span className="text-xs" style={{ color: 'var(--terminal-text-muted)' }}>{open ? '\u25BC' : '\u25B6'}</span>
+        <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--terminal-text-secondary)', fontFamily: 'var(--pixel-font)' }}>{title}</span>
+        <span className="text-[10px] transition-transform" style={{ color: 'var(--terminal-text-muted)', transform: open ? 'rotate(0deg)' : 'rotate(-90deg)' }}>{'\u25BC'}</span>
       </button>
-      {open && <div className="px-3 pb-3 pt-1">{children}</div>}
+      {open && <div className="px-3 pb-3 pt-2" style={{ borderTop: '1px solid var(--terminal-border)' }}>{children}</div>}
     </div>
   );
 }

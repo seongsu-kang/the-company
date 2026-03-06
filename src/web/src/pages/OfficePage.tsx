@@ -1062,6 +1062,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
             const r = roles.find(x => x.id === roleId);
             if (r) { setCustomizeInitialTab('character'); setCustomizeTarget(r); }
           }}
+          appearance={getAppearance(selectedRole.id)}
         />
         );
       })()}
