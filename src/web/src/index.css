@@ -14,7 +14,7 @@
   --desk-dark: #374151;
   --office-border: var(--terminal-border, #CBD5E1);
   --office-surface: var(--hud-bg-alt, #E8ECF4);
-  --office-code-bg: #EDF0F7;
+  --office-code-bg: var(--hud-bg, #EDF0F7);
   --monitor-glow: #60A5FA;
   --active-green: #34D399;
   --idle-amber: #FBBF24;
@@ -37,15 +37,15 @@
   /* === Terminal & HUD (Cool Slate — Developer Dark) === */
   --terminal-bg: #1e1e2e;
   --terminal-bg-deeper: #181825;
-  --terminal-surface: #252536;
+  --terminal-surface: var(--hud-bg-alt, #252536);
   --terminal-surface-light: #2d2d40;
 
   --terminal-border: rgba(180, 200, 240, 0.08);
   --terminal-border-hover: rgba(180, 200, 240, 0.18);
 
   --terminal-text: rgba(235, 240, 255, 0.92);
-  --terminal-text-secondary: rgba(200, 210, 240, 0.55);
-  --terminal-text-muted: rgba(180, 195, 230, 0.25);
+  --terminal-text-secondary: rgba(200, 210, 240, 0.60);
+  --terminal-text-muted: rgba(180, 195, 230, 0.35);
 
   --terminal-scrollbar: rgba(180, 200, 240, 0.10);
   --terminal-scrollbar-hover: rgba(180, 200, 240, 0.22);
@@ -257,7 +257,7 @@ body {
 /* HIRE card */
 .pixel-card--hire {
   border-style: dashed;
-  border-color: #555;
+  border-color: var(--pixel-border);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -277,13 +277,13 @@ body {
 }
 .pixel-card--hire-icon {
   font-size: 20px;
-  color: #666;
+  color: var(--terminal-text-muted);
   line-height: 1;
 }
 .pixel-card--hire-label {
   font-size: 8px;
   font-family: var(--pixel-font);
-  color: #666;
+  color: var(--terminal-text-muted);
   font-weight: 900;
   letter-spacing: 1px;
 }
@@ -331,7 +331,7 @@ body {
 .fcc-title {
   font-size: 9px;
   font-weight: 900;
-  color: var(--terminal-text-primary);
+  color: var(--terminal-text);
 }
 .fcc-meta {
   font-size: 8px;
@@ -339,7 +339,7 @@ body {
 }
 .fcc-item {
   font-size: 7px;
-  color: var(--terminal-text-muted);
+  color: var(--terminal-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -352,7 +352,7 @@ body {
   font-family: var(--pixel-font);
   text-transform: uppercase;
   letter-spacing: 2px;
-  color: var(--terminal-text-muted);
+  color: var(--terminal-text-secondary);
   padding: 0 2px;
 }
 
@@ -447,23 +447,23 @@ body {
 .office-markdown h4, .office-markdown h5, .office-markdown h6 {
   margin: 0.6em 0 0.3em;
   font-weight: 700;
-  color: #333;
+  color: var(--terminal-text);
 }
 .office-markdown h1 { font-size: 1.15em; }
 .office-markdown h2 { font-size: 1.05em; border-bottom: 1px solid var(--office-border); padding-bottom: 0.2em; }
 .office-markdown h3 { font-size: 0.95em; }
 .office-markdown strong {
-  color: #222;
+  color: var(--terminal-text);
 }
 .office-markdown a {
-  color: #1565C0;
+  color: var(--accent);
   text-decoration: underline;
 }
 .office-markdown blockquote {
   border-left: 3px solid var(--office-border);
   padding-left: 0.75em;
   margin: 0.5em 0;
-  color: #777;
+  color: var(--terminal-text-muted);
 }
 .office-markdown hr {
   border: none;
@@ -485,11 +485,11 @@ body {
 }
 .office-table th {
   background: var(--office-surface);
-  color: #555;
+  color: var(--terminal-text);
   font-weight: 600;
 }
 .office-table td {
-  color: #666;
+  color: var(--terminal-text-secondary);
 }
 
 /* Office code blocks */
@@ -504,7 +504,7 @@ body {
 }
 .office-code-block code {
   font-family: 'SF Mono', 'Fira Code', monospace;
-  color: #555;
+  color: var(--terminal-text-secondary);
 }
 
 /* ============================================ */
@@ -1126,7 +1126,7 @@ body {
   font-size: 8px;
   font-weight: 900;
   white-space: nowrap;
-  text-shadow: 0 1px 3px rgba(255,255,255,0.8);
+  text-shadow: 0 1px 3px var(--floor-dark);
 }
 
 .iso-facility-sublabel {
@@ -1136,9 +1136,9 @@ body {
   transform: translateX(-50%);
   font-family: var(--pixel-font);
   font-size: 7px;
-  color: #666;
+  color: var(--terminal-text-muted);
   white-space: nowrap;
-  text-shadow: 0 1px 2px rgba(255,255,255,0.6);
+  text-shadow: 0 1px 2px var(--floor-dark);
 }
 
 /* ── Decorations ── */
@@ -1420,31 +1420,6 @@ body {
 }
 
 /* ── Customize trigger button (on card) ── */
-.pixel-card-customize {
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  width: 18px;
-  height: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  cursor: pointer;
-  background: rgba(0,0,0,0.5);
-  border: 1px solid var(--pixel-border);
-  color: var(--terminal-text-secondary);
-  opacity: 0;
-  transition: opacity 0.15s;
-  z-index: 2;
-}
-.pixel-card:hover .pixel-card-customize {
-  opacity: 1;
-}
-.pixel-card-customize:hover {
-  color: var(--accent);
-  background: rgba(0,0,0,0.8);
-}
 
 /* ── Theme toggle buttons in bottom bar ── */
 .theme-btn {
