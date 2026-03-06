@@ -73,10 +73,16 @@ export function assembleContext(
   // 5. Knowledge Scope
   sections.push(buildKnowledgeSection(node));
 
-  // 6. SKILL.md
+  // 6. SKILL.md (Role-specific + equipped shared skills)
   const skillContent = loadSkillMd(companyRoot, roleId);
   if (skillContent) {
     sections.push('# Skills & Tools\n\n' + skillContent);
+  }
+
+  // 6b. Shared Skills (from role.yaml skills field)
+  const sharedSkills = loadSharedSkills(companyRoot, node.skills);
+  if (sharedSkills) {
+    sections.push('# Equipped Skills\n\n' + sharedSkills);
   }
 
   // 7. Hub Docs (요약)
@@ -225,6 +231,22 @@ function loadSkillMd(companyRoot: string, roleId: string): string | null {
   const skillPath = path.join(companyRoot, '.claude', 'skills', roleId, 'SKILL.md');
   if (!fs.existsSync(skillPath)) return null;
   return fs.readFileSync(skillPath, 'utf-8');
+}
+
+function loadSharedSkills(companyRoot: string, skillIds?: string[]): string | null {
+  if (!skillIds?.length) return null;
+
+  const sections: string[] = [];
+  for (const skillId of skillIds) {
+    const skillPath = path.join(companyRoot, '.claude', 'skills', '_shared', skillId, 'SKILL.md');
+    if (!fs.existsSync(skillPath)) continue;
+    const content = fs.readFileSync(skillPath, 'utf-8');
+    // Extract just the key sections (skip frontmatter)
+    const body = content.replace(/^---[\s\S]*?---\n*/, '').trim();
+    sections.push(`## [Skill: ${skillId}]\n\n${body}`);
+  }
+
+  return sections.length > 0 ? sections.join('\n\n---\n\n') : null;
 }
 
 function loadHubSummaries(companyRoot: string, node: OrgNode): string | null {

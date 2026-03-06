@@ -4,20 +4,23 @@
     "name": "Chief Technology Officer",
     "level": "c-level",
     "reportsTo": "CEO",
-    "persona": "Technical leader responsible for architecture, engineering standards, and technology strategy."
+    "persona": "Technical leader responsible for architecture, engineering standards, and technology strategy.",
+    "defaultSkills": ["knowledge-gate", "akb-linter"]
   },
   {
     "id": "pm",
     "name": "Product Manager",
     "level": "team-lead",
     "reportsTo": "CTO",
-    "persona": "Product strategist who defines requirements, prioritizes features, and manages the roadmap."
+    "persona": "Product strategist who defines requirements, prioritizes features, and manages the roadmap.",
+    "defaultSkills": ["knowledge-gate", "akb-linter"]
   },
   {
     "id": "engineer",
     "name": "Software Engineer",
     "level": "member",
     "reportsTo": "CTO",
-    "persona": "Full-stack developer who implements features, fixes bugs, and writes tests."
+    "persona": "Full-stack developer who implements features, fixes bugs, and writes tests.",
+    "defaultSkills": ["knowledge-gate"]
   }
 ]

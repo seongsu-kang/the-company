@@ -12,6 +12,7 @@ export interface RoleDefinition {
   level: 'c-level' | 'team-lead' | 'member';
   reportsTo: string;
   persona: string;
+  skills?: string[];
   authority: {
     autonomous: string[];
     needsApproval: string[];
@@ -90,6 +91,7 @@ export class RoleLifecycleManager {
     if (changes.level !== undefined) current.level = changes.level;
     if (changes.reportsTo !== undefined) current.reports_to = changes.reportsTo;
     if (changes.persona !== undefined) current.persona = changes.persona;
+    if (changes.skills !== undefined) current.skills = changes.skills;
     if (changes.authority !== undefined) {
       current.authority = {
         autonomous: changes.authority.autonomous,
@@ -230,26 +232,30 @@ export class RoleLifecycleManager {
         writes: def.knowledge.writes,
       },
       reports: def.reports,
+      skills: def.skills,
     };
   }
 
   private buildRoleYaml(def: RoleDefinition): string {
-    const obj = {
+    const obj: Record<string, unknown> = {
       id: def.id,
       name: def.name,
       level: def.level,
       reports_to: def.reportsTo,
       persona: def.persona,
-      authority: {
-        autonomous: def.authority.autonomous,
-        needs_approval: def.authority.needsApproval,
-      },
-      knowledge: {
-        reads: def.knowledge.reads,
-        writes: def.knowledge.writes,
-      },
-      reports: def.reports,
     };
+    if (def.skills?.length) {
+      obj.skills = def.skills;
+    }
+    obj.authority = {
+      autonomous: def.authority.autonomous,
+      needs_approval: def.authority.needsApproval,
+    };
+    obj.knowledge = {
+      reads: def.knowledge.reads,
+      writes: def.knowledge.writes,
+    };
+    obj.reports = def.reports;
     return YAML.stringify(obj);
   }
 

@@ -4,20 +4,23 @@
     "name": "Lead Researcher",
     "level": "c-level",
     "reportsTo": "CEO",
-    "persona": "Research director who defines research questions, methodology, and oversees analysis quality."
+    "persona": "Research director who defines research questions, methodology, and oversees analysis quality.",
+    "defaultSkills": ["knowledge-gate", "akb-linter"]
   },
   {
     "id": "analyst",
     "name": "Research Analyst",
     "level": "member",
     "reportsTo": "lead-researcher",
-    "persona": "Data analyst who gathers information, runs analyses, and produces findings."
+    "persona": "Data analyst who gathers information, runs analyses, and produces findings.",
+    "defaultSkills": ["knowledge-gate"]
   },
   {
     "id": "writer",
     "name": "Technical Writer",
     "level": "member",
     "reportsTo": "lead-researcher",
-    "persona": "Writer who transforms research findings into clear, publishable documents and reports."
+    "persona": "Writer who transforms research findings into clear, publishable documents and reports.",
+    "defaultSkills": ["knowledge-gate", "akb-linter"]
   }
 ]

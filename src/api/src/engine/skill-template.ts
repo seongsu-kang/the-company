@@ -100,6 +100,12 @@ ${writePaths}
 
 ---
 
+## Equipped Skills
+
+${node.skills?.length ? node.skills.map((s) => `- \`${s}\` — see \`.claude/skills/_shared/${s}/SKILL.md\``).join('\n') : '- (none)'}
+
+---
+
 ## AKB 규칙
 
 - 작업 결과는 반드시 AKB에 기록

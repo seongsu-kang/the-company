@@ -26,33 +26,90 @@
 
 ---
 
-## Folder Structure
+## AI Work Rules
+
+### Hub-First Principle
+
+> **Read the relevant Hub document before starting any work.**
+
+Every folder has a Hub file (`{folder-name}.md`) as its entry point.
+Check the Task Routing table above to find the right Hub, then read it first.
+
+### Knowledge Gate
+
+> **Before creating a new document, search existing docs first.**
 
 ```
-{{COMPANY_NAME}}/
-├── CLAUDE.md                ← AI entry point
-├── company/
-│   └── company.md           ← Mission, vision
-├── roles/
-│   ├── roles.md             ← Role listing (Hub)
-│   └── {role-id}/
-│       ├── role.yaml        ← Role definition
-│       ├── profile.md       ← Role profile
-│       └── journal/         ← Work journal
-├── projects/
-│   └── projects.md          ← Project listing (Hub)
-├── architecture/
-│   └── architecture.md      ← Technical architecture (Hub)
-├── operations/
-│   ├── standup/             ← Daily standups
-│   ├── waves/               ← Wave execution logs
-│   └── decisions/           ← Decision log
-├── knowledge/
-│   └── knowledge.md         ← Domain knowledge (Hub)
-└── .claude/skills/
-    └── {role-id}/SKILL.md   ← Role skill guides
+1. Summarize the insight + 3-5 keywords
+2. Search existing docs with those keywords (grep 3+ terms)
+3. Decide:
+   - Overlap 70%+ -> Add to existing document
+   - Overlap 30-70% -> New doc + cross-link to existing
+   - Overlap <30% -> New document (register in Hub)
+   - Temporary info -> Journal only (no new doc)
+4. Cross-link to related docs
+5. Register in the relevant Hub
+```
+
+### Document Hygiene
+
+| Rule | Description |
+|------|-------------|
+| No orphan docs | Every document must be reachable from a Hub |
+| Hub pattern | Each folder's entry point is `{folder}.md` |
+| Cross-link | New docs must reference at least 1 related doc |
+| Source attribution | External research must cite source and date |
+
+### Skills
+
+Roles have equipped **Skills** -- modular capability guides in `.claude/skills/`.
+
+- Role-specific skills: `.claude/skills/{role-id}/SKILL.md`
+- Shared skills: `.claude/skills/_shared/{skill-id}/SKILL.md`
+- Each Role's equipped skills are listed in `role.yaml` under `skills:`
+- **Always read SKILL.md before starting work** for that Role
+
+### Work Completion Checklist
+
+After completing any task:
+
+```
+1. Did this work produce new knowledge? -> Document it (Knowledge Gate)
+2. Are existing docs still accurate? -> Update if needed
+3. Is the new/updated doc reachable from a Hub? -> Add link
+4. Are there cross-links to related docs? -> Add references
 ```
 
 ---
 
-*Powered by [the-company](https://github.com/seongsu-kang/the-company-inc)*
+## Folder Structure
+
+```
+{{COMPANY_NAME}}/
++-- CLAUDE.md                <- AI entry point
++-- company/
+|   +-- company.md           <- Mission, vision
++-- roles/
+|   +-- roles.md             <- Role listing (Hub)
+|   +-- {role-id}/
+|       +-- role.yaml        <- Role definition
+|       +-- profile.md       <- Role profile
+|       +-- journal/         <- Work journal
++-- projects/
+|   +-- projects.md          <- Project listing (Hub)
++-- architecture/
+|   +-- architecture.md      <- Technical architecture (Hub)
++-- operations/
+|   +-- standup/             <- Daily standups
+|   +-- waves/               <- Wave execution logs
+|   +-- decisions/           <- Decision log
++-- knowledge/
+|   +-- knowledge.md         <- Domain knowledge (Hub)
++-- .claude/skills/
+    +-- _shared/             <- Shared skill plugins
+    +-- {role-id}/SKILL.md   <- Role-specific skill guides
+```
+
+---
+
+*Powered by [the-company](https://github.com/seongsu-kang/the-company)*

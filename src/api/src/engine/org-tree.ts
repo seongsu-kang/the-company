@@ -24,6 +24,7 @@ export interface OrgNode {
   authority: Authority;
   knowledge: KnowledgeAccess;
   reports: { daily: string; weekly: string };
+  skills?: string[];
   model?: string;
 }
 
@@ -52,6 +53,7 @@ interface RawRoleYaml {
     daily?: string;
     weekly?: string;
   };
+  skills?: string[];
   model?: string;
 }
 
@@ -104,6 +106,7 @@ export function buildOrgTree(companyRoot: string): OrgTree {
           daily: raw.reports?.daily ?? '',
           weekly: raw.reports?.weekly ?? '',
         },
+        skills: raw.skills,
         model: raw.model,
       };
       tree.nodes.set(node.id, node);

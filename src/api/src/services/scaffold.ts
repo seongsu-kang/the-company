@@ -27,6 +27,7 @@ interface TeamRole {
   level: string;
   reportsTo: string;
   persona: string;
+  defaultSkills?: string[];
 }
 
 function loadTemplate(name: string): string {
@@ -47,12 +48,88 @@ export function getAvailableTeams(): string[] {
     .map(f => f.replace('.json', ''));
 }
 
+export interface SkillMeta {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  author: string;
+  tags: string[];
+  category: string;
+  compatibleRoles: string[];
+  dependencies: string[];
+  files: string[];
+}
+
+/**
+ * Get available skills from the template registry
+ */
+export function getAvailableSkills(): SkillMeta[] {
+  const manifestPath = path.join(TEMPLATES_DIR, 'skills', '_manifest.json');
+  if (!fs.existsSync(manifestPath)) return [];
+
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+  const skills: SkillMeta[] = [];
+
+  for (const entry of manifest.skills) {
+    const metaPath = path.join(TEMPLATES_DIR, 'skills', entry.id, 'meta.json');
+    if (fs.existsSync(metaPath)) {
+      skills.push(JSON.parse(fs.readFileSync(metaPath, 'utf-8')));
+    }
+  }
+
+  return skills;
+}
+
 function renderTemplate(template: string, vars: Record<string, string>): string {
   let result = template;
   for (const [key, value] of Object.entries(vars)) {
     result = result.replaceAll(`{{${key}}}`, value);
   }
   return result;
+}
+
+/**
+ * Copy a skill from templates/skills/ to the target AKB's .claude/skills/_shared/
+ */
+function installSkill(root: string, skillId: string): boolean {
+  const srcDir = path.join(TEMPLATES_DIR, 'skills', skillId);
+  if (!fs.existsSync(srcDir)) return false;
+
+  const destDir = path.join(root, '.claude', 'skills', '_shared', skillId);
+  fs.mkdirSync(destDir, { recursive: true });
+
+  // Copy SKILL.md
+  const skillMdSrc = path.join(srcDir, 'SKILL.md');
+  if (fs.existsSync(skillMdSrc)) {
+    fs.copyFileSync(skillMdSrc, path.join(destDir, 'SKILL.md'));
+  }
+
+  return true;
+}
+
+/**
+ * Collect all unique skills needed by a team's roles and install them
+ */
+function installTeamSkills(root: string, roles: TeamRole[]): string[] {
+  const installed: string[] = [];
+  const skillIds = new Set<string>();
+
+  for (const role of roles) {
+    if (role.defaultSkills) {
+      for (const skillId of role.defaultSkills) {
+        skillIds.add(skillId);
+      }
+    }
+  }
+
+  for (const skillId of skillIds) {
+    if (installSkill(root, skillId)) {
+      installed.push(skillId);
+    }
+  }
+
+  return installed;
 }
 
 export function scaffold(config: ScaffoldConfig): string[] {
@@ -68,6 +145,7 @@ export function scaffold(config: ScaffoldConfig): string[] {
     'company', 'roles', 'projects', 'architecture',
     'operations', 'operations/standup', 'operations/waves',
     'operations/decisions', 'knowledge', '.claude/skills',
+    '.claude/skills/_shared',
   ];
   for (const dir of dirs) {
     fs.mkdirSync(path.join(root, dir), { recursive: true });
@@ -103,9 +181,17 @@ export function scaffold(config: ScaffoldConfig): string[] {
     created.push('.env');
   }
 
-  // Create team roles
+  // Create team roles + install skills
   if (config.team !== 'custom') {
     const roles = loadTeam(config.team);
+
+    // Install shared skills needed by this team
+    const installedSkills = installTeamSkills(root, roles);
+    for (const skillId of installedSkills) {
+      created.push(`.claude/skills/_shared/${skillId}/`);
+    }
+
+    // Create roles with skill references
     for (const role of roles) {
       createRole(root, role);
       created.push(`roles/${role.id}/`);
@@ -162,12 +248,23 @@ function createRole(root: string, role: TeamRole): void {
   fs.mkdirSync(journalDir, { recursive: true });
   fs.mkdirSync(skillDir, { recursive: true });
 
-  const yaml = [
+  // Build role.yaml with skills field
+  const yamlLines = [
     `id: ${role.id}`,
     `name: "${role.name}"`,
     `level: ${role.level}`,
     `reports_to: ${role.reportsTo}`,
     `persona: "${role.persona}"`,
+  ];
+
+  if (role.defaultSkills?.length) {
+    yamlLines.push('skills:');
+    for (const skill of role.defaultSkills) {
+      yamlLines.push(`  - ${skill}`);
+    }
+  }
+
+  yamlLines.push(
     'authority:',
     '  autonomous:',
     '    - Implementation within assigned scope',
@@ -181,8 +278,9 @@ function createRole(root: string, role: TeamRole): void {
     'reports:',
     '  daily: standup',
     '  weekly: summary',
-  ].join('\n');
-  fs.writeFileSync(path.join(roleDir, 'role.yaml'), yaml + '\n');
+  );
+
+  fs.writeFileSync(path.join(roleDir, 'role.yaml'), yamlLines.join('\n') + '\n');
 
   const profile = `# ${role.name}\n\n> ${role.persona}\n\n| Item | Value |\n|------|-------|\n| ID | ${role.id} |\n| Level | ${role.level} |\n| Reports To | ${role.reportsTo} |\n`;
   fs.writeFileSync(path.join(roleDir, 'profile.md'), profile);
