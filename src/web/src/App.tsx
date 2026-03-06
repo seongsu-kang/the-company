@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import ErrorBoundary from './components/ErrorBoundary';
 import OfficePage from './pages/OfficePage';
 import OnboardingWizard from './pages/OnboardingWizard';
 import { useCompanyStatus } from './hooks/useCompanyStatus';
+import { OFFICE_THEMES } from './types/appearance';
+import type { OfficeTheme } from './types/appearance';
 import type { ImportJob } from './types';
 
 function BootScreen() {
@@ -18,7 +20,7 @@ function BootScreen() {
         />
         <div
           className="mt-4 text-sm"
-          style={{ color: 'var(--desk-dark)', fontFamily: 'var(--pixel-font)' }}
+          style={{ color: 'var(--terminal-text-secondary)', fontFamily: 'var(--pixel-font)' }}
         >
           Loading...
         </div>
@@ -27,9 +29,25 @@ function BootScreen() {
   );
 }
 
+function applyStoredTheme(): void {
+  try {
+    const raw = localStorage.getItem('the-company-theme');
+    const theme = (raw && raw in OFFICE_THEMES ? raw : 'default') as OfficeTheme;
+    const vars = OFFICE_THEMES[theme]?.vars;
+    if (!vars) return;
+    const root = document.documentElement;
+    for (const [key, value] of Object.entries(vars)) {
+      root.style.setProperty(key, value);
+    }
+  } catch {}
+}
+
 function AppShell() {
   const { initialized, loading, refetch } = useCompanyStatus();
   const [importJob, setImportJob] = useState<ImportJob | null>(null);
+
+  // Apply saved theme on app mount (before office loads)
+  useEffect(() => { applyStoredTheme(); }, []);
 
   const handleWizardComplete = (job?: ImportJob) => {
     if (job) setImportJob(job);

@@ -323,7 +323,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
     placeholder:text-[var(--terminal-text-muted)]`;
 
   const cardClass = (selected: boolean) =>
-    `p-4 rounded-lg border-2 cursor-pointer transition-all ${
+    `p-4 rounded-lg border-2 cursor-pointer transition-all text-[var(--terminal-text)] ${
       selected
         ? 'border-[var(--accent)] bg-[var(--accent)]/10'
         : 'border-[var(--terminal-border)] bg-[var(--hud-bg-alt)] hover:border-[var(--accent)]/50'
