@@ -20,10 +20,12 @@ function isoToScreen(col: number, row: number): { x: number; y: number } {
 const ROLE_COLORS: Record<string, string> = {
   cto: '#1565C0', cbo: '#E65100', pm: '#2E7D32',
   engineer: '#4A148C', designer: '#AD1457', qa: '#00695C',
+  'data-analyst': '#0277BD',
 };
 const ROLE_ICONS: Record<string, string> = {
   cto: '\u{1F3D7}\u{FE0F}', cbo: '\u{1F4CA}', pm: '\u{1F4CB}',
   engineer: '\u2699\u{FE0F}', designer: '\u{1F3A8}', qa: '\u{1F50D}',
+  'data-analyst': '\u{1F4CA}',
 };
 
 /** Generate a deterministic color from a role ID for unknown roles */
@@ -175,6 +177,21 @@ const FACILITY_LAYOUT: FacilityConfig[] = [
   { id: 'bulletin',  col: 1, row: 4, type: 'bulletin',  label: 'BULLETIN',   icon: '\u{1F4CB}', color: '#F59E0B' },
   { id: 'decisions', col: 3, row: 4, type: 'decision',  label: 'DECISIONS',  icon: '\u{1F4DC}', color: '#EF4444' },
   { id: 'knowledge', col: 5, row: 3, type: 'knowledge', label: 'KNOWLEDGE',  icon: '\u{1F4DA}', color: '#0D9488' },
+];
+
+/* ─── Decorations ──────────────────────── */
+
+interface DecoConfig { col: number; row: number; icon: string; label: string; }
+
+const DECORATIONS: DecoConfig[] = [
+  { col: 2, row: 0, icon: '\u{2615}', label: 'Coffee' },       // Executive wing coffee
+  { col: 0, row: 0, icon: '\u{1F33F}', label: 'Plant' },       // Exec plant
+  { col: 5, row: 0, icon: '\u{1F4F0}', label: 'Whiteboard' },  // Workspace whiteboard
+  { col: 4, row: 3, icon: '\u{1F33F}', label: 'Plant' },       // Workspace plant
+  { col: 0, row: 3, icon: '\u{1F4A1}', label: 'Idea Board' },  // Meeting room deco
+  { col: 2, row: 4, icon: '\u{2615}', label: 'Break Room' },   // Commons coffee
+  { col: 4, row: 4, icon: '\u{1F3AE}', label: 'Game Corner' }, // Commons game
+  { col: 5, row: 4, icon: '\u{1F33F}', label: 'Plant' },       // Commons plant
 ];
 
 
@@ -418,6 +435,19 @@ export default function IsometricOfficeView({
   const deskLayout = useMemo(() => generateDeskLayout(roles), [roles]);
   const roomLookup = useMemo(() => buildRoomLookup(), []);
 
+  // Filter decorations to avoid overlapping with desks/facilities
+  const occupiedTiles = useMemo(() => {
+    const set = new Set<string>();
+    for (const d of deskLayout) set.add(`${d.col},${d.row}`);
+    for (const f of FACILITY_LAYOUT) set.add(`${f.col},${f.row}`);
+    return set;
+  }, [deskLayout]);
+
+  const visibleDecos = useMemo(
+    () => DECORATIONS.filter(d => !occupiedTiles.has(`${d.col},${d.row}`)),
+    [occupiedTiles],
+  );
+
   // Center the isometric grid in the scene
   const centerIso = isoToScreen(2.5, 2);
 
@@ -459,6 +489,22 @@ export default function IsometricOfficeView({
               }
             />
           ))}
+
+          {/* Decorations */}
+          {visibleDecos.map((deco) => {
+            const { x, y } = isoToScreen(deco.col, deco.row);
+            return (
+              <div
+                key={`deco-${deco.col}-${deco.row}`}
+                className="iso-deco"
+                style={{ left: x, top: y }}
+                title={deco.label}
+              >
+                <span className="iso-deco-icon">{deco.icon}</span>
+                <span className="iso-deco-label">{deco.label}</span>
+              </div>
+            );
+          })}
 
           {/* Role desks (highest z) */}
           {deskLayout.map((desk) => {

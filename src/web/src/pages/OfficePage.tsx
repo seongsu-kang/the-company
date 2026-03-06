@@ -24,13 +24,16 @@ import { OFFICE_THEMES } from '../types/appearance';
 const ROLE_ICONS: Record<string, string> = {
   cto: '\u{1F3D7}\u{FE0F}', cbo: '\u{1F4CA}', pm: '\u{1F4CB}',
   engineer: '\u{2699}\u{FE0F}', designer: '\u{1F3A8}', qa: '\u{1F50D}',
+  'data-analyst': '\u{1F4CA}',
 };
 const ROLE_COLORS: Record<string, string> = {
   cto: '#1565C0', cbo: '#E65100', pm: '#2E7D32',
   engineer: '#4A148C', designer: '#AD1457', qa: '#00695C',
+  'data-analyst': '#0277BD',
 };
 const ROLE_LEVELS: Record<string, number> = {
   cto: 8, cbo: 7, pm: 6, engineer: 5, designer: 5, qa: 4,
+  'data-analyst': 4,
 };
 const DESK_ACTIVITY: Record<string, string> = {
   cto: '\uC544\uD0A4\uD14D\uCC98', cbo: '\uC2DC\uC7A5 \uBD84\uC11D',
