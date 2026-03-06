@@ -326,7 +326,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
     `p-4 rounded-lg border-2 cursor-pointer transition-all ${
       selected
         ? 'border-[var(--accent)] bg-[var(--accent)]/10'
-        : 'border-[var(--office-border)] bg-[var(--wall)] hover:border-[var(--accent)]/50'
+        : 'border-[var(--terminal-border)] bg-[var(--hud-bg-alt)] hover:border-[var(--accent)]/50'
     }`;
 
   return (
@@ -337,7 +337,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
     >
       <div
         className="w-full max-w-xl rounded-xl shadow-2xl overflow-hidden"
-        style={{ background: 'var(--wall)', border: '1px solid var(--office-border)' }}
+        style={{ background: 'var(--hud-bg)', border: '1px solid var(--terminal-border)' }}
       >
         {/* Header */}
         <div
@@ -374,9 +374,9 @@ export default function OnboardingWizard({ onComplete }: Props) {
           {/* ── Step: AI Engine ── */}
           {currentStep === 'engine' && (
             <div className="space-y-4">
-              <h2 className="text-base font-semibold" style={{ color: 'var(--desk-dark)' }}>AI Engine Setup</h2>
+              <h2 className="text-base font-semibold" style={{ color: 'var(--terminal-text)' }}>AI Engine Setup</h2>
               {detectingEngine ? (
-                <div className="text-sm" style={{ color: 'var(--desk-dark)' }}>Detecting AI engine...</div>
+                <div className="text-sm" style={{ color: 'var(--terminal-text-secondary)' }}>Detecting AI engine...</div>
               ) : (
                 <>
                   <div
@@ -428,13 +428,13 @@ export default function OnboardingWizard({ onComplete }: Props) {
           {/* ── Step: Company Info ── */}
           {currentStep === 'company' && (
             <div className="space-y-4">
-              <h2 className="text-base font-semibold" style={{ color: 'var(--desk-dark)' }}>Company Info</h2>
+              <h2 className="text-base font-semibold" style={{ color: 'var(--terminal-text)' }}>Company Info</h2>
               <div>
-                <label className="text-xs font-medium block mb-1" style={{ color: 'var(--desk-dark)' }}>Company Name *</label>
+                <label className="text-xs font-medium block mb-1" style={{ color: 'var(--terminal-text-secondary)' }}>Company Name *</label>
                 <input ref={nameRef} className={inputClass} placeholder="e.g. Acme Corp" value={companyName} onChange={e => setCompanyName(e.target.value)} />
               </div>
               <div>
-                <label className="text-xs font-medium block mb-1" style={{ color: 'var(--desk-dark)' }}>Description</label>
+                <label className="text-xs font-medium block mb-1" style={{ color: 'var(--terminal-text-secondary)' }}>Description</label>
                 <textarea className={`${inputClass} resize-none`} rows={3} placeholder="What does your AI company do?" value={description} onChange={e => setDescription(e.target.value)} />
               </div>
             </div>
@@ -443,7 +443,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
           {/* ── Step: Project (code repo) ── */}
           {currentStep === 'project' && (
             <div className="space-y-4">
-              <h2 className="text-base font-semibold" style={{ color: 'var(--desk-dark)' }}>Project Setup</h2>
+              <h2 className="text-base font-semibold" style={{ color: 'var(--terminal-text)' }}>Project Setup</h2>
               <div className={cardClass(projectMode === 'fresh')} onClick={() => { setProjectMode('fresh'); setPathValid(null); }}>
                 <div className="font-medium text-sm">{'\uD83C\uDF31'} Start Fresh</div>
                 <div className="text-xs opacity-70 mt-1">Create a new AI company from scratch with clean directory structure.</div>
@@ -464,7 +464,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
                       <button
                         onClick={() => setShowProjectBrowser(!showProjectBrowser)}
                         className="px-3 py-2 rounded text-xs font-medium transition-colors"
-                        style={{ background: 'var(--desk-dark)', color: '#fff' }}
+                        style={{ background: 'var(--hud-bg-alt)', color: 'var(--terminal-text)' }}
                         title="Browse folders"
                       >
                         {'\uD83D\uDCC1'}
@@ -499,8 +499,8 @@ export default function OnboardingWizard({ onComplete }: Props) {
           {/* ── Step: Knowledge (3 modes) ── */}
           {currentStep === 'knowledge' && (
             <div className="space-y-3">
-              <h2 className="text-base font-semibold" style={{ color: 'var(--desk-dark)' }}>Knowledge Strategy</h2>
-              <p className="text-xs" style={{ color: 'var(--desk-dark)', opacity: 0.7 }}>
+              <h2 className="text-base font-semibold" style={{ color: 'var(--terminal-text)' }}>Knowledge Strategy</h2>
+              <p className="text-xs" style={{ color: 'var(--terminal-text-secondary)' }}>
                 How should AI handle your knowledge base?
               </p>
 
@@ -528,7 +528,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
                       <button
                         onClick={() => setShowKnowledgeBrowser(!showKnowledgeBrowser)}
                         className="px-3 py-2 rounded text-xs font-medium transition-colors"
-                        style={{ background: 'var(--desk-dark)', color: '#fff' }}
+                        style={{ background: 'var(--hud-bg-alt)', color: 'var(--terminal-text)' }}
                         title="Browse folders"
                       >
                         {'\uD83D\uDCC1'}
@@ -566,7 +566,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
                       </div>
                     )}
                     {knowledgePaths.length === 0 && (
-                      <div className="text-[10px] text-center py-2" style={{ color: 'var(--desk-dark)', opacity: 0.4 }}>
+                      <div className="text-[10px] text-center py-2" style={{ color: 'var(--terminal-text-muted)' }}>
                         Add at least one folder to import.
                       </div>
                     )}
@@ -591,7 +591,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
                       <button
                         onClick={() => setShowAkbBrowser(!showAkbBrowser)}
                         className="px-3 py-2 rounded text-xs font-medium transition-colors"
-                        style={{ background: 'var(--desk-dark)', color: '#fff' }}
+                        style={{ background: 'var(--hud-bg-alt)', color: 'var(--terminal-text)' }}
                         title="Browse folders"
                       >
                         {'\uD83D\uDCC1'}
@@ -626,8 +626,8 @@ export default function OnboardingWizard({ onComplete }: Props) {
           {/* ── Step: Team Template ── */}
           {currentStep === 'team' && (
             <div className="space-y-4">
-              <h2 className="text-base font-semibold" style={{ color: 'var(--desk-dark)' }}>Team Template</h2>
-              <p className="text-xs" style={{ color: 'var(--desk-dark)', opacity: 0.7 }}>
+              <h2 className="text-base font-semibold" style={{ color: 'var(--terminal-text)' }}>Team Template</h2>
+              <p className="text-xs" style={{ color: 'var(--terminal-text-secondary)' }}>
                 Choose a starting team. You can add or remove roles later.
               </p>
               {teams.map(team => (
@@ -652,7 +652,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
           {/* ── Step: Create ── */}
           {currentStep === 'create' && (
             <div className="space-y-4">
-              <h2 className="text-base font-semibold" style={{ color: 'var(--desk-dark)' }}>
+              <h2 className="text-base font-semibold" style={{ color: 'var(--terminal-text)' }}>
                 {scaffoldDone
                   ? (knowledgeMode === 'existing-akb' ? 'AKB Connected!' : 'Company Created!')
                   : 'Review & Create'}
@@ -685,14 +685,14 @@ export default function OnboardingWizard({ onComplete }: Props) {
                     )}
                   </div>
                   {scaffoldError && (
-                    <div className="text-xs p-3 rounded" style={{ background: '#FEE2E2', color: '#DC2626' }}>{scaffoldError}</div>
+                    <div className="text-xs p-3 rounded" style={{ background: 'rgba(220,38,38,0.15)', color: '#f87171' }}>{scaffoldError}</div>
                   )}
                 </>
               )}
               {(scaffolding || connectingAkb) && (
                 <div className="flex flex-col items-center py-8 gap-3">
                   <div className="w-8 h-8 border-2 rounded-full animate-spin" style={{ borderColor: 'var(--terminal-border)', borderTopColor: 'var(--accent)' }} />
-                  <div className="text-sm" style={{ color: 'var(--desk-dark)' }}>
+                  <div className="text-sm" style={{ color: 'var(--terminal-text-secondary)' }}>
                     {connectingAkb ? 'Connecting to AKB...' : 'Scaffolding your company...'}
                   </div>
                 </div>
@@ -722,19 +722,19 @@ export default function OnboardingWizard({ onComplete }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 flex justify-between items-center" style={{ borderTop: '1px solid var(--office-border)' }}>
+        <div className="px-6 py-4 flex justify-between items-center" style={{ borderTop: '1px solid var(--terminal-border)' }}>
           <div>
             {stepIndex > 0 && !scaffoldDone && (
               <button
                 onClick={handleBack}
                 className="px-4 py-2 rounded text-sm transition-colors"
-                style={{ color: 'var(--desk-dark)', border: '1px solid var(--office-border)' }}
+                style={{ color: 'var(--terminal-text-secondary)', border: '1px solid var(--terminal-border)' }}
               >
                 Back
               </button>
             )}
           </div>
-          <div className="text-xs" style={{ color: 'var(--desk-dark)', opacity: 0.5 }}>{stepIndex + 1} / {steps.length}</div>
+          <div className="text-xs" style={{ color: 'var(--terminal-text-muted)' }}>{stepIndex + 1} / {steps.length}</div>
           <div>
             {scaffoldDone ? (
               <button
@@ -749,7 +749,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
                 onClick={handleNext}
                 disabled={!canNext() || scaffolding || connectingAkb}
                 className="px-5 py-2 rounded text-sm font-medium transition-colors"
-                style={{ background: canNext() ? 'var(--accent)' : 'var(--office-border)', color: '#fff', opacity: canNext() && !scaffolding && !connectingAkb ? 1 : 0.5 }}
+                style={{ background: canNext() ? 'var(--accent)' : 'var(--terminal-border)', color: '#fff', opacity: canNext() && !scaffolding && !connectingAkb ? 1 : 0.5 }}
               >
                 {currentStep === 'create'
                   ? (scaffolding || connectingAkb
