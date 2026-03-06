@@ -1253,7 +1253,7 @@ function PixelCard({ role, speech, onClick, liveStatus, activeTask, featured, ap
 
       {/* Task line */}
       <div className="pixel-card-task">
-        <span className="pixel-card-task-icon">{isWorking ? '\u{1F6E0}\u{FE0F}' : ROLE_ICONS[role.id] ?? ''}</span>
+        <span className="pixel-card-task-icon">{isWorking ? '\u{1F6E0}\u{FE0F}' : ROLE_ICONS[role.id] ?? '\u{1F464}'}</span>
         <span className="pixel-card-task-text">{taskText || activity}</span>
       </div>
     </div>

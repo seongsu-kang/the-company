@@ -26,6 +26,14 @@ const ROLE_ICONS: Record<string, string> = {
   engineer: '\u2699\u{FE0F}', designer: '\u{1F3A8}', qa: '\u{1F50D}',
 };
 
+/** Generate a deterministic color from a role ID for unknown roles */
+function hashRoleColor(id: string): string {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = id.charCodeAt(i) + ((h << 5) - h);
+  const hue = ((h % 360) + 360) % 360;
+  return `hsl(${hue}, 50%, 35%)`;
+}
+
 /* ─── Room zone definitions ─────────────── */
 
 interface RoomZone {
@@ -88,16 +96,69 @@ function buildRoomLookup(): Map<string, RoomZone> {
 
 interface DeskConfig { roleId: string; col: number; row: number; }
 
-const DESK_LAYOUT: DeskConfig[] = [
-  // Executive wing
-  { roleId: 'cto', col: 1, row: 0 },
-  { roleId: 'cbo', col: 0, row: 1 },
-  // Workspace
-  { roleId: 'pm',       col: 3, row: 0 },
-  { roleId: 'engineer', col: 4, row: 1 },
-  { roleId: 'designer', col: 3, row: 2 },
-  { roleId: 'qa',       col: 5, row: 1 },
+/** Preferred positions for known roles (used when available) */
+const PREFERRED_DESK: Record<string, { col: number; row: number }> = {
+  cto: { col: 1, row: 0 },
+  cbo: { col: 0, row: 1 },
+  pm:  { col: 3, row: 0 },
+  engineer: { col: 4, row: 1 },
+  designer: { col: 3, row: 2 },
+  qa:  { col: 5, row: 1 },
+};
+
+/** Workspace slot pool for dynamically placed roles (col 3-5, rows 0-3) */
+const WORKSPACE_SLOTS: [number, number][] = [
+  [3,0],[4,0],[5,0],
+  [3,1],[4,1],[5,1],
+  [3,2],[4,2],[5,2],
+  [3,3],[4,3],[5,3],
 ];
+
+function generateDeskLayout(roles: Role[]): DeskConfig[] {
+  const desks: DeskConfig[] = [];
+  const occupied = new Set<string>();
+
+  // Place c-level roles in executive wing
+  const cLevels = roles.filter(r => r.level === 'c-level');
+  const members = roles.filter(r => r.level !== 'c-level');
+
+  for (const role of cLevels) {
+    const pref = PREFERRED_DESK[role.id];
+    if (pref && !occupied.has(`${pref.col},${pref.row}`)) {
+      desks.push({ roleId: role.id, col: pref.col, row: pref.row });
+      occupied.add(`${pref.col},${pref.row}`);
+    } else {
+      // Find open executive wing slot (cols 0-2, rows 0-1)
+      const execSlots: [number, number][] = [[0,0],[1,0],[2,0],[0,1],[1,1],[2,1]];
+      for (const [c, r] of execSlots) {
+        if (!occupied.has(`${c},${r}`)) {
+          desks.push({ roleId: role.id, col: c, row: r });
+          occupied.add(`${c},${r}`);
+          break;
+        }
+      }
+    }
+  }
+
+  // Place members in workspace
+  for (const role of members) {
+    const pref = PREFERRED_DESK[role.id];
+    if (pref && !occupied.has(`${pref.col},${pref.row}`)) {
+      desks.push({ roleId: role.id, col: pref.col, row: pref.row });
+      occupied.add(`${pref.col},${pref.row}`);
+    } else {
+      for (const [c, r] of WORKSPACE_SLOTS) {
+        if (!occupied.has(`${c},${r}`)) {
+          desks.push({ roleId: role.id, col: c, row: r });
+          occupied.add(`${c},${r}`);
+          break;
+        }
+      }
+    }
+  }
+
+  return desks;
+}
 
 interface FacilityConfig {
   id: string;
@@ -215,8 +276,8 @@ interface DeskProps {
 
 function IsoDeskTile({ role, col, row, speech, liveStatus, activeTask, appearance, onClick }: DeskProps) {
   const { x, y } = isoToScreen(col, row);
-  const color = ROLE_COLORS[role.id] ?? '#666';
-  const icon = ROLE_ICONS[role.id] ?? '';
+  const color = ROLE_COLORS[role.id] ?? hashRoleColor(role.id);
+  const icon = ROLE_ICONS[role.id] ?? '\u{1F464}';
   const isWorking = liveStatus === 'working';
   const isCLevel = role.level === 'c-level';
 
@@ -354,6 +415,7 @@ export default function IsometricOfficeView({
 }: IsometricOfficeViewProps) {
   const mainProject = projects[0];
   const roleMap = useMemo(() => new Map(roles.map((r) => [r.id, r])), [roles]);
+  const deskLayout = useMemo(() => generateDeskLayout(roles), [roles]);
   const roomLookup = useMemo(() => buildRoomLookup(), []);
 
   // Center the isometric grid in the scene
@@ -399,7 +461,7 @@ export default function IsometricOfficeView({
           ))}
 
           {/* Role desks (highest z) */}
-          {DESK_LAYOUT.map((desk) => {
+          {deskLayout.map((desk) => {
             const role = roleMap.get(desk.roleId);
             if (!role) return null;
             return (
