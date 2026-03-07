@@ -179,7 +179,7 @@ test.describe('TC-O01: Page Load', () => {
 
     await expect(page.locator('text=LEADERSHIP')).toBeVisible();
     await expect(page.locator('text=TEAM')).toBeVisible();
-    await expect(page.locator('text=OFFICE')).toBeVisible();
+    await expect(page.getByText('OFFICE', { exact: true })).toBeVisible();
     await expect(page.locator('text=CEO WAVE')).toBeVisible();
     await expect(page.locator('text=TERMINAL')).toBeVisible();
   });

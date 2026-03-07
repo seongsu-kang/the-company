@@ -25,7 +25,14 @@ function loadChannels(): ChatChannel[] {
       if (!parsed.find(c => c.id === 'office')) {
         parsed.unshift(makeOfficeChannel());
       }
-      return parsed;
+      // Migration: filter out non-dispatch messages from #office
+      // (old sessions may have stored monologue/guilt/social types)
+      return parsed.map(ch => {
+        if (ch.id === 'office') {
+          return { ...ch, messages: ch.messages.filter(m => m.type === 'dispatch') };
+        }
+        return ch;
+      });
     }
   } catch { /* ignore */ }
   return [makeOfficeChannel()];
