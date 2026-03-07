@@ -161,3 +161,105 @@ registerOutfitStyle('polo', 'Polo', {
     { x: 11, y: 15, w: 2, h: 1, c: '$skin' },
   ],
 });
+
+// Lab Coat — white coat over shirt
+registerOutfitStyle('labcoat', 'Lab Coat', {
+  name: 'torso',
+  pixels: [
+    // Inner shirt (visible at center)
+    { x: 4, y: 10, w: 4, h: 5, c: '$shirt' },
+    // Coat body
+    { x: 0, y: 10, w: 4, h: 7, c: '#F0F0F0' },
+    { x: 8, y: 10, w: 4, h: 7, c: '#F0F0F0' },
+    // Coat top (shoulders)
+    { x: 1, y: 10, w: 10, h: 1, c: '#FAFAFA' },
+    // Coat edges shadow
+    { x: 0, y: 10, w: 1, h: 7, c: '#DDD', a: 0.5 },
+    { x: 11, y: 10, w: 1, h: 7, c: '#DDD', a: 0.5 },
+    // Pockets
+    { x: 1, y: 13, w: 2, h: 2, c: '#E0E0E0', a: 0.4 },
+    { x: 9, y: 13, w: 2, h: 2, c: '#E0E0E0', a: 0.4 },
+    // Arms (white sleeves)
+    { x: -1, y: 11, w: 2, h: 5, c: '#F0F0F0' },
+    { x: 11, y: 11, w: 2, h: 5, c: '#F0F0F0' },
+    // Hands
+    { x: -1, y: 15, w: 2, h: 1, c: '$skin' },
+    { x: 11, y: 15, w: 2, h: 1, c: '$skin' },
+  ],
+});
+
+// Overalls — denim work outfit
+registerOutfitStyle('overalls', 'Overalls', {
+  name: 'torso',
+  pixels: [
+    // Undershirt
+    { x: 1, y: 10, w: 10, h: 3, c: '$shirt' },
+    { x: 2, y: 10, w: 8, h: 1, c: 'lighten($shirt, 18)', a: 0.3 },
+    // Overall bib (denim blue over chest)
+    { x: 3, y: 11, w: 6, h: 5, c: '#3D6B99' },
+    // Straps
+    { x: 3, y: 10, w: 2, h: 1, c: '#3D6B99' },
+    { x: 7, y: 10, w: 2, h: 1, c: '#3D6B99' },
+    // Button clasps
+    { x: 3, y: 11, w: 1, h: 1, c: '#FFD700', a: 0.6 },
+    { x: 8, y: 11, w: 1, h: 1, c: '#FFD700', a: 0.6 },
+    // Side panels
+    { x: 1, y: 13, w: 2, h: 3, c: '#3D6B99' },
+    { x: 9, y: 13, w: 2, h: 3, c: '#3D6B99' },
+    // Pocket on bib
+    { x: 5, y: 13, w: 2, h: 2, c: '#345E87', a: 0.4 },
+    // Arms (shirt sleeves)
+    { x: -1, y: 11, w: 2, h: 5, c: '$shirt' },
+    { x: 11, y: 11, w: 2, h: 5, c: '$shirt' },
+    // Hands
+    { x: -1, y: 15, w: 2, h: 1, c: '$skin' },
+    { x: 11, y: 15, w: 2, h: 1, c: '$skin' },
+  ],
+});
+
+// Turtleneck — high collar
+registerOutfitStyle('turtleneck', 'Turtleneck', {
+  name: 'torso',
+  pixels: [
+    // Body
+    { x: 1, y: 10, w: 10, h: 6, c: '$shirt' },
+    { x: 1, y: 10, w: 1, h: 5, c: 'darken($shirt, 25)', a: 0.25 },
+    { x: 10, y: 10, w: 1, h: 5, c: 'darken($shirt, 25)', a: 0.25 },
+    // High collar
+    { x: 3, y: 8, w: 6, h: 2, c: '$shirt' },
+    { x: 4, y: 8, w: 4, h: 1, c: 'lighten($shirt, 12)', a: 0.3 },
+    { x: 3, y: 9, w: 1, h: 1, c: 'darken($shirt, 15)', a: 0.2 },
+    { x: 8, y: 9, w: 1, h: 1, c: 'darken($shirt, 15)', a: 0.2 },
+    // Arms
+    { x: -1, y: 11, w: 2, h: 5, c: '$shirt' },
+    { x: 11, y: 11, w: 2, h: 5, c: '$shirt' },
+    // Hands
+    { x: -1, y: 15, w: 2, h: 1, c: '$skin' },
+    { x: 11, y: 15, w: 2, h: 1, c: '$skin' },
+  ],
+});
+
+// Kimono / Robe — wrap style
+registerOutfitStyle('robe', 'Robe', {
+  name: 'torso',
+  pixels: [
+    // Main body
+    { x: 0, y: 10, w: 12, h: 7, c: '$shirt' },
+    { x: 0, y: 10, w: 1, h: 6, c: 'darken($shirt, 25)', a: 0.3 },
+    { x: 11, y: 10, w: 1, h: 6, c: 'darken($shirt, 25)', a: 0.3 },
+    // Wrap V-overlap
+    { x: 3, y: 10, w: 3, h: 4, c: 'lighten($shirt, 15)', a: 0.25 },
+    { x: 6, y: 10, w: 3, h: 4, c: 'darken($shirt, 10)', a: 0.2 },
+    // Belt / obi
+    { x: 1, y: 14, w: 10, h: 1, c: 'darken($shirt, 35)' },
+    { x: 2, y: 14, w: 8, h: 1, c: 'darken($shirt, 25)', a: 0.4 },
+    // Wide sleeves
+    { x: -2, y: 11, w: 3, h: 5, c: '$shirt' },
+    { x: 11, y: 11, w: 3, h: 5, c: '$shirt' },
+    { x: -2, y: 15, w: 3, h: 1, c: 'darken($shirt, 15)', a: 0.3 },
+    { x: 11, y: 15, w: 3, h: 1, c: 'darken($shirt, 15)', a: 0.3 },
+    // Hands
+    { x: -1, y: 15, w: 2, h: 1, c: '$skin' },
+    { x: 11, y: 15, w: 2, h: 1, c: '$skin' },
+  ],
+});
