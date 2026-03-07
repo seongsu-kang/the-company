@@ -114,11 +114,15 @@ export const api = {
   updatePreferences: (data: Record<string, unknown>) =>
     patch_<{ ok: boolean; appearances: Record<string, unknown>; theme: string; speech?: SpeechSettings }>('/preferences', data),
 
-  // Speech (LLM generation)
-  generateSpeech: (roleId: string, context?: string, relationships?: Array<{ partnerId: string; partnerName: string; familiarity: number }>) =>
-    post<{ speech: string; tokens: { input: number; output: number } }>('/speech/generate', { roleId, context, relationships }),
-  generateConversation: (roleA: string, roleB: string, familiarity: number, context?: string) =>
-    post<{ turns: Array<{ speaker: string; text: string }>; tokens: { input: number; output: number } }>('/speech/conversation', { roleA, roleB, familiarity, context }),
+  // Chat (LLM-powered channel conversation)
+  chatInChannel: (data: {
+    channelId: string;
+    roleId: string;
+    history: Array<{ roleId: string; text: string; ts: number }>;
+    members: Array<{ id: string; name: string; level: string }>;
+    relationships: Array<{ partnerId: string; familiarity: number }>;
+    workContext?: { currentTask: string | null; taskProgress: string | null };
+  }) => post<{ message: string; tokens: { input: number; output: number } }>('/speech/chat', data),
 
   // Save (Git)
   getSaveStatus: () => get<{

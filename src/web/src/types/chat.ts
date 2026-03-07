@@ -11,7 +11,7 @@ export interface ChatMessage {
   /** Message text */
   text: string;
   /** Message type */
-  type: 'monologue' | 'social' | 'guilt' | 'dispatch';
+  type: 'chat' | 'dispatch';
   /** For social: the conversation partner */
   partnerId?: string;
   /** For dispatch: the target role */

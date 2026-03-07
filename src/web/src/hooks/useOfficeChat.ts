@@ -71,15 +71,16 @@ export function useOfficeChat(): UseOfficeChatReturn {
     const fullMsg: ChatMessage = { ...msg, id: nextMsgId() };
 
     setChannels(prev => prev.map(ch => {
-      // #office gets everything
+      // #office: system logs only (dispatch events)
       if (ch.id === 'office') {
-        return { ...ch, messages: [...ch.messages, fullMsg].slice(-MAX_MESSAGES) };
+        if (msg.type === 'dispatch') {
+          return { ...ch, messages: [...ch.messages, fullMsg].slice(-MAX_MESSAGES) };
+        }
+        return ch;
       }
-      // Custom channels: only if sender or partner is a member
+      // Custom channels: only if sender is a member
       if (ch.members.length > 0) {
-        const isMember = ch.members.includes(msg.roleId) ||
-          (msg.partnerId && ch.members.includes(msg.partnerId)) ||
-          (msg.targetRoleId && ch.members.includes(msg.targetRoleId));
+        const isMember = ch.members.includes(msg.roleId);
         if (isMember) {
           return { ...ch, messages: [...ch.messages, fullMsg].slice(-MAX_MESSAGES) };
         }

@@ -1,19 +1,20 @@
 /* =========================================================
-   useAmbientSpeech — Ambient Speech Scheduling + Selection
+   useAmbientSpeech — Speech Pipeline (template-only, $0)
 
-   3-Layer speech system:
+   Office view speech bubbles. Template pool based.
+   NO LLM calls. NO chat routing. Pure client-side.
+
+   3-Layer selection:
    Layer 1: Work speech (active task, standup data)
    Layer 2: Personality speech (idle monologue from persona)
-   Layer 3: Social speech (inter-role conversations)
+   Layer 3: Social speech (inter-role template conversations)
 
    + Relationship history (localStorage persistence)
    ========================================================= */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CONVERSATIONS, GUILT_SPEECH, PERSONALITY_SPEECH } from '../data/ambient-speech';
-import type { ConversationTemplate, RoleRelationship, Speech, SpeechSettings } from '../types/speech';
-import type { ChatMessage } from '../types/chat';
-import { api } from '../api/client';
+import type { ConversationTemplate, RoleRelationship, Speech } from '../types/speech';
 
 /* ─── Constants ─── */
 
@@ -22,7 +23,6 @@ const SPEECH_DURATION_MS = 6_000;  // 6s display per speech
 const CONV_TURN_DELAY_MS = 2_500;  // 2.5s between conversation turns
 const GUILT_IDLE_MS = 30 * 60_000; // 30 min idle → guilt speech
 const LS_KEY = 'tycono:relationships';
-const LLM_SPEECH_PROBABILITY = 0.5; // 50% of eligible cycles use LLM (rest use template)
 
 /* ─── Relationship Storage ─── */
 
@@ -103,12 +103,6 @@ interface UseAmbientSpeechProps {
   roleStatuses: Record<string, string>;
   activeExecs: Array<{ roleId: string; task: string }>;
   getStandupSpeech: (roleId: string) => string;
-  /** Push speech events to Office Chat channels */
-  onChat?: (msg: Omit<ChatMessage, 'id'>) => void;
-  /** Speech settings (mode, interval, budget) */
-  speechSettings?: SpeechSettings;
-  /** Engine type for auto mode detection */
-  engineType?: string;
 }
 
 export interface UseAmbientSpeechReturn {
@@ -129,25 +123,13 @@ export function useAmbientSpeech({
   roleStatuses,
   activeExecs,
   getStandupSpeech,
-  onChat,
-  speechSettings,
-  engineType,
 }: UseAmbientSpeechProps): UseAmbientSpeechReturn {
 
   const [speeches, setSpeeches] = useState<Map<string, Speech>>(new Map());
   const [relationships, setRelationships] = useState<RoleRelationship[]>(loadRelationships);
 
-  // Resolve effective speech mode
-  const effectiveMode = speechSettings?.mode === 'auto'
-    ? (engineType === 'claude-cli' ? 'llm' : 'template')
-    : (speechSettings?.mode ?? 'template');
-  const useLLM = effectiveMode === 'llm';
-  const intervalMs = (speechSettings?.intervalSec ?? DEFAULT_INTERVAL_MS / 1000) * 1000;
-
   // Track when each role last had work
   const lastWorkTime = useRef<Record<string, number>>({});
-  // Track LLM call state (prevent concurrent calls)
-  const llmPending = useRef(false);
   // Track conversation state
   const activeConv = useRef<{
     templateId: string;
@@ -162,16 +144,12 @@ export function useAmbientSpeech({
   const execsRef = useRef(activeExecs);
   const standupRef = useRef(getStandupSpeech);
   const relsRef = useRef(relationships);
-  const onChatRef = useRef(onChat);
-  const useLLMRef = useRef(useLLM);
 
   rolesRef.current = roles;
   statusRef.current = roleStatuses;
   execsRef.current = activeExecs;
   standupRef.current = getStandupSpeech;
   relsRef.current = relationships;
-  onChatRef.current = onChat;
-  useLLMRef.current = useLLM;
 
   // Update lastWorkTime when roles are working
   useEffect(() => {
@@ -295,15 +273,6 @@ export function useAmbientSpeech({
       const speakerId = turn.speaker === 'A' ? actualA : actualB;
       const partnerId = turn.speaker === 'A' ? actualB : actualA;
 
-      // Push to Office Chat
-      onChatRef.current?.({
-        ts: Date.now(),
-        roleId: speakerId,
-        text: turn.text,
-        type: 'social',
-        partnerId,
-      });
-
       setSpeeches(prev => {
         const next = new Map(prev);
         next.set(speakerId, {
@@ -330,135 +299,6 @@ export function useAmbientSpeech({
     return true;
   }, []);
 
-  /** Generate LLM speech for a role and set it */
-  const generateLLMSpeech = useCallback(async (role: { id: string; name: string }) => {
-    if (llmPending.current) return;
-    llmPending.current = true;
-    try {
-      const rels = relsRef.current;
-      const relData = rels
-        .filter(r => r.roleA === role.id || r.roleB === role.id)
-        .slice(0, 3)
-        .map(r => ({
-          partnerId: r.roleA === role.id ? r.roleB : r.roleA,
-          partnerName: rolesRef.current.find(ro => ro.id === (r.roleA === role.id ? r.roleB : r.roleA))?.name ?? '',
-          familiarity: r.familiarity,
-        }));
-
-      const result = await api.generateSpeech(role.id, undefined, relData);
-      if (!result.speech) return;
-
-      const now = Date.now();
-      const speech: Speech = { text: result.speech, type: 'personality', ts: now };
-
-      onChatRef.current?.({
-        ts: now,
-        roleId: role.id,
-        text: result.speech,
-        type: 'monologue',
-      });
-
-      setSpeeches(prev => {
-        const next = new Map(prev);
-        next.set(role.id, speech);
-        return next;
-      });
-
-      setTimeout(() => {
-        setSpeeches(prev => {
-          const next = new Map(prev);
-          const current = next.get(role.id);
-          if (current && current.ts === now) next.delete(role.id);
-          return next;
-        });
-      }, SPEECH_DURATION_MS);
-    } catch {
-      // LLM failed — silent fallback (next cycle will use template)
-    } finally {
-      llmPending.current = false;
-    }
-  }, []);
-
-  /** Generate LLM conversation between two roles */
-  const generateLLMConversation = useCallback(async (
-    roleA: { id: string; name: string },
-    roleB: { id: string; name: string },
-    familiarity: number,
-  ) => {
-    if (llmPending.current || activeConv.current) return false;
-    llmPending.current = true;
-    try {
-      const result = await api.generateConversation(roleA.id, roleB.id, familiarity);
-      if (!result.turns || result.turns.length === 0) return false;
-
-      const actualA = roleA.id;
-      const actualB = roleB.id;
-
-      activeConv.current = {
-        templateId: 'llm-generated',
-        roleA: actualA,
-        roleB: actualB,
-        turnIdx: 0,
-        timer: null,
-      };
-
-      const playLLMTurn = (idx: number) => {
-        if (!activeConv.current || idx >= result.turns.length) {
-          activeConv.current = null;
-          setRelationships(prev => {
-            const next = [...prev];
-            const r = getOrCreateRelationship(next, actualA, actualB);
-            r.conversations++;
-            r.familiarity = computeFamiliarity(r);
-            r.lastInteraction = new Date().toISOString();
-            return next;
-          });
-          setTimeout(() => {
-            setSpeeches(prev => {
-              const next = new Map(prev);
-              next.delete(actualA);
-              next.delete(actualB);
-              return next;
-            });
-          }, SPEECH_DURATION_MS);
-          return;
-        }
-
-        const turn = result.turns[idx];
-        const speakerId = turn.speaker === 'A' ? actualA : actualB;
-        const partnerId = turn.speaker === 'A' ? actualB : actualA;
-
-        onChatRef.current?.({
-          ts: Date.now(),
-          roleId: speakerId,
-          text: turn.text,
-          type: 'social',
-          partnerId,
-        });
-
-        setSpeeches(prev => {
-          const next = new Map(prev);
-          next.set(speakerId, { text: turn.text, type: 'social', partnerId, ts: Date.now() });
-          if (idx > 0) {
-            const prevSpeaker = result.turns[idx - 1].speaker === 'A' ? actualA : actualB;
-            if (prevSpeaker !== speakerId) next.delete(prevSpeaker);
-          }
-          return next;
-        });
-
-        activeConv.current!.turnIdx = idx;
-        activeConv.current!.timer = setTimeout(() => playLLMTurn(idx + 1), CONV_TURN_DELAY_MS);
-      };
-
-      playLLMTurn(0);
-      return true;
-    } catch {
-      return false;
-    } finally {
-      llmPending.current = false;
-    }
-  }, []);
-
   // Main scheduling interval
   useEffect(() => {
     const interval = setInterval(() => {
@@ -468,18 +308,8 @@ export function useAmbientSpeech({
       // Skip if conversation is active
       if (activeConv.current) return;
 
-      // 35% chance: try conversation
+      // 35% chance: try template conversation between two roles
       if (Math.random() < 0.35) {
-        // Try LLM conversation if enabled
-        if (useLLMRef.current && Math.random() < LLM_SPEECH_PROBABILITY) {
-          const idleForConv = rs.filter(r => statusRef.current[r.id] !== 'working');
-          if (idleForConv.length >= 2) {
-            const shuffled = [...idleForConv].sort(() => Math.random() - 0.5);
-            const rel = getOrCreateRelationship(relsRef.current, shuffled[0].id, shuffled[1].id);
-            generateLLMConversation(shuffled[0], shuffled[1], computeFamiliarity(rel));
-            return;
-          }
-        }
         if (tryConversation(rs)) return;
       }
 
@@ -488,26 +318,8 @@ export function useAmbientSpeech({
       if (idleRoles.length === 0) return;
 
       const role = pickRandom(idleRoles);
-
-      // Try LLM monologue if enabled (50% of the time)
-      if (useLLMRef.current && Math.random() < LLM_SPEECH_PROBABILITY) {
-        generateLLMSpeech(role);
-        return;
-      }
-
-      // Template fallback
       const speech = selectSpeech(role.id);
       if (!speech) return;
-
-      // Push monologue/guilt to Office Chat
-      if (speech.type === 'personality' || speech.type === 'guilt') {
-        onChatRef.current?.({
-          ts: speech.ts,
-          roleId: role.id,
-          text: speech.text,
-          type: speech.type === 'personality' ? 'monologue' : 'guilt',
-        });
-      }
 
       setSpeeches(prev => {
         const next = new Map(prev);
@@ -526,13 +338,13 @@ export function useAmbientSpeech({
           return next;
         });
       }, SPEECH_DURATION_MS);
-    }, intervalMs);
+    }, DEFAULT_INTERVAL_MS);
 
     return () => {
       clearInterval(interval);
       if (activeConv.current?.timer) clearTimeout(activeConv.current.timer);
     };
-  }, [selectSpeech, tryConversation, generateLLMSpeech, generateLLMConversation, intervalMs]);
+  }, [selectSpeech, tryConversation]);
 
   /** Get speech text for a role — used by TopDownOfficeView */
   const getSpeech = useCallback((roleId: string): string => {

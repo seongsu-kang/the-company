@@ -16,6 +16,7 @@ import { useCustomization } from '../hooks/useCustomization';
 import { useSave } from '../hooks/useSave';
 import { useAmbientSpeech } from '../hooks/useAmbientSpeech';
 import { useOfficeChat } from '../hooks/useOfficeChat';
+import { useChatScheduler } from '../hooks/useChatScheduler';
 import TopDownCharCanvas from '../components/office/TopDownCharCanvas';
 import FacilityCanvas from '../components/office/FacilityCanvas';
 import TopDownOfficeView from '../components/office/TopDownOfficeView';
@@ -328,6 +329,14 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
       const title = `${roleId.toUpperCase()} · ${role?.name ?? roleId}`;
       setJobMinimized(false);
       setJobStack([{ jobId, title, color }]);
+      // Log to #office
+      officeChat.pushMessage({
+        ts: Date.now(),
+        roleId: 'ceo',
+        text: `[CEO → ${role?.name ?? roleId}] ${isAsk ? 'Ask' : 'Assign'}: ${task}`,
+        type: 'dispatch',
+        targetRoleId: roleId,
+      });
     } catch (err) {
       addToast(`Failed to start job: ${err instanceof Error ? err.message : 'unknown'}`, '#C62828');
     }
@@ -343,6 +352,13 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
     const current = jobStack[jobStack.length - 1];
     if (current) {
       addToast(`${current.title} completed`, current.color);
+      // Log completion to #office
+      officeChat.pushMessage({
+        ts: Date.now(),
+        roleId: current.title.split(' · ')[0]?.toLowerCase() ?? 'unknown',
+        text: `[${current.title}] Job completed`,
+        type: 'dispatch',
+      });
     }
     api.getStandups().then(setStandups).catch(console.error);
     api.getCompany().then((c) => setRoles(c.roles)).catch(console.error);
@@ -361,6 +377,14 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
         roleId: cLevels[i]?.id ?? `role-${i}`,
         roleName: cLevels[i]?.name ?? `C-Level ${i + 1}`,
       }));
+
+      // Log wave to #office
+      officeChat.pushMessage({
+        ts: Date.now(),
+        roleId: 'ceo',
+        text: `[CEO WAVE] "${directive}" → ${wj.map(w => w.roleName).join(', ')}`,
+        type: 'dispatch',
+      });
 
       // Use WaveCommandCenter if org data is available
       if (Object.keys(orgNodes).length > 0) {
@@ -711,8 +735,18 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
     roleStatuses,
     activeExecs,
     getStandupSpeech,
-    onChat: officeChat.pushMessage,
+  });
+
+  // Chat Pipeline — LLM-powered channel conversations (independent from Speech Pipeline)
+  useChatScheduler({
+    roles,
+    roleStatuses,
+    activeExecs,
+    channels: officeChat.channels,
+    relationships: ambient.relationships,
+    pushMessage: officeChat.pushMessage,
     speechSettings,
+    engineType: undefined, // TODO: detect engine type from API
   });
 
   if (loading) {
@@ -1093,6 +1127,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
               onSwitchChatChannel={officeChat.setActiveChannelId}
               onCreateChatChannel={officeChat.createChannel}
               onDeleteChatChannel={officeChat.deleteChannel}
+              onUpdateChatMembers={officeChat.updateMembers}
             />
           </div>
         )}

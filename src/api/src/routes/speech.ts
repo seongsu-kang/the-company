@@ -1,8 +1,9 @@
 /**
- * speech.ts — Ambient Speech LLM generation endpoint
+ * speech.ts — Chat Pipeline LLM endpoint
  *
- * Generates contextual, persona-driven speech for idle roles.
- * Uses Haiku for cost efficiency (~$0.0003/call).
+ * POST /api/speech/chat — History-aware channel conversation.
+ * AI reads channel history and responds in character.
+ * Uses Haiku for cost efficiency (~$0.0006/call).
  */
 import { Router, Request, Response, NextFunction } from 'express';
 import { COMPANY_ROOT } from '../services/file-reader.js';
@@ -23,21 +24,31 @@ function getLLM(): AnthropicProvider {
 }
 
 /**
- * POST /api/speech/generate
+ * POST /api/speech/chat
  *
- * Body: { roleId, context?: string, relationships?: Array<{ partnerId, familiarity }> }
- * Returns: { speech: string, tokens: { input: number, output: number } }
+ * Body: {
+ *   channelId: string,
+ *   roleId: string,
+ *   history: Array<{ roleId: string, text: string, ts: number }>,
+ *   members: Array<{ id: string, name: string, level: string }>,
+ *   relationships: Array<{ partnerId: string, familiarity: number }>,
+ *   workContext?: { currentTask: string | null, taskProgress: string | null }
+ * }
+ * Returns: { message: string, tokens: { input: number, output: number } }
  */
-speechRouter.post('/generate', async (req: Request, res: Response, next: NextFunction) => {
+speechRouter.post('/chat', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { roleId, context, relationships } = req.body as {
+    const { channelId, roleId, history, members, relationships, workContext } = req.body as {
+      channelId: string;
       roleId: string;
-      context?: string;
-      relationships?: Array<{ partnerId: string; partnerName: string; familiarity: number }>;
+      history: Array<{ roleId: string; text: string; ts: number }>;
+      members: Array<{ id: string; name: string; level: string }>;
+      relationships: Array<{ partnerId: string; familiarity: number }>;
+      workContext?: { currentTask: string | null; taskProgress: string | null };
     };
 
-    if (!roleId) {
-      res.status(400).json({ error: 'roleId is required' });
+    if (!roleId || !channelId) {
+      res.status(400).json({ error: 'roleId and channelId are required' });
       return;
     }
 
@@ -50,119 +61,72 @@ speechRouter.post('/generate', async (req: Request, res: Response, next: NextFun
     }
 
     const persona = node.persona || `${node.name} (${node.level})`;
-    const relContext = relationships?.length
-      ? `\nColleague relationships:\n${relationships.map(r =>
-          `- ${r.partnerName}: familiarity ${r.familiarity}/100`
-        ).join('\n')}`
+
+    // Build member context
+    const memberList = members
+      .map(m => `${m.name} (${m.level})`)
+      .join(', ');
+
+    // Build relationship context
+    const relContext = relationships.length > 0
+      ? `\nYour relationships:\n${relationships.map(r => {
+          const memberName = members.find(m => m.id === r.partnerId)?.name ?? r.partnerId;
+          const level = r.familiarity >= 80 ? 'best friends'
+            : r.familiarity >= 50 ? 'close colleagues'
+            : r.familiarity >= 20 ? 'coworkers'
+            : 'barely acquainted';
+          return `- ${memberName}: ${level} (${r.familiarity}/100)`;
+        }).join('\n')}`
       : '';
 
-    const systemPrompt = `You are ${node.name}, a ${node.level} employee at a tech company.
-Your persona: ${persona}
+    // Build work context
+    const workCtx = workContext?.currentTask
+      ? `\nYou are currently working on: "${workContext.currentTask}"${workContext.taskProgress ? ` (${workContext.taskProgress})` : ''}`
+      : '\nYou are currently idle (no active task).';
 
-Generate a brief, natural idle thought or mumble (1 sentence, max 30 characters in Korean).
-This is what you'd say to yourself while sitting at your desk.
-It should reflect your personality, current concerns, or professional interests.
-Do NOT use quotes. Just output the raw sentence.
+    // Format chat history
+    const historyText = history.length > 0
+      ? history.map(h => {
+          const name = members.find(m => m.id === h.roleId)?.name ?? h.roleId;
+          return `${name}: ${h.text}`;
+        }).join('\n')
+      : '(No messages yet — you can start the conversation)';
+
+    const systemPrompt = `You are ${node.name}, a ${node.level} employee.
+Persona: ${persona}
+${workCtx}
+
+You are in the #${channelId} chat channel.
+Members: ${memberList}
 ${relContext}
-${context ? `\nCurrent situation: ${context}` : ''}`;
+
+Read the conversation and respond naturally.
+Rules:
+- Stay in character (your persona)
+- Be brief (1-2 sentences, max 50 characters in Korean)
+- Respond to the topic being discussed
+- Use appropriate tone based on hierarchy and familiarity
+- If you have nothing interesting to add, respond with exactly: [SILENT]
+- Do NOT use quotes. Just output the raw sentence.`;
 
     const provider = getLLM();
     const response = await provider.chat(
       systemPrompt,
-      [{ role: 'user', content: 'Generate one idle thought.' }],
-    );
-
-    const text = response.content
-      .filter(c => c.type === 'text')
-      .map(c => (c as { type: 'text'; text: string }).text)
-      .join('')
-      .trim()
-      .replace(/^["']|["']$/g, ''); // strip quotes if LLM adds them
-
-    res.json({
-      speech: text,
-      tokens: response.usage,
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-/**
- * POST /api/speech/conversation
- *
- * Body: { roleA, roleB, familiarity, context? }
- * Returns: { turns: Array<{ speaker: string, text: string }>, tokens }
- */
-speechRouter.post('/conversation', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { roleA, roleB, familiarity, context } = req.body as {
-      roleA: string;
-      roleB: string;
-      familiarity: number;
-      context?: string;
-    };
-
-    if (!roleA || !roleB) {
-      res.status(400).json({ error: 'roleA and roleB are required' });
-      return;
-    }
-
-    const tree = buildOrgTree(COMPANY_ROOT);
-    const nodeA = tree.nodes.get(roleA);
-    const nodeB = tree.nodes.get(roleB);
-    if (!nodeA || !nodeB) {
-      res.status(404).json({ error: 'Role not found' });
-      return;
-    }
-
-    const famLevel = familiarity >= 80 ? 'best friends'
-      : familiarity >= 50 ? 'close colleagues'
-      : familiarity >= 20 ? 'coworkers'
-      : 'barely acquainted';
-
-    const relation = nodeA.reportsTo === roleB ? `${nodeA.name} reports to ${nodeB.name}`
-      : nodeB.reportsTo === roleA ? `${nodeB.name} reports to ${nodeA.name}`
-      : nodeA.level === 'c-level' && nodeB.level === 'c-level' ? 'C-level peers'
-      : 'colleagues';
-
-    const systemPrompt = `Generate a short office conversation between two employees (2-3 turns, each turn max 25 Korean characters).
-
-${nodeA.name} (${nodeA.level}): ${nodeA.persona || 'a professional'}
-${nodeB.name} (${nodeB.level}): ${nodeB.persona || 'a professional'}
-
-They are ${relation}. Familiarity level: ${famLevel} (${familiarity}/100).
-${context ? `Context: ${context}` : ''}
-
-Output as JSON array: [{"speaker":"A","text":"..."},{"speaker":"B","text":"..."}]
-No markdown, no quotes around the JSON. Just the array.`;
-
-    const provider = getLLM();
-    const response = await provider.chat(
-      systemPrompt,
-      [{ role: 'user', content: 'Generate the conversation.' }],
+      [{ role: 'user', content: historyText }],
     );
 
     const raw = response.content
       .filter(c => c.type === 'text')
       .map(c => (c as { type: 'text'; text: string }).text)
       .join('')
-      .trim();
+      .trim()
+      .replace(/^["']|["']$/g, '');
 
-    let turns: Array<{ speaker: string; text: string }>;
-    try {
-      turns = JSON.parse(raw);
-    } catch {
-      // Fallback: try to extract JSON from markdown code block
-      const match = raw.match(/\[[\s\S]*\]/);
-      turns = match ? JSON.parse(match[0]) : [
-        { speaker: 'A', text: '...' },
-        { speaker: 'B', text: '...' },
-      ];
-    }
+    // [SILENT] means the role has nothing to say
+    const message = raw === '[SILENT]' ? '' : raw;
 
     res.json({
-      turns,
+      message,
       tokens: response.usage,
     });
   } catch (err) {

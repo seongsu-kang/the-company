@@ -3,7 +3,7 @@
    Renders ChatMessage[] in a scrollable feed
    ========================================================= */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ChatChannel, ChatMessage } from '../../types/chat';
 
 const ROLE_COLORS: Record<string, string> = {
@@ -28,24 +28,19 @@ function ChatMsg({ msg }: { msg: ChatMessage }) {
   const name = ROLE_NAMES[msg.roleId] ?? msg.roleId;
 
   if (msg.type === 'dispatch') {
-    const targetName = ROLE_NAMES[msg.targetRoleId ?? ''] ?? msg.targetRoleId;
     return (
       <div className="flex items-start gap-2 px-3 py-1.5 hover:bg-white/[0.02]">
         <span className="text-[10px] text-[var(--terminal-text-muted)] shrink-0 w-10 text-right mt-0.5">
           {formatTime(msg.ts)}
         </span>
         <div className="flex-1 min-w-0">
-          <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: `${color}22`, color }}>
-            {name} → {targetName}
-          </span>
-          <span className="text-xs text-[var(--terminal-text-secondary)] ml-2">
-            {msg.text}
-          </span>
+          <span className="text-xs text-[var(--terminal-text-muted)]">{msg.text}</span>
         </div>
       </div>
     );
   }
 
+  // type === 'chat' — LLM-generated channel conversation
   return (
     <div className="flex items-start gap-2 px-3 py-1.5 hover:bg-white/[0.02]">
       <span className="text-[10px] text-[var(--terminal-text-muted)] shrink-0 w-10 text-right mt-0.5">
@@ -55,12 +50,7 @@ function ChatMsg({ msg }: { msg: ChatMessage }) {
         <span className="text-[11px] font-semibold mr-1.5" style={{ color }}>
           {name}
         </span>
-        {msg.type === 'social' && msg.partnerId && (
-          <span className="text-[10px] text-[var(--terminal-text-muted)] mr-1.5">
-            → {ROLE_NAMES[msg.partnerId] ?? msg.partnerId}
-          </span>
-        )}
-        <span className={`text-xs ${msg.type === 'guilt' ? 'text-[var(--terminal-text-muted)] italic' : 'text-[var(--terminal-text-secondary)]'}`}>
+        <span className="text-xs text-[var(--terminal-text-secondary)]">
           {msg.text}
         </span>
       </div>
@@ -70,9 +60,11 @@ function ChatMsg({ msg }: { msg: ChatMessage }) {
 
 interface Props {
   channel: ChatChannel;
+  allRoles?: Array<{ id: string; name: string }>;
+  onUpdateMembers?: (channelId: string, members: string[]) => void;
 }
 
-export default function OfficeChatView({ channel }: Props) {
+export default function OfficeChatView({ channel, allRoles, onUpdateMembers }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -96,20 +88,56 @@ export default function OfficeChatView({ channel }: Props) {
     );
   }
 
+  const [showInvite, setShowInvite] = useState(false);
+
   return (
     <div ref={containerRef} className="flex-1 overflow-y-auto terminal-scrollbar py-2">
       {/* Channel header */}
-      <div className="px-3 py-2 mb-2 border-b border-[var(--terminal-border)]">
+      <div className="px-3 py-2 mb-2 border-b border-[var(--terminal-border)] flex items-center gap-2">
         <span className="text-sm font-semibold text-[var(--terminal-text)]">{channel.name}</span>
         {channel.members.length > 0 && (
-          <span className="text-[10px] text-[var(--terminal-text-muted)] ml-2">
+          <span className="text-[10px] text-[var(--terminal-text-muted)]">
             {channel.members.map(m => ROLE_NAMES[m] ?? m).join(', ')}
           </span>
         )}
         {channel.members.length === 0 && (
-          <span className="text-[10px] text-[var(--terminal-text-muted)] ml-2">all roles</span>
+          <span className="text-[10px] text-[var(--terminal-text-muted)]">
+            {channel.isDefault ? 'system logs' : 'no members'}
+          </span>
+        )}
+        {!channel.isDefault && allRoles && onUpdateMembers && (
+          <button
+            className="ml-auto text-[10px] px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[var(--terminal-text-muted)]"
+            onClick={() => setShowInvite(!showInvite)}
+          >
+            {showInvite ? 'Done' : 'Invite'}
+          </button>
         )}
       </div>
+      {/* Member management dropdown */}
+      {showInvite && !channel.isDefault && allRoles && onUpdateMembers && (
+        <div className="px-3 pb-2 mb-2 border-b border-[var(--terminal-border)]">
+          <div className="flex flex-wrap gap-1">
+            {allRoles.map(role => {
+              const isMember = channel.members.includes(role.id);
+              return (
+                <button
+                  key={role.id}
+                  className={`text-[10px] px-2 py-1 rounded ${isMember ? 'bg-white/15 text-[var(--terminal-text)]' : 'bg-white/5 text-[var(--terminal-text-muted)]'}`}
+                  onClick={() => {
+                    const next = isMember
+                      ? channel.members.filter(m => m !== role.id)
+                      : [...channel.members, role.id];
+                    onUpdateMembers(channel.id, next);
+                  }}
+                >
+                  {isMember ? '✓ ' : ''}{role.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       {channel.messages.map(msg => (
         <ChatMsg key={msg.id} msg={msg} />
       ))}
