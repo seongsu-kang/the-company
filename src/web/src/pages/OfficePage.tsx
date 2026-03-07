@@ -1193,6 +1193,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           onClose={() => { setCustomizeTarget(null); setCustomizeInitialTab('character'); }}
           theme={theme}
           onThemeChange={setTheme}
+          onUpdateName={async (roleId, name) => { await handleUpdateRole(roleId, { name }); }}
           initialTab={customizeInitialTab}
         />
       )}

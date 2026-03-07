@@ -57,16 +57,19 @@ interface CustomizeModalProps {
   onClose: () => void;
   theme: OfficeTheme;
   onThemeChange: (t: OfficeTheme) => void;
+  onUpdateName?: (roleId: string, name: string) => Promise<void>;
   /** Which tab to show initially */
   initialTab?: 'character' | 'office';
 }
 
 export default function CustomizeModal({
   role, appearance, onSave, onReset, onClose,
-  theme, onThemeChange, initialTab,
+  theme, onThemeChange, onUpdateName, initialTab,
 }: CustomizeModalProps) {
   const [tab, setTab] = useState<'character' | 'office'>(initialTab ?? 'character');
   const [draft, setDraft] = useState<CharacterAppearance>({ ...appearance });
+  const [nameValue, setNameValue] = useState(role.name);
+  const [nameSaving, setNameSaving] = useState(false);
 
   const update = useCallback((key: keyof CharacterAppearance, value: string) => {
     setDraft(prev => ({ ...prev, [key]: value }));
@@ -88,10 +91,16 @@ export default function CustomizeModal({
     onReset();
   }, [role.id, onReset]);
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     onSave(draft);
+    const trimmed = nameValue.trim();
+    if (onUpdateName && trimmed && trimmed !== role.name) {
+      setNameSaving(true);
+      try { await onUpdateName(role.id, trimmed); } catch { /* handled by parent */ }
+      setNameSaving(false);
+    }
     onClose();
-  }, [draft, onSave, onClose]);
+  }, [draft, onSave, onClose, nameValue, role.name, role.id, onUpdateName]);
 
   return (
     <div className="customize-overlay" onClick={onClose}>
@@ -122,8 +131,28 @@ export default function CustomizeModal({
               <div className="customize-preview-bg">
                 <SpriteCanvas roleId={role.id} appearance={draft} scale={3} />
               </div>
-              <div className="customize-preview-name">
-                {role.id.toUpperCase()} - {role.name}
+              <div className="customize-preview-name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>{role.id.toUpperCase()} –</span>
+                {onUpdateName ? (
+                  <input
+                    value={nameValue}
+                    onChange={(e) => setNameValue(e.target.value)}
+                    disabled={nameSaving}
+                    className="customize-name-input"
+                    style={{
+                      background: 'rgba(255,255,255,0.08)',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                      borderRadius: 4,
+                      color: 'inherit',
+                      font: 'inherit',
+                      padding: '2px 6px',
+                      flex: 1,
+                      minWidth: 0,
+                    }}
+                  />
+                ) : (
+                  <span>{role.name}</span>
+                )}
               </div>
               <div className="customize-preview-actions">
                 <button className="customize-btn customize-btn--random" onClick={randomize}>
