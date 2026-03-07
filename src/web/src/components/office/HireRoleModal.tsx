@@ -1,10 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import type { CreateRoleInput } from '../../types';
+import type { CharacterAppearance } from '../../types/appearance';
+import CharacterEditor, { randomAppearance } from './CharacterEditor';
+import SpriteCanvas from './SpriteCanvas';
 
 interface Props {
   existingRoles: { id: string; name: string }[];
   onClose: () => void;
-  onHire: (input: CreateRoleInput) => Promise<void>;
+  onHire: (input: CreateRoleInput, appearance: CharacterAppearance) => Promise<void>;
 }
 
 const LEVEL_OPTIONS: { value: CreateRoleInput['level']; label: string }[] = [
@@ -40,6 +43,8 @@ function defaultsForLevel(level: CreateRoleInput['level']) {
   }
 }
 
+const TOTAL_STEPS = 4;
+
 export default function HireRoleModal({ existingRoles, onClose, onHire }: Props) {
   const [step, setStep] = useState(1);
   const [name, setName] = useState('');
@@ -48,6 +53,7 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
   const [level, setLevel] = useState<CreateRoleInput['level']>('member');
   const [reportsTo, setReportsTo] = useState('ceo');
   const [persona, setPersona] = useState('');
+  const [appearance, setAppearance] = useState<CharacterAppearance>(randomAppearance);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -79,7 +85,7 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
         reportsTo,
         persona: persona.trim(),
         ...defaults,
-      });
+      }, appearance);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create role');
@@ -87,12 +93,17 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
     }
   };
 
+  const canNext = (s: number) => {
+    if (s === 1) return canNext1;
+    if (s === 2) return canNext2;
+    return true;
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') onClose();
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      if (step === 1 && canNext1) setStep(2);
-      else if (step === 2 && canNext2) setStep(3);
-      else if (step === 3) handleHire();
+      if (step < TOTAL_STEPS && canNext(step)) setStep(step + 1);
+      else if (step === TOTAL_STEPS) handleHire();
     }
   };
 
@@ -108,12 +119,12 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
         {/* Header */}
         <div className="p-5 text-white" style={{ background: 'linear-gradient(135deg, #2E7D32, #43A047)' }}>
           <div className="text-lg font-bold">Hire New Role</div>
-          <div className="text-sm opacity-80 mt-0.5">Step {step} of 3</div>
+          <div className="text-sm opacity-80 mt-0.5">Step {step} of {TOTAL_STEPS}</div>
         </div>
 
         {/* Step indicator */}
         <div className="flex gap-1 px-5 pt-4">
-          {[1, 2, 3].map((s) => (
+          {Array.from({ length: TOTAL_STEPS }, (_, i) => i + 1).map((s) => (
             <div
               key={s}
               className="flex-1 h-1 rounded-full transition-colors"
@@ -126,7 +137,6 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
         <div className="p-5 min-h-[240px]">
           {step === 1 && (
             <div className="space-y-4">
-              {/* Name */}
               <div>
                 <label className="block text-[11px] font-bold text-[var(--desk-dark)] uppercase tracking-wider mb-1">Role Name</label>
                 <input
@@ -137,7 +147,6 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
                   className="w-full p-2.5 rounded-lg border-2 border-[var(--office-border)] bg-white text-sm focus:outline-none focus:border-[var(--desk-dark)] transition-colors"
                 />
               </div>
-              {/* ID */}
               <div>
                 <label className="block text-[11px] font-bold text-[var(--desk-dark)] uppercase tracking-wider mb-1">Role ID (slug)</label>
                 <input
@@ -147,7 +156,6 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
                 />
                 {idConflict && <div className="text-xs text-red-500 mt-1">ID already exists</div>}
               </div>
-              {/* Level */}
               <div>
                 <label className="block text-[11px] font-bold text-[var(--desk-dark)] uppercase tracking-wider mb-1">Level</label>
                 <div className="flex gap-2">
@@ -162,7 +170,6 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
                   ))}
                 </div>
               </div>
-              {/* Reports To */}
               <div>
                 <label className="block text-[11px] font-bold text-[var(--desk-dark)] uppercase tracking-wider mb-1">Reports To</label>
                 <select
@@ -194,14 +201,38 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
           )}
 
           {step === 3 && (
+            <div className="customize-body" style={{ padding: 0 }}>
+              <CharacterEditor
+                roleId="default"
+                appearance={appearance}
+                onChange={setAppearance}
+                onRandomize={() => setAppearance(randomAppearance())}
+                onReset={() => setAppearance(randomAppearance())}
+                label={
+                  <span>
+                    {id || 'new-role'} — {name || 'New Role'}
+                  </span>
+                }
+              />
+            </div>
+          )}
+
+          {step === 4 && (
             <div className="space-y-3">
               <div className="text-[11px] font-bold text-[var(--desk-dark)] uppercase tracking-wider mb-2">Review</div>
-              <div className="bg-white rounded-xl p-4 border border-[var(--office-border)] space-y-2.5">
-                <ReviewRow label="Name" value={name} />
-                <ReviewRow label="ID" value={id} mono />
-                <ReviewRow label="Level" value={level} />
-                <ReviewRow label="Reports To" value={reportsTo} />
-                <div className="pt-2 border-t border-gray-100">
+              <div className="bg-white rounded-xl p-4 border border-[var(--office-border)]">
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0 rounded-lg overflow-hidden" style={{ background: '#0d1117', padding: 8 }}>
+                    <SpriteCanvas roleId="default" appearance={appearance} scale={2} />
+                  </div>
+                  <div className="flex-1 space-y-2.5">
+                    <ReviewRow label="Name" value={name} />
+                    <ReviewRow label="ID" value={id} mono />
+                    <ReviewRow label="Level" value={level} />
+                    <ReviewRow label="Reports To" value={reportsTo} />
+                  </div>
+                </div>
+                <div className="pt-3 mt-3 border-t border-gray-100">
                   <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Persona</div>
                   <div className="text-xs text-gray-700 leading-relaxed">{persona}</div>
                 </div>
@@ -232,10 +263,10 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
             >
               Cancel
             </button>
-            {step < 3 ? (
+            {step < TOTAL_STEPS ? (
               <button
                 onClick={() => setStep(step + 1)}
-                disabled={step === 1 ? !canNext1 : !canNext2}
+                disabled={!canNext(step)}
                 className="px-5 py-2 text-sm text-white rounded-lg font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ background: '#2E7D32' }}
               >

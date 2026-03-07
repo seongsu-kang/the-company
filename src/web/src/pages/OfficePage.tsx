@@ -18,6 +18,7 @@ import IsometricOfficeView from '../components/office/IsometricOfficeView';
 import KnowledgePanel from '../components/office/KnowledgePanel';
 import CustomizeModal from '../components/office/CustomizeModal';
 import { OFFICE_THEMES } from '../types/appearance';
+import type { CharacterAppearance } from '../types/appearance';
 
 /* ─── Role metadata ─────────────────────── */
 
@@ -330,8 +331,9 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
     api.getCompany().then((c) => setRoles(c.roles)).catch(console.error);
   };
 
-  const handleHireRole = async (input: CreateRoleInput) => {
+  const handleHireRole = async (input: CreateRoleInput, appearance: CharacterAppearance) => {
     await api.createRole(input);
+    setAppearance(input.id, appearance);
     refreshRoles();
     addToast(`${input.name} hired!`, '#2E7D32');
   };
@@ -1220,7 +1222,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
 function PixelCard({ role, speech, onClick, liveStatus, activeTask, featured, appearance }: {
   role: Role; speech: string; onClick: () => void;
   liveStatus?: string; activeTask?: string; featured?: boolean;
-  appearance?: import('../types/appearance').CharacterAppearance;
+  appearance?: CharacterAppearance;
 }) {
   const color = ROLE_COLORS[role.id] ?? hashColor(role.id);
   const level = ROLE_LEVELS[role.id] ?? 1;

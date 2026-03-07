@@ -1,51 +1,8 @@
 import { useState, useCallback } from 'react';
 import type { CharacterAppearance, OfficeTheme } from '../../types/appearance';
-import {
-  getDefaultAppearance,
-  SKIN_PRESETS, HAIR_PRESETS, SHIRT_PRESETS, PANTS_PRESETS, SHOE_PRESETS,
-  OFFICE_THEMES,
-} from '../../types/appearance';
+import { getDefaultAppearance, OFFICE_THEMES } from '../../types/appearance';
 import type { Role } from '../../types';
-import SpriteCanvas from './SpriteCanvas';
-
-/* ─── Color Swatch ────────────────────────── */
-
-function Swatch({ color, selected, onClick }: { color: string; selected: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className="customize-swatch"
-      style={{
-        background: color,
-        outline: selected ? '2px solid #fff' : '2px solid transparent',
-        boxShadow: selected ? `0 0 0 1px ${color}, 0 0 6px ${color}88` : 'none',
-      }}
-    />
-  );
-}
-
-/* ─── Color Row ───────────────────────────── */
-
-function ColorRow({ label, presets, value, onChange }: {
-  label: string;
-  presets: string[];
-  value: string;
-  onChange: (color: string) => void;
-}) {
-  return (
-    <div className="customize-row">
-      <div className="customize-row-header">
-        <span className="customize-row-label">{label}</span>
-        <div className="customize-row-current" style={{ background: value }} />
-      </div>
-      <div className="customize-swatches">
-        {presets.map(c => (
-          <Swatch key={c} color={c} selected={c === value} onClick={() => onChange(c)} />
-        ))}
-      </div>
-    </div>
-  );
-}
+import CharacterEditor, { randomAppearance } from './CharacterEditor';
 
 /* ─── Main Modal ──────────────────────────── */
 
@@ -58,7 +15,6 @@ interface CustomizeModalProps {
   theme: OfficeTheme;
   onThemeChange: (t: OfficeTheme) => void;
   onUpdateName?: (roleId: string, name: string) => Promise<void>;
-  /** Which tab to show initially */
   initialTab?: 'character' | 'office';
 }
 
@@ -71,19 +27,7 @@ export default function CustomizeModal({
   const [nameValue, setNameValue] = useState(role.name);
   const [nameSaving, setNameSaving] = useState(false);
 
-  const update = useCallback((key: keyof CharacterAppearance, value: string) => {
-    setDraft(prev => ({ ...prev, [key]: value }));
-  }, []);
-
-  const randomize = useCallback(() => {
-    setDraft({
-      skinColor: pick(SKIN_PRESETS),
-      hairColor: pick(HAIR_PRESETS),
-      shirtColor: pick(SHIRT_PRESETS),
-      pantsColor: pick(PANTS_PRESETS),
-      shoeColor: pick(SHOE_PRESETS),
-    });
-  }, []);
+  const handleRandomize = useCallback(() => setDraft(randomAppearance()), []);
 
   const handleReset = useCallback(() => {
     const def = getDefaultAppearance(role.id);
@@ -101,6 +45,32 @@ export default function CustomizeModal({
     }
     onClose();
   }, [draft, onSave, onClose, nameValue, role.name, role.id, onUpdateName]);
+
+  const nameLabel = (
+    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <span>{role.id.toUpperCase()} –</span>
+      {onUpdateName ? (
+        <input
+          value={nameValue}
+          onChange={(e) => setNameValue(e.target.value)}
+          disabled={nameSaving}
+          className="customize-name-input"
+          style={{
+            background: 'rgba(255,255,255,0.08)',
+            border: '1px solid rgba(255,255,255,0.15)',
+            borderRadius: 4,
+            color: 'inherit',
+            font: 'inherit',
+            padding: '2px 6px',
+            flex: 1,
+            minWidth: 0,
+          }}
+        />
+      ) : (
+        <span>{role.name}</span>
+      )}
+    </span>
+  );
 
   return (
     <div className="customize-overlay" onClick={onClose}>
@@ -126,52 +96,14 @@ export default function CustomizeModal({
 
         {tab === 'character' ? (
           <div className="customize-body">
-            {/* Preview */}
-            <div className="customize-preview">
-              <div className="customize-preview-bg">
-                <SpriteCanvas roleId={role.id} appearance={draft} scale={3} />
-              </div>
-              <div className="customize-preview-name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span>{role.id.toUpperCase()} –</span>
-                {onUpdateName ? (
-                  <input
-                    value={nameValue}
-                    onChange={(e) => setNameValue(e.target.value)}
-                    disabled={nameSaving}
-                    className="customize-name-input"
-                    style={{
-                      background: 'rgba(255,255,255,0.08)',
-                      border: '1px solid rgba(255,255,255,0.15)',
-                      borderRadius: 4,
-                      color: 'inherit',
-                      font: 'inherit',
-                      padding: '2px 6px',
-                      flex: 1,
-                      minWidth: 0,
-                    }}
-                  />
-                ) : (
-                  <span>{role.name}</span>
-                )}
-              </div>
-              <div className="customize-preview-actions">
-                <button className="customize-btn customize-btn--random" onClick={randomize}>
-                  RANDOM
-                </button>
-                <button className="customize-btn customize-btn--reset" onClick={handleReset}>
-                  RESET
-                </button>
-              </div>
-            </div>
-
-            {/* Color Pickers */}
-            <div className="customize-colors">
-              <ColorRow label="SKIN" presets={SKIN_PRESETS} value={draft.skinColor} onChange={v => update('skinColor', v)} />
-              <ColorRow label="HAIR" presets={HAIR_PRESETS} value={draft.hairColor} onChange={v => update('hairColor', v)} />
-              <ColorRow label="OUTFIT" presets={SHIRT_PRESETS} value={draft.shirtColor} onChange={v => update('shirtColor', v)} />
-              <ColorRow label="PANTS" presets={PANTS_PRESETS} value={draft.pantsColor} onChange={v => update('pantsColor', v)} />
-              <ColorRow label="SHOES" presets={SHOE_PRESETS} value={draft.shoeColor} onChange={v => update('shoeColor', v)} />
-            </div>
+            <CharacterEditor
+              roleId={role.id}
+              appearance={draft}
+              onChange={setDraft}
+              onRandomize={handleRandomize}
+              onReset={handleReset}
+              label={nameLabel}
+            />
           </div>
         ) : (
           <div className="customize-body">
@@ -213,8 +145,4 @@ export default function CustomizeModal({
       </div>
     </div>
   );
-}
-
-function pick<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
 }
