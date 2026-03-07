@@ -580,13 +580,30 @@ function drawWalkChar(cx: number, cy: number, ap: CharacterAppearance, dir: stri
   const pixels = WALK_FRAMES[d][phase];
   renderPixelsAt(_ctx, pixels, cx, cy, ap);
 
-  // Overlay accessory on top of walk frame (bob offset matches frame)
+  // Overlay accessory on top of walk frame, direction-aware
   const bob = (phase === 1 || phase === 3) ? -1 : 0;
   if (ap.accessory && ap.accessory !== 'none') {
     const acc = getAccessory(ap.accessory);
-    if (acc) {
-      // Accessory pixels are relative to head origin; walk frame head is at (0, bob)
-      renderPixelsAt(_ctx, acc.layer.pixels, cx, cy + bob, ap);
+    if (acc && acc.layer.pixels.length > 0) {
+      const srcPx = acc.layer.pixels;
+      if (d === 'down') {
+        // Front — render as-is
+        renderPixelsAt(_ctx, srcPx, cx, cy + bob, ap);
+      } else if (d === 'up') {
+        // Back — only above-head items (ears, crown, horns, halo)
+        const top = srcPx.filter(p => p.y < 1);
+        if (top.length > 0) renderPixelsAt(_ctx, top, cx, cy + bob, ap);
+      } else {
+        // Side — compress horizontally + shift toward facing direction
+        const mid = 6; // horizontal center of 12-wide head
+        const shift = d === 'right' ? 2 : -2;
+        const side = srcPx.map(p => ({
+          ...p,
+          x: Math.round(mid + (p.x - mid) * 0.5 + shift),
+          w: Math.max(1, Math.round(p.w * 0.6)),
+        }));
+        renderPixelsAt(_ctx, side, cx, cy + bob, ap);
+      }
     }
   }
 
