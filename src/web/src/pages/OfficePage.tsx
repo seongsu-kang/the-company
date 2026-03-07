@@ -14,9 +14,9 @@ import TerminalPanel from '../components/terminal/TerminalPanel';
 import useSessionStream from '../hooks/useSessionStream';
 import { useCustomization } from '../hooks/useCustomization';
 import { useSave } from '../hooks/useSave';
-import SpriteCanvas from '../components/office/SpriteCanvas';
+import TopDownCharCanvas from '../components/office/TopDownCharCanvas';
 import FacilityCanvas from '../components/office/FacilityCanvas';
-import IsometricOfficeView from '../components/office/IsometricOfficeView';
+import TopDownOfficeView from '../components/office/TopDownOfficeView';
 import KnowledgePanel from '../components/office/KnowledgePanel';
 import CustomizeModal from '../components/office/CustomizeModal';
 import SaveModal from '../components/office/SaveModal';
@@ -915,7 +915,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           background: `var(--floor-light)`,
         }}>
           {viewMode === 'iso' ? (
-            <IsometricOfficeView
+            <TopDownOfficeView
               roles={roles}
               projects={projects}
               waves={waves}
@@ -1440,7 +1440,7 @@ function PixelCard({ role, speech, onClick, liveStatus, activeTask, featured, ap
       {/* Sprite area */}
       <div className="pixel-card-body">
         <div className="pixel-desk" />
-        <SpriteCanvas roleId={role.id} appearance={appearance} />
+        <TopDownCharCanvas roleId={role.id} appearance={appearance} />
         {/* Status dot */}
         <div
           className="pixel-status-dot"

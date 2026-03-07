@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import type { CreateRoleInput } from '../../types';
 import type { CharacterAppearance } from '../../types/appearance';
 import CharacterEditor, { randomAppearance } from './CharacterEditor';
-import SpriteCanvas from './SpriteCanvas';
+import TopDownCharCanvas from './TopDownCharCanvas';
 
 interface Props {
   existingRoles: { id: string; name: string }[];
@@ -223,7 +223,7 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
               <div className="bg-white/5 rounded-xl p-4 border border-white/10">
                 <div className="flex gap-4">
                   <div className="flex-shrink-0 rounded-lg overflow-hidden" style={{ background: '#0d1117', padding: 8 }}>
-                    <SpriteCanvas roleId="default" appearance={appearance} scale={2} />
+                    <TopDownCharCanvas roleId="default" appearance={appearance} scale={4} />
                   </div>
                   <div className="flex-1 space-y-2.5">
                     <ReviewRow label="Name" value={name} />

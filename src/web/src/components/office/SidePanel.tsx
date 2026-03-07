@@ -3,7 +3,7 @@ import type { RoleDetail, Session } from '../../types';
 import type { CharacterAppearance } from '../../types/appearance';
 import useActivityStream from '../../hooks/useActivityStream';
 import OfficeMarkdown from './OfficeMarkdown';
-import SpriteCanvas from './SpriteCanvas';
+import TopDownCharCanvas from './TopDownCharCanvas';
 
 interface Props {
   role: RoleDetail | null;
@@ -253,7 +253,7 @@ export default function SidePanel({
             {/* Sprite */}
             <div className="shrink-0 relative" style={{ marginBottom: -2 }}>
               <div className="rounded-lg p-1" style={{ background: 'rgba(0,0,0,0.2)' }}>
-                <SpriteCanvas roleId={role.id} appearance={appearance} scale={2.5} />
+                <TopDownCharCanvas roleId={role.id} appearance={appearance} scale={8} />
               </div>
             </div>
 

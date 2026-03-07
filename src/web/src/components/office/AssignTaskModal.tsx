@@ -59,16 +59,16 @@ export default function AssignTaskModal({ roleId, roleName, mode = 'assign', onC
             onChange={(e) => setTask(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={mode === 'ask' ? 'What would you like to ask?' : 'Describe the task...'}
-            className="w-full h-32 p-3 rounded-lg border-2 border-[var(--office-border)] bg-white text-sm resize-none focus:outline-none focus:border-[var(--desk-dark)] transition-colors"
+            className="w-full h-32 p-3 rounded-lg border border-white/10 bg-white/5 text-sm text-white/90 placeholder-white/25 resize-none focus:outline-none focus:border-white/25 transition-colors"
           />
-          <div className="text-[10px] text-gray-400 mt-1">Cmd+Enter to submit</div>
+          <div className="text-[10px] text-white/30 mt-1">Cmd+Enter to submit</div>
         </div>
 
         {/* Footer */}
         <div className="flex justify-end gap-3 px-5 pb-5">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm rounded-lg border border-gray-300 hover:bg-gray-50 cursor-pointer"
+            className="px-4 py-2 text-sm rounded-lg border border-white/15 text-white/60 hover:bg-white/5 cursor-pointer"
           >
             Cancel
           </button>

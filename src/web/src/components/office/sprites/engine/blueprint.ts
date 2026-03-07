@@ -62,7 +62,9 @@ export interface FacilityBlueprint {
 
 /* ── Color Resolution ───────────────────────────── */
 
-const TOKEN_MAP: Record<string, keyof CharacterAppearance> = {
+type ColorKey = 'skinColor' | 'hairColor' | 'shirtColor' | 'pantsColor' | 'shoeColor';
+
+const TOKEN_MAP: Record<string, ColorKey> = {
   '$skin': 'skinColor',
   '$hair': 'hairColor',
   '$shirt': 'shirtColor',
@@ -110,6 +112,26 @@ export function resolveColor(token: ColorToken, ap?: CharacterAppearance): strin
 
   // Literal color
   return token;
+}
+
+/* ── Layer Swap ─────────────────────────────────── */
+
+/**
+ * Replace the hair layer in a blueprint. Returns a new blueprint (immutable).
+ * If the blueprint has no 'hair' layer, the new layer is inserted at index 1.
+ */
+export function swapHairLayer(
+  bp: CharacterBlueprint,
+  newHairLayer: CharacterLayer,
+): CharacterBlueprint {
+  const hairIdx = bp.layers.findIndex((l) => l.name === 'hair');
+  const layers = [...bp.layers];
+  if (hairIdx >= 0) {
+    layers[hairIdx] = { ...newHairLayer, name: 'hair' };
+  } else {
+    layers.splice(1, 0, { ...newHairLayer, name: 'hair' });
+  }
+  return { ...bp, layers };
 }
 
 /* ── Registry ───────────────────────────────────── */

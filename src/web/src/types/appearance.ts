@@ -6,16 +6,17 @@ export interface CharacterAppearance {
   shirtColor: string;
   pantsColor: string;
   shoeColor: string;
+  hairStyle?: string;
 }
 
 export const DEFAULT_APPEARANCES: Record<string, CharacterAppearance> = {
-  cto:            { skinColor: '#F5CBA7', hairColor: '#2C1810', shirtColor: '#1565C0', pantsColor: '#37474F', shoeColor: '#212121' },
-  cbo:            { skinColor: '#FDEBD0', hairColor: '#1A0A00', shirtColor: '#E65100', pantsColor: '#37474F', shoeColor: '#1A1A1A' },
-  pm:             { skinColor: '#FDEBD0', hairColor: '#6D4C41', shirtColor: '#2E7D32', pantsColor: '#37474F', shoeColor: '#212121' },
-  engineer:       { skinColor: '#F5CBA7', hairColor: '#1A1A1A', shirtColor: '#4A148C', pantsColor: '#37474F', shoeColor: '#7B1FA2' },
-  designer:       { skinColor: '#FDEBD0', hairColor: '#AD1457', shirtColor: '#AD1457', pantsColor: '#37474F', shoeColor: '#212121' },
-  qa:             { skinColor: '#F5CBA7', hairColor: '#4E342E', shirtColor: '#00695C', pantsColor: '#37474F', shoeColor: '#212121' },
-  'data-analyst': { skinColor: '#F5CBA7', hairColor: '#3E2723', shirtColor: '#0277BD', pantsColor: '#37474F', shoeColor: '#212121' },
+  cto:            { skinColor: '#F5CBA7', hairColor: '#2C1810', shirtColor: '#1565C0', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'short' },
+  cbo:            { skinColor: '#FDEBD0', hairColor: '#1A0A00', shirtColor: '#E65100', pantsColor: '#37474F', shoeColor: '#1A1A1A', hairStyle: 'slicked' },
+  pm:             { skinColor: '#FDEBD0', hairColor: '#6D4C41', shirtColor: '#2E7D32', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'bun' },
+  engineer:       { skinColor: '#F5CBA7', hairColor: '#1A1A1A', shirtColor: '#4A148C', pantsColor: '#37474F', shoeColor: '#7B1FA2', hairStyle: 'messy' },
+  designer:       { skinColor: '#FDEBD0', hairColor: '#AD1457', shirtColor: '#AD1457', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'bob' },
+  qa:             { skinColor: '#F5CBA7', hairColor: '#4E342E', shirtColor: '#00695C', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'short' },
+  'data-analyst': { skinColor: '#F5CBA7', hairColor: '#3E2723', shirtColor: '#0277BD', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'curly' },
 };
 
 export function getDefaultAppearance(roleId: string): CharacterAppearance {

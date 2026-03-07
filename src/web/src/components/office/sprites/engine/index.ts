@@ -10,6 +10,7 @@ export {
   darken,
   lighten,
   resolveColor,
+  swapHairLayer,
   registerCharacter,
   registerFacility,
   getCharacterBlueprint,
@@ -21,4 +22,17 @@ export {
 export {
   renderCharacter,
   renderFacility,
+  renderLayerToCanvas,
+  composeLayers,
+  renderPixelsAt,
 } from './renderer';
+
+export type { HairStyleMeta } from './hairstyles';
+
+export {
+  registerHairStyle,
+  getHairStyle,
+  getAllHairStyles,
+} from './hairstyles';
+
+export { extractAppearance } from './color-extract';

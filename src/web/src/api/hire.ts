@@ -1,0 +1,52 @@
+/* ─── Character Store Hire API ──────────────────── */
+
+import type { CreateRoleInput } from '../types';
+import type { StoreCharacter } from '../types/store';
+import { api } from './client';
+
+/**
+ * Convert a StoreCharacter to CreateRoleInput and hire (create) the role.
+ * Generates a unique role ID to avoid conflicts.
+ */
+export async function hireCharacter(
+  character: StoreCharacter,
+  reportsTo: string,
+  overrides?: {
+    id?: string;
+    name?: string;
+  },
+): Promise<{ ok: boolean; roleId: string }> {
+  const roleId = overrides?.id ?? character.id;
+
+  const input: CreateRoleInput = {
+    id: roleId,
+    name: overrides?.name ?? character.name,
+    level: character.level,
+    reportsTo,
+    persona: character.persona,
+    authority: character.authority,
+    knowledge: {
+      reads: levelBasedReads(character.level),
+      writes: levelBasedWrites(character.level),
+    },
+    reports: { daily: 'standup', weekly: 'summary' },
+  };
+
+  return api.createRole(input);
+}
+
+function levelBasedReads(level: string): string[] {
+  switch (level) {
+    case 'c-level': return ['architecture/', 'projects/', 'knowledge/', 'operations/'];
+    case 'team-lead': return ['projects/', 'architecture/'];
+    default: return ['projects/'];
+  }
+}
+
+function levelBasedWrites(level: string): string[] {
+  switch (level) {
+    case 'c-level': return ['architecture/', 'projects/', 'knowledge/'];
+    case 'team-lead': return ['projects/'];
+    default: return ['projects/'];
+  }
+}
