@@ -14,6 +14,8 @@ import TerminalPanel from '../components/terminal/TerminalPanel';
 import useSessionStream from '../hooks/useSessionStream';
 import { useCustomization } from '../hooks/useCustomization';
 import { useSave } from '../hooks/useSave';
+import { useAmbientSpeech } from '../hooks/useAmbientSpeech';
+import { useOfficeChat } from '../hooks/useOfficeChat';
 import TopDownCharCanvas from '../components/office/TopDownCharCanvas';
 import FacilityCanvas from '../components/office/FacilityCanvas';
 import TopDownOfficeView from '../components/office/TopDownOfficeView';
@@ -105,9 +107,9 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   const [toasts, setToasts] = useState<{ id: number; message: string; color: string }[]>([]);
 
   /* Customization */
-  const { getAppearance, setAppearance, resetAppearance, theme, setTheme } = useCustomization();
+  const { getAppearance, setAppearance, resetAppearance, theme, setTheme, speechSettings, setSpeechSettings } = useCustomization();
   const [customizeTarget, setCustomizeTarget] = useState<Role | null>(null);
-  const [customizeInitialTab, setCustomizeInitialTab] = useState<'character' | 'office'>('character');
+  const [customizeInitialTab, setCustomizeInitialTab] = useState<'character' | 'office' | 'settings'>('character');
 
   /* Save system */
   const saveHook = useSave();
@@ -647,8 +649,8 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
     qa: 'QA Engineer',
   };
 
-  /** Short one-liner for desk sprite speech */
-  const getRoleSpeech = (roleId: string): string => {
+  /** Short one-liner from standup (used as Layer 1 input for ambient speech) */
+  const getStandupSpeech = (roleId: string): string => {
     const sectionName = ROLE_SECTION[roleId];
     if (!sectionName) return '';
 
@@ -699,6 +701,19 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
     }
     return '';
   };
+
+  /* ─── Ambient Speech System ─── */
+  /* ─── Office Chat ─── */
+  const officeChat = useOfficeChat();
+
+  const ambient = useAmbientSpeech({
+    roles,
+    roleStatuses,
+    activeExecs,
+    getStandupSpeech,
+    onChat: officeChat.pushMessage,
+    speechSettings,
+  });
 
   if (loading) {
     return (
@@ -929,7 +944,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
               onDecisionsClick={() => setPanel({ type: 'decisions' })}
               onKnowledgeClick={() => setPanel({ type: 'knowledge' })}
               knowledgeDocsCount={knowledgeDocs.length}
-              getRoleSpeech={getRoleSpeech}
+              getRoleSpeech={ambient.getSpeech}
               getAppearance={getAppearance}
             />
           ) : (
@@ -946,7 +961,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
                       <PixelCard
                         key={role.id}
                         role={role}
-                        speech={getRoleSpeech(role.id)}
+                        speech={ambient.getSpeech(role.id)}
                         onClick={() => setPanel({ type: 'role', roleId: role.id })}
                         liveStatus={roleStatuses[role.id]}
                         activeTask={activeExecs.find((e) => e.roleId === role.id)?.task}
@@ -964,7 +979,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
                     <PixelCard
                       key={role.id}
                       role={role}
-                      speech={getRoleSpeech(role.id)}
+                      speech={ambient.getSpeech(role.id)}
                       onClick={() => setPanel({ type: 'role', roleId: role.id })}
                       liveStatus={roleStatuses[role.id]}
                       activeTask={activeExecs.find((e) => e.roleId === role.id)?.task}
@@ -1073,6 +1088,11 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
               onSendMessage={handleSendMessage}
               onModeChange={handleModeChange}
               onCloseTerminal={() => setTerminalOpen(false)}
+              chatChannels={officeChat.channels}
+              activeChatChannelId={officeChat.activeChannelId}
+              onSwitchChatChannel={officeChat.setActiveChannelId}
+              onCreateChatChannel={officeChat.createChannel}
+              onDeleteChatChannel={officeChat.deleteChannel}
             />
           </div>
         )}
@@ -1374,6 +1394,8 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           onThemeChange={setTheme}
           onUpdateName={async (roleId, name) => { await handleUpdateRole(roleId, { name }); }}
           initialTab={customizeInitialTab}
+          speechSettings={speechSettings}
+          onSpeechSettingsChange={setSpeechSettings}
         />
       )}
 

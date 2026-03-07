@@ -3,6 +3,7 @@ import type { Role, Project, Wave, Standup, Decision } from '../../types/index';
 import type { CharacterAppearance } from '../../types/appearance';
 import { getDefaultAppearance } from '../../types/appearance';
 import { getCharacterBlueprint, renderPixelsAt } from './sprites/engine';
+import { applyStyles } from './TopDownCharCanvas';
 import './sprites/data'; // trigger blueprint registration
 import { WALK_FRAMES } from './sprites/data/walk-frames-mini';
 import type { WalkDirection } from './sprites/data/walk-frames-mini';
@@ -96,6 +97,42 @@ const ROLE_COLORS: Record<string, string> = {
   'data-analyst': '#0277BD',
 };
 
+/* ─── Facility definitions ─────────────── */
+// Each facility: draw origin (dx, dy) + pixel size (pw, ph) from its draw function.
+// Hit zone & label position are derived automatically.
+
+interface FacilityDef {
+  id: string;
+  label: string;
+  icon: string;
+  color: string;
+  /** draw origin (passed to draw function) */
+  dx: number; dy: number;
+  /** pixel size of the drawn object */
+  pw: number; ph: number;
+}
+
+// Sizes from draw functions:
+//   drawMeetingTable: 36w body, chairs extend -4 above / +11 below → total ~44w x 40h
+//   drawBulletinBoard: 22w x 16h
+//   drawScreen: 16w x 12h
+//   drawBookshelf: 22w x 22h (incl shadow)
+const FACILITY_ZONES: FacilityDef[] = [
+  { id: 'meeting',   label: 'MEETING',   icon: '\u{1F3E2}', color: '#3B82F6', dx: M.fx + 10,   dy: M.fy + 14,   pw: 44, ph: 40 },
+  { id: 'bulletin',  label: 'BULLETIN',  icon: '\u{1F4CB}', color: '#F59E0B', dx: M.wx + 6,    dy: M.wy + 4,    pw: 22, ph: 16 },
+  { id: 'decisions', label: 'DECISIONS', icon: '\u{1F4DC}', color: '#EF4444', dx: Co.wx + 6,   dy: Co.wy + 6,   pw: 16, ph: 12 },
+  { id: 'knowledge', label: 'KNOWLEDGE', icon: '\u{1F4DA}', color: '#10B981', dx: Co.fx + 108, dy: Co.fy + 16,  pw: 22, ph: 22 },
+];
+
+/** Derived hit zone from facility def */
+function facilityHitBox(f: FacilityDef) {
+  return { x: f.dx, y: f.dy, w: f.pw, h: f.ph };
+}
+/** Label position: centered below object */
+function facilityLabelPos(f: FacilityDef) {
+  return { cx: f.dx + f.pw / 2, botY: f.dy + f.ph };
+}
+
 /* ─── Desk placement ────────────────────── */
 
 interface DeskDef { dx: number; dy: number; room: string; }
@@ -145,6 +182,8 @@ const WAYPOINTS: Record<string, { x: number; y: number }[]> = {
    ═══════════════════════════════════════════ */
 
 let _ctx: CanvasRenderingContext2D;
+let _hoverRole: string | null = null;
+let _hoverFacility: string | null = null;
 
 function px(x: number, y: number, w: number, h: number, c: string, a?: number) {
   x = Math.round(x); y = Math.round(y);
@@ -450,7 +489,7 @@ function drawPlant(x: number, y: number) {
   dot(x + 4, y, '#81C784'); dot(x + 3, y + 1, '#A5D6A7', 0.4);
 }
 
-function drawBookshelf(x: number, y: number) {
+function drawBookshelf(x: number, y: number, accent?: string) {
   px(x + 2, y + 20, 22, 2, SH, 0.15); px(x, y, 22, 20, DW.deep); px(x + 1, y + 1, 20, 18, DW.base);
   px(x, y, 22, 1, DW.hi, 0.35); px(x, y, 1, 20, DW.hi, 0.2);
   for (const sy of [6, 12]) { px(x + 1, y + sy, 20, 2, DW.sh); px(x + 1, y + sy, 20, 1, DW.hi, 0.2); }
@@ -459,9 +498,14 @@ function drawBookshelf(x: number, y: number) {
   for (let i = 0; i < 5; i++) { const bw = 2 + (i % 2); px(bx, y + 1, bw, 5, cols[i]); px(bx, y + 1, bw, 1, highlightOf(cols[i], 1), 0.35); bx += bw + 1; }
   bx = x + 2; for (let i = 0; i < 4; i++) { px(bx, y + 7, 4, 5, cols[i + 3]); px(bx, y + 7, 4, 1, highlightOf(cols[i + 3], 1), 0.25); bx += 5; }
   px(x + 2, y + 14, 4, 4, '#FFD54F'); px(x + 8, y + 14, 7, 4, '#90CAF9');
+  // Accent strip on top for interactive bookshelves
+  if (accent) { px(x, y - 1, 22, 1, accent, 0.7); }
 }
 
 function drawMeetingTable(x: number, y: number) {
+  // Top chairs first (behind table in 3/4 view)
+  drawChair(x + 4, y - 4, 'down'); drawChair(x + 16, y - 4, 'down'); drawChair(x + 28, y - 4, 'down');
+  // Table surface (covers bottom of top chairs)
   px(x + 3, y + 24, 34, 3, SH, 0.15);
   px(x, y + 2, 36, 18, WD.deep); px(x + 1, y + 3, 34, 16, WD.base);
   px(x + 1, y + 3, 34, 1, WD.hi, 0.35);
@@ -470,7 +514,7 @@ function drawMeetingTable(x: number, y: number) {
   px(x + 6, y + 7, 10, 6, '#1A1A24'); px(x + 7, y + 8, 8, 4, '#0C1420');
   px(x + 8, y + 9, 4, 1, '#2A6898', 0.4);
   px(x + 20, y + 8, 6, 4, '#F0F0F0'); px(x + 15, y + 7, 3, 3, '#ECEFF1'); dot(x + 16, y + 8, '#795548');
-  drawChair(x + 4, y - 4, 'down'); drawChair(x + 16, y - 4, 'down'); drawChair(x + 28, y - 4, 'down');
+  // Bottom chairs last (in front of table)
   drawChair(x + 4, y + 24, 'up'); drawChair(x + 16, y + 24, 'up'); drawChair(x + 28, y + 24, 'up');
 }
 
@@ -506,18 +550,22 @@ function drawCoffeeMachine(x: number, y: number) {
    CHARACTERS — TyconoForge mini blueprints
    ═══════════════════════════════════════════ */
 
-let _seatedPixelsCache: import('./sprites/engine/blueprint').Pixel[] | null = null;
+const _seatedPixelsCache = new Map<string, import('./sprites/engine/blueprint').Pixel[]>();
 
-function getSeatedPixels() {
-  if (!_seatedPixelsCache) {
-    const bp = getCharacterBlueprint('mini-seated:default');
-    _seatedPixelsCache = bp ? bp.layers.flatMap(l => l.pixels) : [];
+function getSeatedPixels(ap: CharacterAppearance): import('./sprites/engine/blueprint').Pixel[] {
+  const key = `${ap.hairStyle ?? ''}|${ap.outfitStyle ?? ''}|${ap.accessory ?? ''}`;
+  let cached = _seatedPixelsCache.get(key);
+  if (!cached) {
+    const base = getCharacterBlueprint('mini-seated:default');
+    const bp = applyStyles(base, ap);
+    cached = bp ? bp.layers.flatMap(l => l.pixels) : [];
+    _seatedPixelsCache.set(key, cached);
   }
-  return _seatedPixelsCache;
+  return cached;
 }
 
 function drawSeatedChar(x: number, y: number, ap: CharacterAppearance) {
-  renderPixelsAt(_ctx, getSeatedPixels(), x, y, ap);
+  renderPixelsAt(_ctx, getSeatedPixels(ap), x, y, ap);
 }
 
 function drawDeskUnit(dx: number, dy: number, ap: CharacterAppearance, bobY: number, empty: boolean) {
@@ -763,7 +811,7 @@ function drawScene(
   entities.push({ y: M.fy + 14, draw: () => drawMeetingTable(M.fx + 10, M.fy + 14) });
   entities.push({ y: Co.fy + 4, draw: () => drawCoffeeMachine(Co.fx + 92, Co.fy + 4) });
   entities.push({ y: Co.fy + 4, draw: () => drawPlant(Co.fx + 38, Co.fy + 4) });
-  entities.push({ y: Co.fy + 16, draw: () => drawBookshelf(Co.fx + 108, Co.fy + 16) });
+  entities.push({ y: Co.fy + 16, draw: () => drawBookshelf(Co.fx + 108, Co.fy + 16, '#10B981') });
   entities.push({ y: Co.fy + 30, draw: () => drawSofa(Co.fx + 44, Co.fy + 30) });
   entities.push({ y: Co.fy + 50, draw: () => drawCoffeeTable(Co.fx + 50, Co.fy + 50) });
   entities.push({ y: Co.fy + 50, draw: () => drawPlant(Co.fx + 38, Co.fy + 50) });
@@ -802,6 +850,42 @@ function drawScene(
 
   entities.sort((a, b) => a.y - b.y);
   for (const e of entities) e.draw();
+
+  // Facility interaction indicators
+  for (const fz of FACILITY_ZONES) {
+    const isHov = _hoverFacility === fz.id;
+    const lp = facilityLabelPos(fz);
+    // Small colored dot below object
+    _ctx.save();
+    _ctx.globalAlpha = isHov ? 0.9 : 0.5;
+    _ctx.fillStyle = fz.color;
+    _ctx.fillRect(lp.cx - 1, lp.botY - 2, 3, 3);
+    if (isHov) {
+      const hb = facilityHitBox(fz);
+      _ctx.globalAlpha = 0.3;
+      _ctx.strokeStyle = fz.color;
+      _ctx.lineWidth = 1;
+      _ctx.strokeRect(hb.x - 1, hb.y - 1, hb.w + 2, hb.h + 2);
+    }
+    _ctx.restore();
+  }
+
+  // Draw hover highlight
+  if (_hoverRole) {
+    const d = DESKS[_hoverRole];
+    const ch = chars[_hoverRole];
+    if (d && ch) {
+      _ctx.save();
+      _ctx.globalAlpha = 0.25;
+      _ctx.fillStyle = ROLE_COLORS[_hoverRole] ?? '#fff';
+      if (ch.state === 'sitting') {
+        _ctx.fillRect(d.dx - 1, d.dy + 6, 28, 30);
+      } else {
+        _ctx.fillRect(Math.round(ch.x) - 1, Math.round(ch.y) - 1, 14, 24);
+      }
+      _ctx.restore();
+    }
+  }
 }
 
 /* ═══════════════════════════════════════════
@@ -809,8 +893,9 @@ function drawScene(
    ═══════════════════════════════════════════ */
 
 export default function TopDownOfficeView({
-  roles, roleStatuses, activeExecs,
-  onRoleClick, getRoleSpeech, getAppearance,
+  roles, projects, roleStatuses, activeExecs,
+  onRoleClick, onProjectClick, onBulletinClick, onDecisionsClick, onKnowledgeClick,
+  getRoleSpeech, getAppearance,
 }: TopDownOfficeViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -916,7 +1001,27 @@ export default function TopDownOfficeView({
       bub.dataset.type = 'bubble';
       overlay.appendChild(bub);
     }
-  }, [assignedRoleIds]);
+
+    // Facility labels
+    const facilityHandlers: Record<string, () => void> = {
+      meeting: () => { const p = projects[0]; if (p) onProjectClick(p.id); else onBulletinClick(); },
+      bulletin: onBulletinClick,
+      decisions: onDecisionsClick,
+      knowledge: onKnowledgeClick,
+    };
+    for (const fz of FACILITY_ZONES) {
+      const lbl = document.createElement('div');
+      lbl.className = 'td-facility-label';
+      lbl.dataset.facility = fz.id;
+      lbl.textContent = `${fz.icon} ${fz.label}`;
+      lbl.style.borderColor = `${fz.color}44`;
+      const handler = facilityHandlers[fz.id];
+      if (handler) lbl.addEventListener('click', handler);
+      lbl.addEventListener('mouseenter', () => { _hoverFacility = fz.id; });
+      lbl.addEventListener('mouseleave', () => { _hoverFacility = null; });
+      overlay.appendChild(lbl);
+    }
+  }, [assignedRoleIds, projects, onProjectClick, onBulletinClick, onDecisionsClick, onKnowledgeClick]);
 
   // Update overlay positions
   const updateOverlay = useCallback(() => {
@@ -973,38 +1078,82 @@ export default function TopDownOfficeView({
         }
       }
     }
+
+    // Facility labels
+    for (const fz of FACILITY_ZONES) {
+      const lbl = overlay.querySelector(`.td-facility-label[data-facility="${fz.id}"]`) as HTMLElement;
+      if (lbl) {
+        const lp = facilityLabelPos(fz);
+        lbl.style.left = (lp.cx / AW * 100) + '%';
+        lbl.style.top = (lp.botY * z + 2) + 'px';
+        lbl.classList.toggle('td-facility-label--hover', _hoverFacility === fz.id);
+      }
+    }
   }, []);
 
-  // Canvas click handler — detect which role was clicked
-  const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+  // Hit-test helper: returns { type, id } or null
+  const hitTest = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
     const z = zoomRef.current;
     const mx = (e.clientX - rect.left) / z;
     const my = (e.clientY - rect.top) / z;
     const chars = charsRef.current;
 
-    // Check desk hit zones
+    // Check roles
     for (const [id, d] of Object.entries(DESKS)) {
       if (!chars[id]) continue;
       const ch = chars[id];
-
       if (ch.state === 'sitting') {
-        // Desk unit area
-        if (mx >= d.dx && mx <= d.dx + 26 && my >= d.dy && my <= d.dy + 40) {
-          onRoleClick(id);
-          return;
-        }
+        if (mx >= d.dx && mx <= d.dx + 26 && my >= d.dy && my <= d.dy + 40)
+          return { type: 'role' as const, id };
       } else {
-        // Walking character hitbox
-        if (mx >= ch.x - 2 && mx <= ch.x + 14 && my >= ch.y - 2 && my <= ch.y + 20) {
-          onRoleClick(id);
-          return;
-        }
+        if (mx >= ch.x - 2 && mx <= ch.x + 14 && my >= ch.y - 2 && my <= ch.y + 20)
+          return { type: 'role' as const, id };
       }
     }
-  }, [onRoleClick]);
+    // Check facilities
+    for (const fz of FACILITY_ZONES) {
+      const hb = facilityHitBox(fz);
+      if (mx >= hb.x && mx <= hb.x + hb.w && my >= hb.y && my <= hb.y + hb.h)
+        return { type: 'facility' as const, id: fz.id };
+    }
+    return null;
+  }, []);
+
+  // Mouse move — hover detection
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const hit = hitTest(e);
+    const canvas = canvasRef.current;
+    _hoverRole = hit?.type === 'role' ? hit.id : null;
+    _hoverFacility = hit?.type === 'facility' ? hit.id : null;
+    if (canvas) canvas.style.cursor = hit ? 'pointer' : 'default';
+  }, [hitTest]);
+
+  const handleMouseLeave = useCallback(() => {
+    _hoverRole = null;
+    _hoverFacility = null;
+    if (canvasRef.current) canvasRef.current.style.cursor = 'default';
+  }, []);
+
+  // Canvas click handler
+  const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const hit = hitTest(e);
+    if (!hit) return;
+    if (hit.type === 'role') { onRoleClick(hit.id); return; }
+    // Facility clicks
+    switch (hit.id) {
+      case 'meeting': {
+        const p = projects[0];
+        if (p) onProjectClick(p.id); else onBulletinClick();
+        break;
+      }
+      case 'bulletin': onBulletinClick(); break;
+      case 'decisions': onDecisionsClick(); break;
+      case 'knowledge': onKnowledgeClick(); break;
+    }
+  }, [hitTest, onRoleClick, onProjectClick, onBulletinClick, onDecisionsClick, onKnowledgeClick]);
 
   return (
     <div className="td-scene">
@@ -1015,6 +1164,8 @@ export default function TopDownOfficeView({
           height={AH}
           className="td-canvas"
           onClick={handleClick}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
         />
         <div ref={overlayRef} className="td-overlay" />
       </div>

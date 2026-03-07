@@ -2,15 +2,17 @@
    MINI SEATED CHARACTER BLUEPRINTS — 12x22 logical pixels
    For TopDown office view (characters sitting at desks).
    No legs/shoes visible; longer shirt body.
-   Same color token system as standing mini blueprints.
+
+   Layers: torso → head → hair → accessory
+   (no 'lower' layer — seated hides legs/shoes)
    ========================================================= */
 
 import type { Pixel } from '../engine/blueprint';
 import { registerCharacter } from '../engine/blueprint';
 
-/* ─── Shared seated base layers ──────────────── */
+/* ─── Seated torso (shirt covering legs + arms) ────── */
 
-const SEATED_BODY: Pixel[] = [
+const SEATED_TORSO: Pixel[] = [
   // Shirt body (longer, covering legs)
   { x: 1, y: 10, w: 10, h: 8, c: '$shirt' },
   { x: 2, y: 10, w: 8, h: 1, c: 'lighten($shirt, 18)', a: 0.3 },
@@ -21,6 +23,8 @@ const SEATED_BODY: Pixel[] = [
   { x: -1, y: 11, w: 2, h: 5, c: '$shirt' },
   { x: 11, y: 11, w: 2, h: 5, c: '$shirt' },
 ];
+
+/* ─── Head ──────────────────────────────────────────── */
 
 const SEATED_HEAD: Pixel[] = [
   // Neck
@@ -39,6 +43,8 @@ const SEATED_HEAD: Pixel[] = [
   { x: 11, y: 4, w: 1, h: 1, c: '$skin' },
 ];
 
+/* ─── Default hair ──────────────────────────────────── */
+
 const SEATED_HAIR: Pixel[] = [
   { x: 1, y: 0, w: 10, h: 3, c: '$hair' },
   { x: 0, y: 1, w: 2, h: 3, c: '$hair' },
@@ -54,9 +60,10 @@ function makeSeated() {
     width: 12,
     height: 22,
     layers: [
-      { name: 'body', pixels: SEATED_BODY },
+      { name: 'torso', pixels: SEATED_TORSO },
       { name: 'head', pixels: SEATED_HEAD },
       { name: 'hair', pixels: SEATED_HAIR },
+      { name: 'accessory', pixels: [] },
     ],
   };
 }

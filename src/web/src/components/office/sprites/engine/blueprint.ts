@@ -124,12 +124,26 @@ export function swapHairLayer(
   bp: CharacterBlueprint,
   newHairLayer: CharacterLayer,
 ): CharacterBlueprint {
-  const hairIdx = bp.layers.findIndex((l) => l.name === 'hair');
+  return swapLayer(bp, 'hair', newHairLayer, 1);
+}
+
+/**
+ * Replace a named layer in a blueprint. Returns a new blueprint (immutable).
+ * If the layer doesn't exist, inserts at `insertAt` index (default: end).
+ */
+export function swapLayer(
+  bp: CharacterBlueprint,
+  layerName: string,
+  newLayer: CharacterLayer,
+  insertAt?: number,
+): CharacterBlueprint {
+  const idx = bp.layers.findIndex((l) => l.name === layerName);
   const layers = [...bp.layers];
-  if (hairIdx >= 0) {
-    layers[hairIdx] = { ...newHairLayer, name: 'hair' };
+  if (idx >= 0) {
+    layers[idx] = { ...newLayer, name: layerName };
   } else {
-    layers.splice(1, 0, { ...newHairLayer, name: 'hair' });
+    const pos = insertAt ?? layers.length;
+    layers.splice(pos, 0, { ...newLayer, name: layerName });
   }
   return { ...bp, layers };
 }

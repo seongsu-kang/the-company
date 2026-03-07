@@ -15,9 +15,19 @@ export interface CharacterAppearance {
   shoeColor: string;
 }
 
+export interface SpeechSettings {
+  /** 'template' = static pool only, 'llm' = AI generation, 'auto' = detect engine */
+  mode: 'template' | 'llm' | 'auto';
+  /** Interval between ambient speech in seconds */
+  intervalSec: number;
+  /** Daily budget for LLM speech in USD (0 = unlimited) */
+  dailyBudgetUsd: number;
+}
+
 export interface Preferences {
   appearances: Record<string, CharacterAppearance>;
   theme: string;
+  speech?: SpeechSettings;
 }
 
 const CONFIG_DIR = '.tycono';
@@ -37,6 +47,7 @@ export function readPreferences(companyRoot: string): Preferences {
     return {
       appearances: data.appearances ?? {},
       theme: data.theme ?? 'default',
+      speech: data.speech ?? undefined,
     };
   } catch {
     return { ...DEFAULT, appearances: {} };
@@ -58,6 +69,9 @@ export function mergePreferences(companyRoot: string, partial: Partial<Preferenc
       ? { ...current.appearances, ...partial.appearances }
       : current.appearances,
     theme: partial.theme ?? current.theme,
+    speech: partial.speech !== undefined
+      ? { ...current.speech, ...partial.speech }
+      : current.speech,
   };
   writePreferences(companyRoot, merged);
   return merged;

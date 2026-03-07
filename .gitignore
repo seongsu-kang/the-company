@@ -39,3 +39,4 @@ operations/sessions/
 
 # npm pack output
 *.tgz
+.tycono/

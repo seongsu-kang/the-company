@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { CharacterAppearance, OfficeTheme } from '../types/appearance';
 import { getDefaultAppearance, OFFICE_THEMES } from '../types/appearance';
+import type { SpeechSettings } from '../types/speech';
 import { api } from '../api/client';
 
 const STORAGE_KEY_APPEARANCES = 'tycono-appearances';
@@ -47,9 +48,20 @@ function applyThemeVars(theme: OfficeTheme): void {
   }
 }
 
+const DEFAULT_SPEECH: SpeechSettings = { mode: 'auto', intervalSec: 18, dailyBudgetUsd: 1.0 };
+const STORAGE_KEY_SPEECH = 'tycono-speech-settings';
+
+function loadSpeechSettings(): SpeechSettings {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_SPEECH);
+    return raw ? { ...DEFAULT_SPEECH, ...JSON.parse(raw) } : DEFAULT_SPEECH;
+  } catch { return DEFAULT_SPEECH; }
+}
+
 export function useCustomization() {
   const [appearances, setAppearances] = useState<Record<string, CharacterAppearance>>(loadAppearances);
   const [theme, setThemeState] = useState<OfficeTheme>(loadTheme);
+  const [speechSettings, setSpeechSettingsState] = useState<SpeechSettings>(loadSpeechSettings);
   const seeded = useRef(false);
 
   // On mount: fetch from server, seed if server has no data
@@ -58,6 +70,11 @@ export function useCustomization() {
     seeded.current = true;
     api.getPreferences().then((prefs) => {
       const serverHasData = Object.keys(prefs.appearances ?? {}).length > 0 || prefs.theme !== 'default';
+      // Load speech settings from server
+      if (prefs.speech) {
+        setSpeechSettingsState(prev => ({ ...prev, ...prefs.speech }));
+        localStorage.setItem(STORAGE_KEY_SPEECH, JSON.stringify(prefs.speech));
+      }
       if (serverHasData) {
         // Server is source of truth
         const ap = prefs.appearances as Record<string, CharacterAppearance>;
@@ -114,5 +131,14 @@ export function useCustomization() {
     api.updatePreferences({ theme: t }).catch(() => {});
   }, []);
 
-  return { appearances, getAppearance, setAppearance, resetAppearance, theme, setTheme };
+  const setSpeechSettings = useCallback((s: Partial<SpeechSettings>) => {
+    setSpeechSettingsState(prev => {
+      const next = { ...prev, ...s };
+      localStorage.setItem(STORAGE_KEY_SPEECH, JSON.stringify(next));
+      api.updatePreferences({ speech: next }).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  return { appearances, getAppearance, setAppearance, resetAppearance, theme, setTheme, speechSettings, setSpeechSettings };
 }

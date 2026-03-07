@@ -1,6 +1,10 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useMemo } from 'react';
 import type { CharacterAppearance } from '../../types/appearance';
-import { getCharacterBlueprint, renderCharacter } from './sprites/engine';
+import {
+  getCharacterBlueprint, renderCharacter,
+  swapHairLayer, getHairStyle,
+  swapLayer, getOutfitStyle, getAccessory,
+} from './sprites/engine';
 import './sprites/data'; // trigger blueprint registration
 
 /**
@@ -22,6 +26,37 @@ interface Props {
   scale?: number;
 }
 
+/** Apply all style overrides (hair, outfit, accessory) to a base blueprint */
+function applyStyles(
+  base: ReturnType<typeof getCharacterBlueprint>,
+  ap?: CharacterAppearance,
+) {
+  if (!base) return base;
+  let bp = base;
+
+  // Hair style
+  if (ap?.hairStyle) {
+    const hs = getHairStyle(ap.hairStyle);
+    if (hs) bp = swapHairLayer(bp, hs.layer);
+  }
+
+  // Outfit style
+  if (ap?.outfitStyle) {
+    const os = getOutfitStyle(ap.outfitStyle);
+    if (os) bp = swapLayer(bp, 'torso', os.layer, 1);
+  }
+
+  // Accessory
+  if (ap?.accessory && ap.accessory !== 'none') {
+    const acc = getAccessory(ap.accessory);
+    if (acc) bp = swapLayer(bp, 'accessory', acc.layer);
+  }
+
+  return bp;
+}
+
+export { applyStyles };
+
 export default function TopDownCharCanvas({ roleId, className, appearance, scale }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef(0);
@@ -33,6 +68,12 @@ export default function TopDownCharCanvas({ roleId, className, appearance, scale
   const w = CW * s;
   const h = CH * s;
 
+  // Resolve blueprint with all styles applied
+  const bp = useMemo(() => {
+    const base = getCharacterBlueprint(`mini:${roleId}`) ?? getCharacterBlueprint('mini:default');
+    return applyStyles(base, appearance);
+  }, [roleId, appearance?.hairStyle, appearance?.outfitStyle, appearance?.accessory]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -40,7 +81,6 @@ export default function TopDownCharCanvas({ roleId, className, appearance, scale
     if (!ctx) return;
 
     const phase = PHASE_OFFSET[roleId] ?? 0;
-    const bp = getCharacterBlueprint(`mini:${roleId}`) ?? getCharacterBlueprint('mini:default');
 
     const tick = () => {
       frameRef.current++;
@@ -63,7 +103,7 @@ export default function TopDownCharCanvas({ roleId, className, appearance, scale
 
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [roleId]);
+  }, [roleId, bp]);
 
   return (
     <canvas

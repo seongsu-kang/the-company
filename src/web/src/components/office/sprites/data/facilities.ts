@@ -15,16 +15,7 @@ const meetingTable: FacilityBlueprint = {
   pixels: [
     // Floor tint
     { x: 0, y: 0, w: 80, h: 40, c: '#1e2030' },
-    // Table surface (oval approx)
-    { x: 8, y: 8, w: 64, h: 24, c: '#6b5b4b' },
-    { x: 4, y: 10, w: 72, h: 20, c: '#7d6d5d' },
-    { x: 2, y: 12, w: 76, h: 16, c: '#7d6d5d' },
-    // Edge highlights
-    { x: 2, y: 12, w: 76, h: 2, c: '#8b7b6b' },
-    { x: 2, y: 26, w: 76, h: 2, c: '#4b3b2b' },
-    // Center inlay
-    { x: 18, y: 14, w: 44, h: 12, c: '#6b5b4b', a: 0.5 },
-    // Chairs — top row
+    // Chairs — top row (BEHIND table in 3/4 view, drawn first)
     { x: 10, y: 2, w: 10, h: 6, c: '#78889c' },
     { x: 10, y: 2, w: 10, h: 1, c: '#8899ad' },
     { x: 24, y: 0, w: 10, h: 6, c: '#78889c' },
@@ -33,11 +24,30 @@ const meetingTable: FacilityBlueprint = {
     { x: 38, y: 2, w: 10, h: 1, c: '#8899ad' },
     { x: 54, y: 2, w: 10, h: 6, c: '#78889c' },
     { x: 54, y: 2, w: 10, h: 1, c: '#8899ad' },
-    // Chairs — bottom row
-    { x: 10, y: 32, w: 10, h: 6, c: '#78889c' },
-    { x: 24, y: 34, w: 10, h: 6, c: '#78889c' },
-    { x: 38, y: 32, w: 10, h: 6, c: '#78889c' },
-    { x: 54, y: 32, w: 10, h: 6, c: '#78889c' },
+    // Chair legs — top row
+    { x: 11, y: 7, w: 2, h: 2, c: '#2a2a2a' },
+    { x: 17, y: 7, w: 2, h: 2, c: '#2a2a2a' },
+    { x: 25, y: 5, w: 2, h: 2, c: '#2a2a2a' },
+    { x: 31, y: 5, w: 2, h: 2, c: '#2a2a2a' },
+    { x: 39, y: 7, w: 2, h: 2, c: '#2a2a2a' },
+    { x: 45, y: 7, w: 2, h: 2, c: '#2a2a2a' },
+    { x: 55, y: 7, w: 2, h: 2, c: '#2a2a2a' },
+    { x: 61, y: 7, w: 2, h: 2, c: '#2a2a2a' },
+    // Table surface (oval approx) — drawn OVER top chairs
+    { x: 8, y: 8, w: 64, h: 24, c: '#6b5b4b' },
+    { x: 4, y: 10, w: 72, h: 20, c: '#7d6d5d' },
+    { x: 2, y: 12, w: 76, h: 16, c: '#7d6d5d' },
+    // Edge highlights
+    { x: 2, y: 12, w: 76, h: 2, c: '#8b7b6b' },
+    { x: 2, y: 26, w: 76, h: 2, c: '#4b3b2b' },
+    // Table front face (thickness)
+    { x: 2, y: 28, w: 76, h: 3, c: '#4b3b2b' },
+    { x: 4, y: 28, w: 72, h: 1, c: '#5b4b3b' },
+    // Table legs
+    { x: 6, y: 30, w: 3, h: 2, c: '#3a2a1a' },
+    { x: 71, y: 30, w: 3, h: 2, c: '#3a2a1a' },
+    // Center inlay
+    { x: 18, y: 14, w: 44, h: 12, c: '#6b5b4b', a: 0.5 },
     // Laptop on table
     { x: 28, y: 14, w: 14, h: 8, c: '#1a1a2e' },
     { x: 29, y: 15, w: 12, h: 6, c: '#1565C0', a: 0.5 },
@@ -52,6 +62,24 @@ const meetingTable: FacilityBlueprint = {
     { x: 11, y: 17, w: 8, h: 1, c: '#9E9E9E', a: 0.5 },
     { x: 11, y: 19, w: 8, h: 1, c: '#9E9E9E', a: 0.5 },
     { x: 11, y: 21, w: 6, h: 1, c: '#9E9E9E', a: 0.5 },
+    // Chairs — bottom row (IN FRONT of table, drawn last)
+    { x: 10, y: 32, w: 10, h: 6, c: '#78889c' },
+    { x: 10, y: 32, w: 10, h: 1, c: '#8899ad' },
+    { x: 24, y: 34, w: 10, h: 6, c: '#78889c' },
+    { x: 24, y: 34, w: 10, h: 1, c: '#8899ad' },
+    { x: 38, y: 32, w: 10, h: 6, c: '#78889c' },
+    { x: 38, y: 32, w: 10, h: 1, c: '#8899ad' },
+    { x: 54, y: 32, w: 10, h: 6, c: '#78889c' },
+    { x: 54, y: 32, w: 10, h: 1, c: '#8899ad' },
+    // Chair legs — bottom row
+    { x: 11, y: 37, w: 2, h: 2, c: '#2a2a2a' },
+    { x: 17, y: 37, w: 2, h: 2, c: '#2a2a2a' },
+    { x: 25, y: 39, w: 2, h: 2, c: '#2a2a2a' },
+    { x: 31, y: 39, w: 2, h: 2, c: '#2a2a2a' },
+    { x: 39, y: 37, w: 2, h: 2, c: '#2a2a2a' },
+    { x: 45, y: 37, w: 2, h: 2, c: '#2a2a2a' },
+    { x: 55, y: 37, w: 2, h: 2, c: '#2a2a2a' },
+    { x: 61, y: 37, w: 2, h: 2, c: '#2a2a2a' },
   ],
 };
 

@@ -1,8 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { Session, Role } from '../../types';
+import type { ChatChannel } from '../../types/chat';
 import SessionTab from './SessionTab';
 import MessageList from './MessageList';
 import InputBar from './InputBar';
+import OfficeChatView from './OfficeChatView';
 
 interface Props {
   sessions: Session[];
@@ -19,6 +21,12 @@ interface Props {
   onSendMessage: (sessionId: string, content: string, mode: 'talk' | 'do') => void;
   onModeChange: (sessionId: string, mode: 'talk' | 'do') => void;
   onCloseTerminal: () => void;
+  /** Office Chat channels */
+  chatChannels?: ChatChannel[];
+  activeChatChannelId?: string | null;
+  onSwitchChatChannel?: (id: string | null) => void;
+  onCreateChatChannel?: (name: string, members: string[]) => void;
+  onDeleteChatChannel?: (id: string) => void;
 }
 
 const ROLE_COLORS: Record<string, string> = {
@@ -33,9 +41,16 @@ export default function TerminalPanel({
   sessions, activeSessionId, roles, streamingSessionId, width, onWidthChange,
   onSwitchSession, onCloseSession, onCreateSession, onClearEmpty, onCloseAll,
   onSendMessage, onModeChange, onCloseTerminal,
+  chatChannels, activeChatChannelId, onSwitchChatChannel, onCreateChatChannel, onDeleteChatChannel,
 }: Props) {
   const [showNewMenu, setShowNewMenu] = useState(false);
   const [showManageMenu, setShowManageMenu] = useState(false);
+  const [showNewChannelInput, setShowNewChannelInput] = useState(false);
+  const [newChannelName, setNewChannelName] = useState('');
+
+  // Determine active view: chat channel or session
+  const isViewingChat = activeChatChannelId != null;
+  const activeChannel = chatChannels?.find(c => c.id === activeChatChannelId);
   const [isResizing, setIsResizing] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -119,14 +134,48 @@ export default function TerminalPanel({
             <div className="absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-[var(--terminal-bg-deeper)] to-transparent z-10 pointer-events-none" />
           )}
           <div ref={tabScrollRef} className="flex items-center overflow-x-auto terminal-tab-scroll gap-px px-1 py-1">
+            {/* Chat channel tabs */}
+            {chatChannels?.map((ch) => (
+              <button
+                key={ch.id}
+                onClick={() => {
+                  onSwitchChatChannel?.(ch.id);
+                }}
+                className={`flex items-center gap-1 px-2.5 py-1.5 text-[11px] rounded-t-lg shrink-0 cursor-pointer transition-colors group ${
+                  activeChatChannelId === ch.id
+                    ? 'bg-[var(--terminal-bg)] text-[var(--terminal-text)]'
+                    : 'bg-[var(--terminal-inline-bg)] text-[var(--terminal-text-muted)] hover:text-[var(--terminal-text-secondary)] hover:bg-[var(--terminal-surface)]'
+                }`}
+                style={activeChatChannelId === ch.id ? { borderTop: '2px solid #4CAF50' } : undefined}
+              >
+                <span className="text-[10px]">💬</span>
+                <span className="truncate">{ch.name}</span>
+                {!ch.isDefault && (
+                  <span
+                    onClick={(e) => { e.stopPropagation(); onDeleteChatChannel?.(ch.id); }}
+                    className="ml-1 text-[var(--terminal-text-muted)] hover:text-[var(--terminal-text-secondary)] text-sm leading-none opacity-0 group-hover:opacity-100"
+                  >
+                    ×
+                  </span>
+                )}
+              </button>
+            ))}
+            {/* Separator */}
+            {chatChannels && chatChannels.length > 0 && sessions.length > 0 && (
+              <div className="w-px h-4 bg-[var(--terminal-border)] shrink-0 mx-1" />
+            )}
+            {/* Session tabs */}
             {sessions.map((ses) => (
               <SessionTab
                 key={ses.id}
                 roleId={ses.roleId}
                 title={ses.title}
                 roleColor={ROLE_COLORS[ses.roleId] ?? '#666'}
-                active={ses.id === activeSessionId}
-                onClick={() => onSwitchSession(ses.id)}
+                active={!isViewingChat && ses.id === activeSessionId}
+                onClick={() => {
+                  onSwitchChatChannel?.(null);
+                  onSwitchSession(ses.id);
+                }}
                 onClose={(e) => { e.stopPropagation(); onCloseSession(ses.id); }}
                 data-session-id={ses.id}
               />
@@ -147,10 +196,48 @@ export default function TerminalPanel({
           </button>
           {showNewMenu && (
             <div className="absolute top-full right-0 mt-1 bg-[var(--terminal-surface)] border border-[var(--terminal-border)] rounded-lg shadow-xl z-50 py-1 min-w-[200px]">
+              {/* New channel */}
+              {onCreateChatChannel && (
+                <>
+                  {showNewChannelInput ? (
+                    <div className="px-3 py-2 flex items-center gap-1">
+                      <span className="text-[10px] text-[var(--terminal-text-muted)]">#</span>
+                      <input
+                        autoFocus
+                        value={newChannelName}
+                        onChange={(e) => setNewChannelName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && newChannelName.trim()) {
+                            onCreateChatChannel(newChannelName.trim(), []);
+                            setNewChannelName('');
+                            setShowNewChannelInput(false);
+                            setShowNewMenu(false);
+                          }
+                          if (e.key === 'Escape') {
+                            setShowNewChannelInput(false);
+                            setNewChannelName('');
+                          }
+                        }}
+                        placeholder="channel name"
+                        className="flex-1 bg-transparent text-xs text-[var(--terminal-text)] outline-none border-b border-[var(--terminal-border)]"
+                      />
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setShowNewChannelInput(true)}
+                      className="w-full text-left px-3 py-2 text-xs text-[var(--terminal-text-secondary)] hover:bg-[var(--terminal-surface-light)] cursor-pointer flex items-center gap-2"
+                    >
+                      <span className="text-[10px]">💬</span>
+                      New Channel
+                    </button>
+                  )}
+                  <div className="border-b border-[var(--terminal-border)] my-1" />
+                </>
+              )}
               {roles.map((r) => (
                 <button
                   key={r.id}
-                  onClick={() => { onCreateSession(r.id); setShowNewMenu(false); }}
+                  onClick={() => { onCreateSession(r.id); onSwitchChatChannel?.(null); setShowNewMenu(false); }}
                   className="w-full text-left px-3 py-2 text-xs text-[var(--terminal-text-secondary)] hover:bg-[var(--terminal-surface-light)] cursor-pointer flex items-center gap-2"
                 >
                   <span
@@ -210,8 +297,10 @@ export default function TerminalPanel({
         </button>
       </div>
 
-      {/* Message area */}
-      {activeSession ? (
+      {/* Content area */}
+      {isViewingChat && activeChannel ? (
+        <OfficeChatView channel={activeChannel} />
+      ) : activeSession ? (
         <>
           <MessageList
             messages={activeSession.messages}

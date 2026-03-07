@@ -24,6 +24,7 @@ import { getAllActivities, completeActivity } from './services/activity-tracker.
 import { knowledgeRouter } from './routes/knowledge.js';
 import { preferencesRouter } from './routes/preferences.js';
 import { saveRouter } from './routes/save.js';
+import { speechRouter } from './routes/speech.js';
 import { importKnowledge } from './services/knowledge-importer.js';
 import { AnthropicProvider, type LLMProvider } from './engine/llm-adapter.js';
 import { readConfig } from './services/company-config.js';
@@ -132,6 +133,7 @@ export function createHttpServer(): http.Server {
   app.use('/api/sessions', sessionsRouter);
   app.use('/api/knowledge', knowledgeRouter);
   app.use('/api/preferences', preferencesRouter);
+  app.use('/api/speech', speechRouter);
   app.use('/api/save', saveRouter);
 
   app.get('/api/health', (_req, res) => {

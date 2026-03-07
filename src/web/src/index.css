@@ -932,6 +932,30 @@ body {
   border-right: 4px solid transparent;
   border-top: 4px solid rgba(15,15,25,0.92);
 }
+.td-facility-label {
+  position: absolute;
+  font-family: 'Courier New', monospace;
+  font-size: 8px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  color: rgba(255,255,255,0.8);
+  background: rgba(0,0,0,0.55);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid rgba(255,255,255,0.1);
+  white-space: nowrap;
+  transform: translate(-50%, 0);
+  transition: all 0.15s;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.td-facility-label:hover,
+.td-facility-label--hover {
+  color: #fff;
+  background: rgba(0,0,0,0.75);
+  border-color: rgba(255,255,255,0.3);
+  text-shadow: 0 0 6px rgba(255,255,255,0.4);
+}
 @keyframes td-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }

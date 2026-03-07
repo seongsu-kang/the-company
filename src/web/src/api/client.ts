@@ -1,4 +1,5 @@
 import type { Company, Role, RoleDetail, Project, ProjectDetail, Standup, Wave, Decision, Session, CreateRoleInput, JobInfo, CompanyStatus, EngineDetection, PathValidation, ScaffoldInput, ScaffoldResult, TeamTemplate, BrowseResult, ConnectAkbResult, KnowledgeDoc, KnowledgeDocDetail, OrgTreeResponse } from '../types';
+import type { SpeechSettings } from '../types/speech';
 
 const BASE = '/api';
 
@@ -109,9 +110,15 @@ export const api = {
   deleteKnowledgeDoc: (id: string) => del<{ id: string; status: string }>(`/knowledge/${id}`),
 
   // Preferences
-  getPreferences: () => get<{ appearances: Record<string, unknown>; theme: string }>('/preferences'),
+  getPreferences: () => get<{ appearances: Record<string, unknown>; theme: string; speech?: SpeechSettings }>('/preferences'),
   updatePreferences: (data: Record<string, unknown>) =>
-    patch_<{ ok: boolean; appearances: Record<string, unknown>; theme: string }>('/preferences', data),
+    patch_<{ ok: boolean; appearances: Record<string, unknown>; theme: string; speech?: SpeechSettings }>('/preferences', data),
+
+  // Speech (LLM generation)
+  generateSpeech: (roleId: string, context?: string, relationships?: Array<{ partnerId: string; partnerName: string; familiarity: number }>) =>
+    post<{ speech: string; tokens: { input: number; output: number } }>('/speech/generate', { roleId, context, relationships }),
+  generateConversation: (roleA: string, roleB: string, familiarity: number, context?: string) =>
+    post<{ turns: Array<{ speaker: string; text: string }>; tokens: { input: number; output: number } }>('/speech/conversation', { roleA, roleB, familiarity, context }),
 
   // Save (Git)
   getSaveStatus: () => get<{
