@@ -7,21 +7,52 @@
    ========================================================= */
 
 import type { CharacterLayer } from './blueprint';
+import type { DirectionalLayers, Direction } from './blueprint';
+import { resolveDirectionalLayer } from './blueprint';
 
 export interface OutfitStyleMeta {
   id: string;
   name: string;
   layer: CharacterLayer;
+  directions?: DirectionalLayers;
 }
 
 const registry = new Map<string, OutfitStyleMeta>();
 
-export function registerOutfitStyle(id: string, name: string, layer: CharacterLayer): void {
-  registry.set(id, { id, name, layer: { ...layer, name: 'torso' } });
+export function registerOutfitStyle(
+  id: string,
+  name: string,
+  layerOrDirs: CharacterLayer | DirectionalLayers,
+): void {
+  const isDirectional = 'down' in layerOrDirs && !('pixels' in layerOrDirs);
+  if (isDirectional) {
+    const dirs = layerOrDirs as DirectionalLayers;
+    registry.set(id, {
+      id,
+      name,
+      layer: { ...dirs.down, name: 'torso' },
+      directions: {
+        down: { ...dirs.down, name: 'torso' },
+        up: dirs.up ? { ...dirs.up, name: 'torso' } : undefined,
+        left: dirs.left ? { ...dirs.left, name: 'torso' } : undefined,
+        right: dirs.right ? { ...dirs.right, name: 'torso' } : undefined,
+      },
+    });
+  } else {
+    const layer = layerOrDirs as CharacterLayer;
+    registry.set(id, { id, name, layer: { ...layer, name: 'torso' } });
+  }
 }
 
 export function getOutfitStyle(id: string): OutfitStyleMeta | undefined {
   return registry.get(id);
+}
+
+export function getOutfitForDirection(id: string, dir: Direction): CharacterLayer | undefined {
+  const meta = registry.get(id);
+  if (!meta) return undefined;
+  if (meta.directions) return resolveDirectionalLayer(meta.directions, dir);
+  return meta.layer;
 }
 
 export function getAllOutfitStyles(): OutfitStyleMeta[] {

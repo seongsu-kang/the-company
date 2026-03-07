@@ -2,7 +2,8 @@ import { useRef, useEffect, useCallback, useMemo } from 'react';
 import type { Role, Project, Wave, Standup, Decision } from '../../types/index';
 import type { CharacterAppearance } from '../../types/appearance';
 import { getDefaultAppearance } from '../../types/appearance';
-import { getCharacterBlueprint, renderPixelsAt, getAccessory, getHairStyle, getOutfitStyle } from './sprites/engine';
+import { getCharacterBlueprint, renderPixelsAt, getAccessoryForDirection } from './sprites/engine';
+import type { Direction } from './sprites/engine';
 import { applyStyles } from './TopDownCharCanvas';
 import './sprites/data'; // trigger blueprint registration
 import { WALK_FRAMES } from './sprites/data/walk-frames-mini';
@@ -583,23 +584,9 @@ function drawWalkChar(cx: number, cy: number, ap: CharacterAppearance, dir: stri
   // Overlay accessory on top of walk frame, direction-aware
   const bob = (phase === 1 || phase === 3) ? -1 : 0;
   if (ap.accessory && ap.accessory !== 'none') {
-    const acc = getAccessory(ap.accessory);
-    if (acc && acc.layer.pixels.length > 0) {
-      const srcPx = acc.layer.pixels;
-      if (d === 'down') {
-        // Front — render as-is
-        renderPixelsAt(_ctx, srcPx, cx, cy + bob, ap);
-      } else if (d === 'up') {
-        // Back — only above-head items (ears, crown, horns, halo)
-        const top = srcPx.filter(p => p.y < 1);
-        if (top.length > 0) renderPixelsAt(_ctx, top, cx, cy + bob, ap);
-      } else {
-        // Side — only show above-head items (ears, horns, crown, halo)
-        // Full-face masks are too small (12px) for a meaningful side profile
-        const shift = d === 'right' ? 1 : -1;
-        const top = srcPx.filter(p => p.y < 2).map(p => ({ ...p, x: p.x + shift }));
-        if (top.length > 0) renderPixelsAt(_ctx, top, cx, cy + bob, ap);
-      }
+    const accLayer = getAccessoryForDirection(ap.accessory, d as Direction);
+    if (accLayer && accLayer.pixels.length > 0) {
+      renderPixelsAt(_ctx, accLayer.pixels, cx, cy + bob, ap);
     }
   }
 

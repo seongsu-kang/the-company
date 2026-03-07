@@ -114,6 +114,58 @@ export function resolveColor(token: ColorToken, ap?: CharacterAppearance): strin
   return token;
 }
 
+/* ── Directional Layers (4-direction support) ───── */
+
+export type Direction = 'down' | 'up' | 'left' | 'right';
+
+/**
+ * 4-direction layer set. `down` is required (front-facing, the default).
+ * `right` is auto-mirrored from `left` if omitted.
+ */
+export interface DirectionalLayers {
+  down: CharacterLayer;
+  up?: CharacterLayer;
+  left?: CharacterLayer;
+  right?: CharacterLayer;
+}
+
+/**
+ * Mirror pixels horizontally within a 12px-wide character frame.
+ * Flips x coordinates: x' = (frameWidth - x - w)
+ */
+export function mirrorPixels(pixels: Pixel[], frameWidth = 12): Pixel[] {
+  return pixels.map(p => ({
+    ...p,
+    x: frameWidth - p.x - p.w,
+  }));
+}
+
+/**
+ * Resolve the correct CharacterLayer for a given direction.
+ * Fallback chain: exact → mirror(left↔right) → down
+ */
+export function resolveDirectionalLayer(
+  dirs: DirectionalLayers,
+  dir: Direction,
+): CharacterLayer {
+  // Exact match
+  if (dir === 'down') return dirs.down;
+  if (dir === 'up' && dirs.up) return dirs.up;
+  if (dir === 'left' && dirs.left) return dirs.left;
+  if (dir === 'right' && dirs.right) return dirs.right;
+
+  // Mirror: right → mirror(left), left → mirror(right)
+  if (dir === 'right' && dirs.left) {
+    return { name: dirs.left.name, pixels: mirrorPixels(dirs.left.pixels) };
+  }
+  if (dir === 'left' && dirs.right) {
+    return { name: dirs.right.name, pixels: mirrorPixels(dirs.right.pixels) };
+  }
+
+  // Fallback to down
+  return dirs.down;
+}
+
 /* ── Layer Swap ─────────────────────────────────── */
 
 /**

@@ -10,21 +10,52 @@
    ========================================================= */
 
 import type { CharacterLayer } from './blueprint';
+import type { DirectionalLayers, Direction } from './blueprint';
+import { resolveDirectionalLayer } from './blueprint';
 
 export interface HairStyleMeta {
   id: string;
   name: string;
   layer: CharacterLayer;
+  directions?: DirectionalLayers;
 }
 
 const registry = new Map<string, HairStyleMeta>();
 
-export function registerHairStyle(id: string, name: string, layer: CharacterLayer): void {
-  registry.set(id, { id, name, layer: { ...layer, name: 'hair' } });
+export function registerHairStyle(
+  id: string,
+  name: string,
+  layerOrDirs: CharacterLayer | DirectionalLayers,
+): void {
+  const isDirectional = 'down' in layerOrDirs && !('pixels' in layerOrDirs);
+  if (isDirectional) {
+    const dirs = layerOrDirs as DirectionalLayers;
+    registry.set(id, {
+      id,
+      name,
+      layer: { ...dirs.down, name: 'hair' },
+      directions: {
+        down: { ...dirs.down, name: 'hair' },
+        up: dirs.up ? { ...dirs.up, name: 'hair' } : undefined,
+        left: dirs.left ? { ...dirs.left, name: 'hair' } : undefined,
+        right: dirs.right ? { ...dirs.right, name: 'hair' } : undefined,
+      },
+    });
+  } else {
+    const layer = layerOrDirs as CharacterLayer;
+    registry.set(id, { id, name, layer: { ...layer, name: 'hair' } });
+  }
 }
 
 export function getHairStyle(id: string): HairStyleMeta | undefined {
   return registry.get(id);
+}
+
+export function getHairForDirection(id: string, dir: Direction): CharacterLayer | undefined {
+  const meta = registry.get(id);
+  if (!meta) return undefined;
+  if (meta.directions) return resolveDirectionalLayer(meta.directions, dir);
+  return meta.layer;
 }
 
 export function getAllHairStyles(): HairStyleMeta[] {

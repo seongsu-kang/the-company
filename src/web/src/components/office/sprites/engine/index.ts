@@ -4,12 +4,16 @@ export type {
   CharacterBlueprint,
   CharacterLayer,
   FacilityBlueprint,
+  Direction,
+  DirectionalLayers,
 } from './blueprint';
 
 export {
   darken,
   lighten,
   resolveColor,
+  mirrorPixels,
+  resolveDirectionalLayer,
   swapHairLayer,
   swapLayer,
   registerCharacter,
@@ -33,6 +37,7 @@ export type { HairStyleMeta } from './hairstyles';
 export {
   registerHairStyle,
   getHairStyle,
+  getHairForDirection,
   getAllHairStyles,
 } from './hairstyles';
 
@@ -41,6 +46,7 @@ export type { OutfitStyleMeta } from './outfits';
 export {
   registerOutfitStyle,
   getOutfitStyle,
+  getOutfitForDirection,
   getAllOutfitStyles,
 } from './outfits';
 
@@ -49,6 +55,7 @@ export type { AccessoryMeta } from './accessories';
 export {
   registerAccessory,
   getAccessory,
+  getAccessoryForDirection,
   getAllAccessories,
 } from './accessories';
 

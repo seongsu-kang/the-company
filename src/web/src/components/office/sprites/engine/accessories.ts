@@ -7,21 +7,68 @@
    ========================================================= */
 
 import type { CharacterLayer } from './blueprint';
+import type { DirectionalLayers, Direction } from './blueprint';
+import { resolveDirectionalLayer } from './blueprint';
 
 export interface AccessoryMeta {
   id: string;
   name: string;
-  layer: CharacterLayer;
+  layer: CharacterLayer;            // down direction (backward compat)
+  directions?: DirectionalLayers;   // all directions (when defined)
 }
 
 const registry = new Map<string, AccessoryMeta>();
 
-export function registerAccessory(id: string, name: string, layer: CharacterLayer): void {
-  registry.set(id, { id, name, layer: { ...layer, name: 'accessory' } });
+/**
+ * Register an accessory. Accepts either:
+ * - A single CharacterLayer (backward compat, used as 'down')
+ * - A DirectionalLayers object with up to 4 directions
+ */
+export function registerAccessory(
+  id: string,
+  name: string,
+  layerOrDirs: CharacterLayer | DirectionalLayers,
+): void {
+  const isDirectional = 'down' in layerOrDirs && !('pixels' in layerOrDirs);
+  if (isDirectional) {
+    const dirs = layerOrDirs as DirectionalLayers;
+    registry.set(id, {
+      id,
+      name,
+      layer: { ...dirs.down, name: 'accessory' },
+      directions: {
+        down: { ...dirs.down, name: 'accessory' },
+        up: dirs.up ? { ...dirs.up, name: 'accessory' } : undefined,
+        left: dirs.left ? { ...dirs.left, name: 'accessory' } : undefined,
+        right: dirs.right ? { ...dirs.right, name: 'accessory' } : undefined,
+      },
+    });
+  } else {
+    const layer = layerOrDirs as CharacterLayer;
+    registry.set(id, { id, name, layer: { ...layer, name: 'accessory' } });
+  }
 }
 
 export function getAccessory(id: string): AccessoryMeta | undefined {
   return registry.get(id);
+}
+
+/** Get the accessory layer resolved for a specific direction */
+export function getAccessoryForDirection(id: string, dir: Direction): CharacterLayer | undefined {
+  const meta = registry.get(id);
+  if (!meta) return undefined;
+  if (meta.directions) return resolveDirectionalLayer(meta.directions, dir);
+
+  // Legacy fallback: no directional data
+  if (dir === 'down') return meta.layer;
+  // For up/side: only show top pixels (ears, crown, horns) as interim
+  const topOnly = meta.layer.pixels.filter(p => p.y < 2);
+  if (topOnly.length === 0) return undefined;
+  const shift = dir === 'right' ? 1 : dir === 'left' ? -1 : 0;
+  return {
+    name: meta.layer.name,
+    pixels: shift ? topOnly.map(p => ({ ...p, x: p.x + shift })) : topOnly,
+  };
 }
 
 export function getAllAccessories(): AccessoryMeta[] {
@@ -341,40 +388,82 @@ registerAccessory('eyepatch', 'Eye Patch', {
 
 /* ── Full-Face Animal Masks ─────────────────── */
 
-// Cat Face — full head replacement
+// Cat Face — full head replacement (4-direction)
 registerAccessory('cat-face', 'Cat Face', {
-  name: 'accessory',
-  pixels: [
-    // Face base (round)
-    { x: 1, y: 1, w: 10, h: 8, c: '#555' },
-    { x: 2, y: 0, w: 8, h: 1, c: '#555' },
-    // Ears (pointy triangles)
-    { x: 0, y: -2, w: 3, h: 2, c: '#555' },
-    { x: 1, y: -3, w: 2, h: 1, c: '#555' },
-    { x: 9, y: -2, w: 3, h: 2, c: '#555' },
-    { x: 9, y: -3, w: 2, h: 1, c: '#555' },
-    // Inner ears (pink)
-    { x: 1, y: -1, w: 1, h: 1, c: '#FFB0C0', a: 0.7 },
-    { x: 10, y: -1, w: 1, h: 1, c: '#FFB0C0', a: 0.7 },
-    // Eyes (big round)
-    { x: 2, y: 3, w: 3, h: 3, c: '#222' },
-    { x: 7, y: 3, w: 3, h: 3, c: '#222' },
-    { x: 3, y: 3, w: 1, h: 2, c: '#4FC3F7', a: 0.8 },
-    { x: 8, y: 3, w: 1, h: 2, c: '#4FC3F7', a: 0.8 },
-    // Pupil slit
-    { x: 3, y: 4, w: 1, h: 1, c: '#111' },
-    { x: 8, y: 4, w: 1, h: 1, c: '#111' },
-    // Nose (pink triangle)
-    { x: 5, y: 5, w: 2, h: 1, c: '#FFB0C0' },
-    // Mouth
-    { x: 4, y: 6, w: 1, h: 1, c: '#444', a: 0.6 },
-    { x: 7, y: 6, w: 1, h: 1, c: '#444', a: 0.6 },
-    // Whiskers
-    { x: 0, y: 5, w: 2, h: 1, c: '#888', a: 0.4 },
-    { x: 10, y: 5, w: 2, h: 1, c: '#888', a: 0.4 },
-    { x: 0, y: 6, w: 2, h: 1, c: '#888', a: 0.3 },
-    { x: 10, y: 6, w: 2, h: 1, c: '#888', a: 0.3 },
-  ],
+  down: {
+    name: 'accessory',
+    pixels: [
+      // Face base (round)
+      { x: 1, y: 1, w: 10, h: 8, c: '#555' },
+      { x: 2, y: 0, w: 8, h: 1, c: '#555' },
+      // Ears (pointy triangles)
+      { x: 0, y: -2, w: 3, h: 2, c: '#555' },
+      { x: 1, y: -3, w: 2, h: 1, c: '#555' },
+      { x: 9, y: -2, w: 3, h: 2, c: '#555' },
+      { x: 9, y: -3, w: 2, h: 1, c: '#555' },
+      // Inner ears (pink)
+      { x: 1, y: -1, w: 1, h: 1, c: '#FFB0C0', a: 0.7 },
+      { x: 10, y: -1, w: 1, h: 1, c: '#FFB0C0', a: 0.7 },
+      // Eyes (big round)
+      { x: 2, y: 3, w: 3, h: 3, c: '#222' },
+      { x: 7, y: 3, w: 3, h: 3, c: '#222' },
+      { x: 3, y: 3, w: 1, h: 2, c: '#4FC3F7', a: 0.8 },
+      { x: 8, y: 3, w: 1, h: 2, c: '#4FC3F7', a: 0.8 },
+      // Pupil slit
+      { x: 3, y: 4, w: 1, h: 1, c: '#111' },
+      { x: 8, y: 4, w: 1, h: 1, c: '#111' },
+      // Nose (pink triangle)
+      { x: 5, y: 5, w: 2, h: 1, c: '#FFB0C0' },
+      // Mouth
+      { x: 4, y: 6, w: 1, h: 1, c: '#444', a: 0.6 },
+      { x: 7, y: 6, w: 1, h: 1, c: '#444', a: 0.6 },
+      // Whiskers
+      { x: 0, y: 5, w: 2, h: 1, c: '#888', a: 0.4 },
+      { x: 10, y: 5, w: 2, h: 1, c: '#888', a: 0.4 },
+      { x: 0, y: 6, w: 2, h: 1, c: '#888', a: 0.3 },
+      { x: 10, y: 6, w: 2, h: 1, c: '#888', a: 0.3 },
+    ],
+  },
+  up: {
+    name: 'accessory',
+    pixels: [
+      // Back of head
+      { x: 1, y: 1, w: 10, h: 8, c: '#555' },
+      { x: 2, y: 0, w: 8, h: 1, c: '#555' },
+      // Ears from behind
+      { x: 0, y: -2, w: 3, h: 2, c: '#555' },
+      { x: 1, y: -3, w: 2, h: 1, c: '#555' },
+      { x: 9, y: -2, w: 3, h: 2, c: '#555' },
+      { x: 9, y: -3, w: 2, h: 1, c: '#555' },
+      // Fur pattern on back
+      { x: 5, y: 1, w: 2, h: 5, c: '#4A4A4A', a: 0.3 },
+      // Tail hint at bottom
+      { x: 9, y: 8, w: 2, h: 2, c: '#555' },
+      { x: 10, y: 7, w: 1, h: 1, c: '#555' },
+    ],
+  },
+  left: {
+    name: 'accessory',
+    pixels: [
+      // Side face profile
+      { x: 1, y: 1, w: 9, h: 8, c: '#555' },
+      { x: 2, y: 0, w: 7, h: 1, c: '#555' },
+      // Ear (one visible, pointy)
+      { x: 2, y: -2, w: 3, h: 2, c: '#555' },
+      { x: 3, y: -3, w: 2, h: 1, c: '#555' },
+      { x: 3, y: -1, w: 1, h: 1, c: '#FFB0C0', a: 0.7 },
+      // Eye (one, side-facing)
+      { x: 2, y: 3, w: 3, h: 3, c: '#222' },
+      { x: 3, y: 3, w: 1, h: 2, c: '#4FC3F7', a: 0.8 },
+      { x: 3, y: 4, w: 1, h: 1, c: '#111' },
+      // Nose / snout protruding
+      { x: 0, y: 5, w: 3, h: 2, c: '#555' },
+      { x: 0, y: 5, w: 2, h: 1, c: '#FFB0C0' },
+      // Whiskers
+      { x: -1, y: 5, w: 2, h: 1, c: '#888', a: 0.4 },
+      { x: -1, y: 6, w: 2, h: 1, c: '#888', a: 0.3 },
+    ],
+  },
 });
 
 // Bear Face — round brown head
@@ -487,29 +576,67 @@ registerAccessory('rabbit-face', 'Rabbit Face', {
   ],
 });
 
-// Dog Face — brown with floppy ear vibe
+// Dog Face — brown with floppy ear vibe (4-direction)
 registerAccessory('dog-face', 'Dog Face', {
-  name: 'accessory',
-  pixels: [
-    // Face base (golden brown)
-    { x: 1, y: 0, w: 10, h: 9, c: '#D2A25C' },
-    { x: 2, y: -1, w: 8, h: 1, c: '#D2A25C' },
-    // Floppy ears (hanging down on sides)
-    { x: -1, y: 1, w: 3, h: 6, c: '#A67B3D' },
-    { x: 10, y: 1, w: 3, h: 6, c: '#A67B3D' },
-    // White muzzle area
-    { x: 3, y: 5, w: 6, h: 4, c: '#F5E6D0', a: 0.8 },
-    // Eyes (big friendly)
-    { x: 3, y: 2, w: 2, h: 3, c: '#3E2723' },
-    { x: 7, y: 2, w: 2, h: 3, c: '#3E2723' },
-    { x: 3, y: 2, w: 1, h: 1, c: '#FFF', a: 0.4 },
-    { x: 7, y: 2, w: 1, h: 1, c: '#FFF', a: 0.4 },
-    // Nose (big black)
-    { x: 5, y: 5, w: 2, h: 2, c: '#222' },
-    // Tongue
-    { x: 5, y: 7, w: 2, h: 2, c: '#FF6B8A', a: 0.8 },
-    { x: 5, y: 7, w: 1, h: 1, c: '#FF8A9E', a: 0.4 },
-  ],
+  down: {
+    name: 'accessory',
+    pixels: [
+      // Face base (golden brown)
+      { x: 1, y: 0, w: 10, h: 9, c: '#D2A25C' },
+      { x: 2, y: -1, w: 8, h: 1, c: '#D2A25C' },
+      // Floppy ears (hanging down on sides)
+      { x: -1, y: 1, w: 3, h: 6, c: '#A67B3D' },
+      { x: 10, y: 1, w: 3, h: 6, c: '#A67B3D' },
+      // White muzzle area
+      { x: 3, y: 5, w: 6, h: 4, c: '#F5E6D0', a: 0.8 },
+      // Eyes (big friendly)
+      { x: 3, y: 2, w: 2, h: 3, c: '#3E2723' },
+      { x: 7, y: 2, w: 2, h: 3, c: '#3E2723' },
+      { x: 3, y: 2, w: 1, h: 1, c: '#FFF', a: 0.4 },
+      { x: 7, y: 2, w: 1, h: 1, c: '#FFF', a: 0.4 },
+      // Nose (big black)
+      { x: 5, y: 5, w: 2, h: 2, c: '#222' },
+      // Tongue
+      { x: 5, y: 7, w: 2, h: 2, c: '#FF6B8A', a: 0.8 },
+      { x: 5, y: 7, w: 1, h: 1, c: '#FF8A9E', a: 0.4 },
+    ],
+  },
+  up: {
+    name: 'accessory',
+    pixels: [
+      // Back of head (golden brown)
+      { x: 1, y: 0, w: 10, h: 9, c: '#D2A25C' },
+      { x: 2, y: -1, w: 8, h: 1, c: '#D2A25C' },
+      // Floppy ears from behind
+      { x: -1, y: 1, w: 3, h: 6, c: '#A67B3D' },
+      { x: 10, y: 1, w: 3, h: 6, c: '#A67B3D' },
+      // Darker center fur line
+      { x: 5, y: 0, w: 2, h: 6, c: '#B8883C', a: 0.3 },
+      // Collar hint
+      { x: 2, y: 8, w: 8, h: 1, c: '#A67B3D', a: 0.5 },
+    ],
+  },
+  left: {
+    name: 'accessory',
+    pixels: [
+      // Side face profile (golden brown)
+      { x: 1, y: 0, w: 9, h: 9, c: '#D2A25C' },
+      { x: 2, y: -1, w: 7, h: 1, c: '#D2A25C' },
+      // Single floppy ear (visible side)
+      { x: -1, y: 1, w: 3, h: 6, c: '#A67B3D' },
+      // Snout protruding left
+      { x: -1, y: 4, w: 3, h: 4, c: '#D2A25C' },
+      { x: -1, y: 5, w: 2, h: 3, c: '#F5E6D0', a: 0.8 },
+      // Eye (one visible)
+      { x: 3, y: 2, w: 2, h: 3, c: '#3E2723' },
+      { x: 3, y: 2, w: 1, h: 1, c: '#FFF', a: 0.4 },
+      // Nose
+      { x: 0, y: 5, w: 2, h: 1, c: '#222' },
+      // Tongue
+      { x: 0, y: 7, w: 2, h: 1, c: '#FF6B8A', a: 0.7 },
+    ],
+  },
+  // right: auto-mirrored from left
 });
 
 // Star Glasses — fun star-shaped shades
