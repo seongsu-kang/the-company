@@ -343,6 +343,12 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
     addToast(`${roleId.toUpperCase()} removed`, '#B71C1C');
   };
 
+  const handleUpdateRole = async (roleId: string, changes: { name?: string }) => {
+    await api.updateRole(roleId, changes);
+    refreshRoles();
+    if (changes.name) addToast(`${roleId.toUpperCase()} renamed to "${changes.name}"`, '#1565C0');
+  };
+
   /* Terminal handlers */
   const handleOpenTerminal = (roleId?: string) => {
     setTerminalOpen(true);
@@ -906,7 +912,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
                 onClick={mainProject ? () => setPanel({ type: 'project', projectId: mainProject.id }) : undefined}
                 style={mainProject ? undefined : { borderStyle: 'dashed', opacity: 0.5 }}
               >
-                <div className="fcc-hdr" style={{ background: '#3B82F6' }}>{'\u{1F3E2}'} PROJECT</div>
+                <div className="fcc-hdr" style={{ background: '#3B82F6' }}>{'\u{1F3E2}'} MEETING ROOM</div>
                 <div className="fcc-canvas"><FacilityCanvas type="meeting" /></div>
                 <div className="fcc-body">
                   {mainProject ? (<>
@@ -1062,6 +1068,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
             const r = roles.find(x => x.id === roleId);
             if (r) { setCustomizeInitialTab('character'); setCustomizeTarget(r); }
           }}
+          onUpdateRole={handleUpdateRole}
           appearance={getAppearance(selectedRole.id)}
         />
         );

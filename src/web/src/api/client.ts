@@ -53,6 +53,8 @@ export const api = {
   // Roles (Engine)
   createRole: (input: CreateRoleInput) =>
     post<{ ok: boolean; roleId: string }>('/engine/roles', input),
+  updateRole: (id: string, changes: { name?: string }) =>
+    patch_<{ ok: boolean; roleId: string }>(`/engine/roles/${id}`, changes),
   deleteRole: (id: string) =>
     del<{ ok: boolean; removed: string }>(`/engine/roles/${id}`),
 

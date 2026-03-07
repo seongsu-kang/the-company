@@ -9,8 +9,6 @@ import {
 } from '../engine/index.js';
 import { createRunner } from '../engine/runners/index.js';
 
-const runner = createRunner();
-
 export const engineRouter = Router();
 
 /* ─── GET /api/engine/org — Org tree ─────────── */
@@ -105,6 +103,27 @@ engineRouter.post('/roles', async (req: Request, res: Response, next: NextFuncti
   }
 });
 
+/* ─── PATCH /api/engine/roles/:id — Update a role ── */
+
+engineRouter.patch('/roles/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = String(req.params.id);
+    const changes = req.body;
+
+    if (!changes || Object.keys(changes).length === 0) {
+      res.status(400).json({ error: 'No changes provided' });
+      return;
+    }
+
+    const manager = new RoleLifecycleManager(COMPANY_ROOT);
+    await manager.updateRole(id, changes);
+
+    res.json({ ok: true, roleId: id });
+  } catch (err) {
+    next(err);
+  }
+});
+
 /* ─── DELETE /api/engine/roles/:id — Remove a role ── */
 
 engineRouter.delete('/roles/:id', async (req: Request, res: Response, next: NextFunction) => {
@@ -172,7 +191,7 @@ engineRouter.post('/ask/:roleId', async (req: Request, res: Response, next: Next
     }
 
     // Ask is read-only: no authority check required (anyone can ask anyone)
-    const handle = runner.execute(
+    const handle = createRunner().execute(
       {
         companyRoot: COMPANY_ROOT,
         roleId,

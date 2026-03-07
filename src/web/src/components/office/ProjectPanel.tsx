@@ -50,13 +50,13 @@ export default function ProjectPanel({ projectId, onClose, terminalWidth = 0 }: 
         />
         {/* Header */}
         <div className="p-5 bg-[var(--meeting-blue)] text-white relative">
+          <div className="text-sm opacity-70">Meeting Room</div>
           <button
             onClick={onClose}
-            className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 text-white flex items-center justify-center text-lg hover:bg-white/30 cursor-pointer"
+            className="absolute top-3 right-3 z-10 w-7 h-7 rounded-full bg-white/20 text-white flex items-center justify-center text-lg hover:bg-white/30 cursor-pointer"
           >
             ×
           </button>
-          <div className="text-sm opacity-70">Meeting Room</div>
           <div className="text-xl font-bold mt-1">{project.name}</div>
           <div className="flex items-center gap-3 mt-3 text-sm">
             <span>Tasks: {totalTasks}</span>

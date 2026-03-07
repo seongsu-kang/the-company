@@ -25,6 +25,7 @@ interface Props {
   onSendMessage: (sessionId: string, content: string, mode: 'talk' | 'do') => void;
   onFocusTerminal: (roleId: string) => void;
   onCustomize?: (roleId: string) => void;
+  onUpdateRole?: (roleId: string, changes: { name?: string }) => Promise<void>;
   appearance?: CharacterAppearance;
 }
 
@@ -60,7 +61,7 @@ const fmtElapsed = (seconds: number) => `${Math.floor(seconds / 60)}:${String(se
 export default function SidePanel({
   role, allRoles, recentActivity, onClose, onFireRole, terminalWidth = 0,
   activeJobId, activeTask, isWorking, jobStartedAt, onStopJob,
-  sessions, streamingSessionId, onCreateSessionSilent, onSendMessage, onFocusTerminal, onCustomize, appearance,
+  sessions, streamingSessionId, onCreateSessionSilent, onSendMessage, onFocusTerminal, onCustomize, onUpdateRole, appearance,
 }: Props) {
   const [panelW, setPanelW] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
@@ -74,6 +75,12 @@ export default function SidePanel({
 
   // Idle mode input
   const [idleMode, setIdleMode] = useState<'talk' | 'do'>('talk');
+
+  // Inline name editing
+  const [editingName, setEditingName] = useState(false);
+  const [nameValue, setNameValue] = useState('');
+  const [nameSaving, setNameSaving] = useState(false);
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   // Activity stream for working state (compact summary)
   const { events: activityEvents, status: activityStatus } = useActivityStream(activeJobId ?? null);
@@ -200,7 +207,7 @@ export default function SidePanel({
   const icon = ROLE_ICONS[role.id] ?? '\u{1F464}';
   const reports = allRoles.filter((r) => r.reportsTo === role.id);
   const isStreaming = roleSession && streamingSessionId === roleSession.id;
-  const roleName = ROLE_NAMES[role.id] ?? role.name;
+  const roleName = role.name || ROLE_NAMES[role.id] || role.id;
 
   return (
     <>
@@ -261,7 +268,39 @@ export default function SidePanel({
                   </span>
                 )}
               </div>
-              <div className="text-xs opacity-75 mt-0.5">{roleName}</div>
+              {editingName ? (
+                <form className="flex items-center gap-1.5 mt-0.5" onSubmit={async (e) => {
+                  e.preventDefault();
+                  const trimmed = nameValue.trim();
+                  if (!trimmed || trimmed === roleName || !onUpdateRole) { setEditingName(false); return; }
+                  setNameSaving(true);
+                  try { await onUpdateRole(role.id, { name: trimmed }); } catch { /* handled by parent */ }
+                  setNameSaving(false);
+                  setEditingName(false);
+                }}>
+                  <input
+                    ref={nameInputRef}
+                    value={nameValue}
+                    onChange={(e) => setNameValue(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') setEditingName(false); }}
+                    disabled={nameSaving}
+                    autoFocus
+                    className="bg-white/20 text-white text-xs rounded px-1.5 py-0.5 outline-none focus:bg-white/30 w-full"
+                    style={{ fontFamily: 'inherit' }}
+                  />
+                  <button type="submit" disabled={nameSaving} className="text-white/80 hover:text-white text-[10px] cursor-pointer shrink-0">✓</button>
+                  <button type="button" onClick={() => setEditingName(false)} className="text-white/60 hover:text-white text-[10px] cursor-pointer shrink-0">✕</button>
+                </form>
+              ) : (
+                <div
+                  className="text-xs opacity-75 mt-0.5 group/name flex items-center gap-1 cursor-pointer hover:opacity-100 transition-opacity"
+                  onClick={() => { if (onUpdateRole) { setNameValue(roleName); setEditingName(true); } }}
+                  title={onUpdateRole ? 'Click to edit name' : undefined}
+                >
+                  {roleName}
+                  {onUpdateRole && <span className="opacity-0 group-hover/name:opacity-60 text-[10px]">{'\u270E'}</span>}
+                </div>
+              )}
             </div>
           </div>
 
