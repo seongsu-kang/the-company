@@ -83,16 +83,6 @@ export default function OfficeChatView({ channel, allRoles, onUpdateMembers }: P
     }
   }, [channel.messages.length]);
 
-  if (channel.messages.length === 0) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center text-[var(--terminal-text-muted)] text-sm gap-2">
-        <span className="text-lg">💬</span>
-        <span>{channel.name}</span>
-        <span className="text-[10px]">Role conversations will appear here</span>
-      </div>
-    );
-  }
-
   const [showInvite, setShowInvite] = useState(false);
 
   return (
@@ -141,6 +131,11 @@ export default function OfficeChatView({ channel, allRoles, onUpdateMembers }: P
               );
             })}
           </div>
+        </div>
+      )}
+      {channel.messages.length === 0 && (
+        <div className="flex-1 flex flex-col items-center justify-center text-[var(--terminal-text-muted)] text-xs gap-1 py-8">
+          <span>{channel.isDefault ? 'No dispatch events yet' : 'No messages yet — invite roles to start chatting'}</span>
         </div>
       )}
       {channel.messages.map(msg => (
