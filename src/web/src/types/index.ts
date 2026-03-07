@@ -169,6 +169,7 @@ export interface CompanyStatus {
   companyName: string | null;
   engine: string;
   companyRoot: string;
+  hasApiKey?: boolean;
 }
 
 export interface EngineDetection {

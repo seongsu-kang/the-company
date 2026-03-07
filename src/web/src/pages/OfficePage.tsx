@@ -107,6 +107,16 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   const [activeExecs, setActiveExecs] = useState<{ roleId: string; task: string; id?: string; jobId?: string; startedAt?: string }[]>([]);
   const [toasts, setToasts] = useState<{ id: number; message: string; color: string }[]>([]);
 
+  /* Engine type (for chat pipeline auto-detection) */
+  const [engineType, setEngineType] = useState<string | undefined>(undefined);
+  const [hasApiKey, setHasApiKey] = useState(false);
+  useEffect(() => {
+    api.getStatus().then(s => {
+      setEngineType(s.engine);
+      setHasApiKey(!!s.hasApiKey);
+    }).catch(() => {});
+  }, []);
+
   /* Customization */
   const { getAppearance, setAppearance, resetAppearance, theme, setTheme, speechSettings, setSpeechSettings } = useCustomization();
   const [customizeTarget, setCustomizeTarget] = useState<Role | null>(null);
@@ -746,7 +756,8 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
     relationships: ambient.relationships,
     pushMessage: officeChat.pushMessage,
     speechSettings,
-    engineType: undefined, // TODO: detect engine type from API
+    engineType,
+    hasApiKey,
   });
 
   if (loading) {

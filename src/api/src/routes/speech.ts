@@ -60,6 +60,11 @@ speechRouter.post('/chat', async (req: Request, res: Response, next: NextFunctio
       return;
     }
 
+    if (!process.env.ANTHROPIC_API_KEY) {
+      res.status(503).json({ error: 'Chat requires ANTHROPIC_API_KEY', message: '' });
+      return;
+    }
+
     // Build org tree to get persona
     const tree = buildOrgTree(COMPANY_ROOT);
     const node = tree.nodes.get(roleId);

@@ -26,6 +26,8 @@ interface UseChatSchedulerProps {
   pushMessage: (msg: Omit<ChatMessage, 'id'>) => void;
   speechSettings?: SpeechSettings;
   engineType?: string;
+  /** Whether ANTHROPIC_API_KEY is configured on the server */
+  hasApiKey?: boolean;
 }
 
 export function useChatScheduler({
@@ -37,6 +39,7 @@ export function useChatScheduler({
   pushMessage,
   speechSettings,
   engineType,
+  hasApiKey,
 }: UseChatSchedulerProps): void {
 
   // Determine if chat is active
@@ -45,7 +48,8 @@ export function useChatScheduler({
        : engineType === 'local' ? 'llm'
        : 'template')
     : (speechSettings?.mode ?? 'template');
-  const chatEnabled = effectiveMode === 'llm';
+  // Chat requires LLM mode AND an API key on the server
+  const chatEnabled = effectiveMode === 'llm' && hasApiKey !== false;
   const intervalMs = (speechSettings?.intervalSec ?? DEFAULT_INTERVAL_MS / 1000) * 1000;
 
   // Stable refs

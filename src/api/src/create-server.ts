@@ -122,7 +122,7 @@ export function createHttpServer(): http.Server {
         if (match) companyName = match[1].trim();
       } catch { /* ignore */ }
     }
-    res.json({ initialized, companyName, engine: config.engine || process.env.EXECUTION_ENGINE || 'none', companyRoot: COMPANY_ROOT });
+    res.json({ initialized, companyName, engine: config.engine || process.env.EXECUTION_ENGINE || 'none', companyRoot: COMPANY_ROOT, hasApiKey: !!process.env.ANTHROPIC_API_KEY });
   });
 
   app.use('/api/roles', rolesRouter);
