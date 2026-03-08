@@ -230,7 +230,7 @@ export class ClaudeCliProvider implements LLMProvider {
   async chat(
     systemPrompt: string,
     messages: LLMMessage[],
-    _tools?: ToolDefinition[],
+    tools?: ToolDefinition[],
     signal?: AbortSignal,
   ): Promise<LLMResponse> {
     // Build user message from messages array
@@ -239,13 +239,20 @@ export class ClaudeCliProvider implements LLMProvider {
       .map(m => typeof m.content === 'string' ? m.content : m.content.filter(c => c.type === 'text').map(c => (c as { type: 'text'; text: string }).text).join(''))
       .join('\n');
 
+    // When tools are requested, enable claude's built-in Read/Grep/Glob
+    const useTools = tools && tools.length > 0;
+
     return new Promise((resolve, reject) => {
       const args = [
         '-p',
         '--system-prompt', systemPrompt,
         '--model', this.model,
-        '--max-turns', '1',
+        '--max-turns', useTools ? '3' : '1',
         '--output-format', 'text',
+        ...(useTools ? [
+          '--tools', 'Read,Grep,Glob',
+          '--dangerously-skip-permissions',
+        ] : []),
         userText,
       ];
 

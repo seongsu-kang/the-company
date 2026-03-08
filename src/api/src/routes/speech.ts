@@ -612,14 +612,25 @@ ANTI-PATTERNS (never do these):
 
     const provider = getLLM();
 
-    // Use tool-based agent loop (AnthropicProvider supports tools; ClaudeCliProvider falls back to no-tools)
-    const useTools = provider instanceof AnthropicProvider;
-    const { text: raw, totalUsage } = await chatWithTools(
-      provider,
-      systemPrompt,
-      [{ role: 'user', content: historyText }],
-      useTools,
-    );
+    // ClaudeCliProvider now supports tools via built-in Read/Grep/Glob
+    // For ClaudeCliProvider: tools are handled internally by claude CLI (no custom tool loop needed)
+    // For AnthropicProvider: use custom AKB tool loop via chatWithTools()
+    const isAnthropicProvider = provider instanceof AnthropicProvider;
+
+    let raw: string;
+    let totalUsage: { inputTokens: number; outputTokens: number };
+
+    if (isAnthropicProvider) {
+      // Anthropic SDK: custom AKB tool loop
+      const result = await chatWithTools(provider, systemPrompt, [{ role: 'user', content: historyText }], true);
+      raw = result.text;
+      totalUsage = result.totalUsage;
+    } else {
+      // ClaudeCliProvider: claude CLI handles tool loop internally (Read/Grep/Glob)
+      const result = await provider.chat(systemPrompt, [{ role: 'user', content: historyText }], AKB_TOOLS);
+      raw = result.content.filter(c => c.type === 'text').map(c => (c as { type: 'text'; text: string }).text).join('');
+      totalUsage = result.usage;
+    }
 
     const cleaned = raw.replace(/^["']|["']$/g, '');
 
