@@ -13,8 +13,8 @@ import type { RoleRelationship } from '../types/speech';
 import { api } from '../api/client';
 
 const DEFAULT_INTERVAL_MS = 45_000; // 45s default chat interval
-const REACTION_DELAY_MS = 3_000;    // 3s before reaction
-const MAX_CHAIN_LENGTH = 3;         // max consecutive reactions
+const REACTION_DELAY_MS = 5_000;    // 5s min before reaction (more natural)
+const MAX_CHAIN_LENGTH = 4;         // allow slightly longer conversations
 const HISTORY_WINDOW = 20;          // last N messages as context
 
 interface UseChatSchedulerProps {
@@ -148,12 +148,15 @@ export function useChatScheduler({
     // Pick a random idle member
     const reactorId = otherMembers[Math.floor(Math.random() * otherMembers.length)];
 
-    // 60% chance to react (not every message triggers a response)
-    if (Math.random() > 0.6) {
+    // Initial reaction chance: 70%, but let chain depth control continuation
+    if (Math.random() > 0.7) {
       chainCount.current = 0;
       return;
     }
 
+    // Vary delay based on chain depth — later replies take longer (typing/thinking)
+    const depthDelay = chainCount.current * 2000;
+    const jitter = Math.random() * 5000;
     setTimeout(async () => {
       chainCount.current++;
       // Re-read channel to get latest messages
@@ -162,12 +165,17 @@ export function useChatScheduler({
 
       const replied = await generateChat(reactorId, freshChannel);
       if (replied) {
-        // Continue chain
-        triggerReaction(freshChannel, reactorId);
+        // Continue chain — decreasing probability to avoid infinite loops
+        const continueChance = 0.6 - (chainCount.current * 0.1);
+        if (Math.random() < continueChance) {
+          triggerReaction(freshChannel, reactorId);
+        } else {
+          chainCount.current = 0;
+        }
       } else {
         chainCount.current = 0;
       }
-    }, REACTION_DELAY_MS + Math.random() * 2000);
+    }, REACTION_DELAY_MS + depthDelay + jitter);
   }, [generateChat]);
 
   // Main scheduling interval
