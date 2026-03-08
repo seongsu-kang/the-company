@@ -862,8 +862,20 @@ function handleSessionMessage(
     childSubscriptions.push({ job: childJob, subscriber });
   });
 
+  // Build team status from running jobs (same as JobManager pattern)
+  const teamStatus: Record<string, { status: string; task?: string }> = {};
+  for (const j of jobManager.listJobs({ status: 'running' })) {
+    teamStatus[j.roleId] = { status: 'working', task: j.task };
+  }
+  // Also include roleStatus for roles working via session (not tracked as jobs)
+  for (const [rid, status] of roleStatus) {
+    if (status === 'working' && rid !== roleId && !teamStatus[rid]) {
+      teamStatus[rid] = { status: 'working' };
+    }
+  }
+
   const handle = getRunner().execute(
-    { companyRoot: COMPANY_ROOT, roleId, task: fullTask, sourceRole: 'ceo', orgTree, readOnly, model: orgTree.nodes.get(roleId)?.model, attachments },
+    { companyRoot: COMPANY_ROOT, roleId, task: fullTask, sourceRole: 'ceo', orgTree, readOnly, model: orgTree.nodes.get(roleId)?.model, attachments, teamStatus },
     {
       onText: (text) => {
         roleMsg.content += text;

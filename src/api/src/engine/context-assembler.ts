@@ -129,6 +129,8 @@ export function assembleContext(
 - If the directive is vague, focus on what YOUR ROLE can contribute. Don't try to cover everything.
 - Break ambiguous directives into concrete actions within your authority scope.
 - If you truly cannot determine what to do, state your interpretation and proceed with it.
+- **If you have subordinates, your FIRST action should be decomposing the task and dispatching.** Do NOT attempt implementation yourself — delegate to the appropriate team member.
+- Review the "Available Team Members" section to understand each subordinate's capabilities before dispatching.
 
 ## Efficiency
 - Read ONLY files directly relevant to your task. Do NOT explore the codebase broadly.
@@ -368,14 +370,51 @@ function buildDispatchSection(orgTree: OrgTree, roleId: string, subordinates: st
 
   const subInfo = subordinates.map((id) => {
     const sub = orgTree.nodes.get(id);
-    const base = sub ? `- **${sub.name}** (\`${id}\`): ${sub.persona.split('\n')[0]}` : `- ${id}`;
+    if (!sub) return `- ${id} — (unknown role)`;
+
+    const lines: string[] = [];
+
+    // Header: name, id, persona summary
     const st = teamStatus?.[id];
-    if (st && st.status === 'working') {
-      const taskHint = st.task ? `: "${st.task.slice(0, 60)}"` : '';
-      return `${base} — **Working**${taskHint}`;
+    const status = st?.status === 'working'
+      ? `🔴 Working${st.task ? ` — "${st.task.slice(0, 60)}"` : ''}`
+      : '🟢 Idle';
+    lines.push(`### ${sub.name} (\`${id}\`) — ${status}`);
+    lines.push(`> ${sub.persona.split('\n')[0]}`);
+
+    // Level & model
+    lines.push(`- **Level**: ${sub.level} | **Model**: ${sub.model ?? 'default'}`);
+
+    // Skills
+    if (sub.skills && sub.skills.length > 0) {
+      lines.push(`- **Skills**: ${sub.skills.join(', ')}`);
     }
-    return `${base} — Idle`;
-  }).join('\n');
+
+    // Authority — what they can do autonomously
+    if (sub.authority.autonomous.length > 0) {
+      lines.push(`- **Can do**: ${sub.authority.autonomous.join(', ')}`);
+    }
+
+    // Knowledge scope — what they can read/write
+    if (sub.knowledge.reads.length > 0) {
+      lines.push(`- **Reads**: ${sub.knowledge.reads.join(', ')}`);
+    }
+    if (sub.knowledge.writes.length > 0) {
+      lines.push(`- **Writes**: ${sub.knowledge.writes.join(', ')}`);
+    }
+
+    // Their own subordinates (for chain delegation visibility)
+    const grandchildren = orgTree.nodes.get(id)?.children ?? [];
+    if (grandchildren.length > 0) {
+      const gcNames = grandchildren.map(gc => {
+        const gcNode = orgTree.nodes.get(gc);
+        return gcNode ? `${gcNode.name} (${gc})` : gc;
+      });
+      lines.push(`- **Their reports**: ${gcNames.join(', ')}`);
+    }
+
+    return lines.join('\n');
+  }).join('\n\n');
 
   const exampleSubId = subordinates[0] ?? 'engineer';
 
