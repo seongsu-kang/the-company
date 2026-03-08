@@ -382,13 +382,29 @@ function processStreamEvent(
     }
 
     case 'result': {
-      // 최종 결과: { type: "result", result: "...", usage: { input_tokens, output_tokens }, cost_usd, ... }
-      // result 텍스트는 assistant 이벤트에서 이미 전달됨 — 중복 방지를 위해 스킵
-      // But extract token usage for tracking
-      const usage = event.usage as Record<string, number> | undefined;
-      if (usage && handlers.recordTokens) {
-        const inputTk = usage.input_tokens ?? 0;
-        const outputTk = usage.output_tokens ?? 0;
+      // 최종 결과에서 토큰 사용량 추출
+      // modelUsage가 가장 정확 (모델별 cache 포함 상세)
+      // fallback: usage.input_tokens / output_tokens (cache 제외)
+      if (handlers.recordTokens) {
+        let inputTk = 0;
+        let outputTk = 0;
+
+        const modelUsage = event.modelUsage as Record<string, Record<string, number>> | undefined;
+        if (modelUsage) {
+          // Sum across all models (usually just one)
+          for (const mu of Object.values(modelUsage)) {
+            inputTk += (mu.inputTokens ?? 0) + (mu.cacheReadInputTokens ?? 0) + (mu.cacheCreationInputTokens ?? 0);
+            outputTk += mu.outputTokens ?? 0;
+          }
+        } else {
+          // Fallback to usage field
+          const usage = event.usage as Record<string, number> | undefined;
+          if (usage) {
+            inputTk = (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
+            outputTk = usage.output_tokens ?? 0;
+          }
+        }
+
         if (inputTk > 0 || outputTk > 0) {
           handlers.recordTokens(inputTk, outputTk);
         }
