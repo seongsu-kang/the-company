@@ -113,6 +113,12 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   /* Phase 3: Live status */
   const [roleStatuses, setRoleStatuses] = useState<Record<string, string>>({});
   const [activeExecs, setActiveExecs] = useState<{ roleId: string; task: string; id?: string; jobId?: string; startedAt?: string }[]>([]);
+  /** O(1) lookup by roleId — avoids O(n) find() per card render */
+  const activeExecsByRole = useMemo(() => {
+    const map: Record<string, { task: string; id?: string; jobId?: string; startedAt?: string }> = {};
+    for (const e of activeExecs) map[e.roleId] = e;
+    return map;
+  }, [activeExecs]);
   const [toasts, setToasts] = useState<{ id: number; message: string; color: string }[]>([]);
 
   /* Engine type (for chat pipeline auto-detection) */
@@ -707,7 +713,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   // Creates a new session if none exists for this role.
   const handleFocusTerminal = async (roleId: string) => {
     // If role is working, open the ActivityPanel for its active job
-    const exec = activeExecs.find(e => e.roleId === roleId);
+    const exec = activeExecsByRole[roleId];
     const jobId = exec?.jobId ?? exec?.id;
     if (jobId && effectiveRoleStatuses[roleId] === 'working') {
       const role = roles.find(r => r.id === roleId);
@@ -1305,7 +1311,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
                         speech={ambient.getSpeech(role.id)}
                         onClick={() => setPanel({ type: 'role', roleId: role.id })}
                         liveStatus={effectiveRoleStatuses[role.id]}
-                        activeTask={activeExecs.find((e) => e.roleId === role.id)?.task}
+                        activeTask={activeExecsByRole[role.id]?.task}
                         featured
                         appearance={getAppearance(role.id)}
                         xpLevel={roleLevels[role.id]?.level}
@@ -1324,7 +1330,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
                       speech={ambient.getSpeech(role.id)}
                       onClick={() => setPanel({ type: 'role', roleId: role.id })}
                       liveStatus={effectiveRoleStatuses[role.id]}
-                      activeTask={activeExecs.find((e) => e.roleId === role.id)?.task}
+                      activeTask={activeExecsByRole[role.id]?.task}
                       appearance={getAppearance(role.id)}
                       xpLevel={roleLevels[role.id]?.level}
                     />
@@ -1592,7 +1598,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
 
       {/* ─── Side Panels ─── */}
       {panel.type === 'role' && selectedRole && (() => {
-        const roleExec = activeExecs.find(e => e.roleId === selectedRole.id);
+        const roleExec = activeExecsByRole[selectedRole.id];
         return (
         <SidePanel
           role={selectedRole}
