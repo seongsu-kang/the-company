@@ -58,6 +58,10 @@ export const api = {
   getSkills: () => get<Array<{ id: string; name: string; description: string; source: string; installed: boolean }>>('/skills'),
   exportSkills: (roleId: string) => get<import('../types/store').SkillExport>(`/skills/export/${roleId}`),
 
+  // Skill Registry (External)
+  getSkillRegistry: () => get<Array<{ source: string; label: string; skills: Array<{ id: string; name: string; description: string; category: string; url: string; installed: boolean }> }>>('/skills/registry'),
+  installRegistrySkill: (skillId: string, url: string) => post<{ ok: boolean; skillId: string }>('/skills/registry/install', { skillId, url }),
+
   // Roles (Engine)
   createRole: (input: CreateRoleInput) =>
     post<{ ok: boolean; roleId: string }>('/engine/roles', input),

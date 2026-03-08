@@ -49,6 +49,84 @@ skillsRouter.get('/', (_req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+// GET /api/skills/registry — Browse external skill registries
+skillsRouter.get('/registry', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    // Known skill registries (curated list of quality skills)
+    const REGISTRIES = [
+      {
+        source: 'anthropics/skills',
+        label: 'Anthropic Official',
+        skills: [
+          { id: 'frontend-design', name: 'Frontend Design', description: 'Create distinctive, production-grade frontend interfaces with high design quality', category: 'design', url: 'https://raw.githubusercontent.com/anthropics/skills/main/skills/frontend-design/SKILL.md' },
+          { id: 'webapp-testing', name: 'Web App Testing', description: 'Playwright-based toolkit for testing local web applications', category: 'testing', url: 'https://raw.githubusercontent.com/anthropics/skills/main/skills/webapp-testing/SKILL.md' },
+          { id: 'mcp-builder', name: 'MCP Builder', description: 'Guide for creating high-quality MCP servers for LLM tool integration', category: 'development', url: 'https://raw.githubusercontent.com/anthropics/skills/main/skills/mcp-builder/SKILL.md' },
+          { id: 'internal-comms', name: 'Internal Comms', description: 'Write internal communications: status reports, newsletters, 3P updates', category: 'operations', url: 'https://raw.githubusercontent.com/anthropics/skills/main/skills/internal-comms/SKILL.md' },
+          { id: 'web-artifacts-builder', name: 'Web Artifacts Builder', description: 'React + Tailwind + shadcn/ui component development and bundling', category: 'development', url: 'https://raw.githubusercontent.com/anthropics/skills/main/skills/web-artifacts-builder/SKILL.md' },
+          { id: 'skill-creator', name: 'Skill Creator', description: 'Interactive guide for building new Claude Code skills', category: 'meta', url: 'https://raw.githubusercontent.com/anthropics/skills/main/skills/skill-creator/SKILL.md' },
+          { id: 'algorithmic-art', name: 'Algorithmic Art', description: 'Generative art using p5.js with flow fields and particle systems', category: 'creative', url: 'https://raw.githubusercontent.com/anthropics/skills/main/skills/algorithmic-art/SKILL.md' },
+          { id: 'canvas-design', name: 'Canvas Design', description: 'Visual art creation in PNG and PDF formats', category: 'creative', url: 'https://raw.githubusercontent.com/anthropics/skills/main/skills/canvas-design/SKILL.md' },
+        ],
+      },
+      {
+        source: 'community',
+        label: 'Community',
+        skills: [
+          { id: 'tdd-superpowers', name: 'TDD (Test-Driven Dev)', description: 'Test-first development with Red-Green-Refactor cycle', category: 'development', url: 'https://raw.githubusercontent.com/obra/superpowers/main/skills/tdd/SKILL.md' },
+        ],
+      },
+    ];
+
+    // Mark which ones are already installed
+    const result = REGISTRIES.map(registry => ({
+      ...registry,
+      skills: registry.skills.map(skill => ({
+        ...skill,
+        installed: isSkillInstalled(skill.id),
+      })),
+    }));
+
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/skills/registry/install — Install a skill from external registry
+skillsRouter.post('/registry/install', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { skillId, url } = req.body;
+
+    if (!skillId || !url) {
+      res.status(400).json({ error: 'skillId and url are required' });
+      return;
+    }
+
+    // Already installed?
+    if (isSkillInstalled(skillId)) {
+      res.json({ ok: true, message: 'Already installed', skillId });
+      return;
+    }
+
+    // Fetch SKILL.md from URL
+    const response = await fetch(url);
+    if (!response.ok) {
+      res.status(502).json({ error: `Failed to fetch skill: ${response.status}` });
+      return;
+    }
+    const content = await response.text();
+
+    // Install to .claude/skills/_shared/{skillId}/SKILL.md
+    const destDir = path.join(COMPANY_ROOT, '.claude', 'skills', '_shared', skillId);
+    fs.mkdirSync(destDir, { recursive: true });
+    fs.writeFileSync(path.join(destDir, 'SKILL.md'), content);
+
+    res.json({ ok: true, skillId, installed: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/skills/:id — Skill detail
 skillsRouter.get('/:id', (req: Request, res: Response, next: NextFunction) => {
   try {
