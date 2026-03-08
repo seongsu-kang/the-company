@@ -95,12 +95,32 @@ export default function WaveCommandCenter({
     return () => clearInterval(timer);
   }, []);
 
-  // Auto-scroll
+  // Smart auto-scroll: only scroll if user is already near bottom (not reading/selecting above)
+  const userScrolledUp = useRef(false);
   useEffect(() => {
+    const el = outputRef.current;
+    if (!el) return;
+    const handleScroll = () => {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+      userScrolledUp.current = !atBottom;
+    };
+    el.addEventListener('scroll', handleScroll);
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Reset scroll lock when switching roles
+  useEffect(() => {
+    userScrolledUp.current = false;
     if (outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
     }
-  }, [selectedRoleId, nodes]);
+  }, [selectedRoleId]);
+
+  useEffect(() => {
+    if (outputRef.current && !userScrolledUp.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+  }, [nodes]);
 
   // Fire onDone callback once
   useEffect(() => {
