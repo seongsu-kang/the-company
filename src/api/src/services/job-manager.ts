@@ -46,6 +46,8 @@ export interface StartJobParams {
   readOnly?: boolean;
   parentJobId?: string;
   model?: string;
+  /** If true, this is a continuation from CEO reply — skip question detection */
+  isContinuation?: boolean;
 }
 
 /* ─── Helpers ────────────────────────────── */
@@ -218,7 +220,8 @@ class JobManager {
         };
 
         // Check if output ends with a question → awaiting_input
-        if (hasQuestion(result.output)) {
+        // Skip for continuation jobs (CEO already replied once — avoid infinite loop)
+        if (!params.isContinuation && hasQuestion(result.output)) {
           job.status = 'awaiting_input';
           stream.emit('job:awaiting_input', params.roleId, {
             ...doneData,
@@ -344,13 +347,14 @@ class JobManager {
       : prevOutput;
     const continuationTask = `[Continuation — previous output follows]\n${contextSummary}\n\n[CEO Response]\n${response}`;
 
-    // Create new job for same role
+    // Create new job for same role (mark as continuation to skip question detection)
     const newJob = this.startJob({
       type: job.type,
       roleId: job.roleId,
       task: continuationTask,
       sourceRole: 'ceo',
       parentJobId: job.id,
+      isContinuation: true,
     });
 
     job.childJobIds.push(newJob.id);
