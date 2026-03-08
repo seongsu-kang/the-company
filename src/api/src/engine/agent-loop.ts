@@ -245,96 +245,201 @@ export async function runAgentLoop(config: AgentConfig): Promise<AgentResult> {
     onTurnComplete?.(turns);
   }
 
-  // ── Verification turn: auto-inject for engineer/cto at depth 0 with write access ──
-  const verifiableRoles = ['engineer', 'cto'];
-  if (verifiableRoles.includes(roleId) && !readOnly && depth === 0 && turns > 0) {
-    const hasFileChanges = allToolCalls.some((tc) =>
-      ['write', 'edit', 'bash'].includes(tc.name.toLowerCase()),
-    );
+  // ── Post-execution phases (depth 0 only) ──
+  if (!readOnly && depth === 0 && turns > 0) {
+    const node = orgTree.nodes.get(roleId);
+    const isCLevel = node?.level === 'c-level';
 
-    if (hasFileChanges) {
-      const verifyPrompt = [
-        '[AUTO-VERIFICATION] 작업이 완료되었습니다. 아래 검증을 수행하세요:',
-        '1. `cd src/api && npx tsc --noEmit` — 타입 에러 확인',
-        '2. `cd src/web && npx tsc --noEmit` — 프론트엔드 타입 에러 확인',
-        '3. UI/CSS 변경이 있었다면 Playwright MCP로 스크린샷을 촬영하여 시각 검증',
-        '검증 결과를 간단히 보고하세요.',
+    // Phase A: C-Level Supervision Loop — review dispatches, update knowledge, dispatch next
+    if (isCLevel && dispatches.length > 0) {
+      const dispatchSummary = dispatches.map((d, i) =>
+        `${i + 1}. **${d.roleId}**: "${d.task.slice(0, 80)}"\n   Result: ${d.result.slice(0, 300)}`,
+      ).join('\n\n');
+
+      const supervisionPrompt = [
+        '[SUPERVISION LOOP] Your subordinates have completed their tasks. Follow the C-Level Protocol:',
+        '',
+        '## Subordinate Results',
+        dispatchSummary,
+        '',
+        '## Required Actions (do ALL of these):',
+        '',
+        '### 1. Review',
+        'Does each result meet the acceptance criteria? If not, re-dispatch with specific feedback.',
+        '',
+        '### 2. Knowledge Update (The Loop Step ④)',
+        'Record any new decisions, findings, or analysis in appropriate AKB documents:',
+        '- Update your journal (`roles/' + roleId + '/journal/`)',
+        '- Update relevant project docs if needed',
+        '- Update knowledge/ if there are reusable insights',
+        '',
+        '### 3. Task Update (The Loop Step ⑤)',
+        'Update task status in the relevant tasks.md or project documents.',
+        'Mark completed items as DONE. Identify the NEXT task to dispatch.',
+        '',
+        '### 4. Next Dispatch',
+        'If there are remaining tasks (e.g., QA after Engineer, or the next task in the backlog):',
+        '- Dispatch the next task to the appropriate subordinate',
+        '- If all work is done, synthesize a final report for your superior',
+        '',
+        'Execute these actions now using your tools (Read, Edit, Bash, dispatch).',
       ].join('\n');
 
-      messages.push({ role: 'user', content: verifyPrompt });
-
-      // Run one verification turn
-      if (turns < maxTurns) {
+      // Run supervision loop (up to 3 additional rounds of tool use)
+      messages.push({ role: 'user', content: supervisionPrompt });
+      const maxSupervisionRounds = 3;
+      for (let round = 0; round < maxSupervisionRounds && turns < maxTurns; round++) {
+        if (abortSignal?.aborted) break;
         turns++;
-        const verifyResponse = await llm.chat(context.systemPrompt, messages, tools, abortSignal);
-        totalInput += verifyResponse.usage.inputTokens;
-        totalOutput += verifyResponse.usage.outputTokens;
+
+        const supResponse = await llm.chat(context.systemPrompt, messages, tools, abortSignal);
+        totalInput += supResponse.usage.inputTokens;
+        totalOutput += supResponse.usage.outputTokens;
         config.tokenLedger?.record({
           ts: new Date().toISOString(),
           jobId: config.jobId ?? 'unknown',
           roleId,
           model: config.model ?? 'unknown',
-          inputTokens: verifyResponse.usage.inputTokens,
-          outputTokens: verifyResponse.usage.outputTokens,
+          inputTokens: supResponse.usage.inputTokens,
+          outputTokens: supResponse.usage.outputTokens,
         });
 
-        messages.push({ role: 'assistant', content: verifyResponse.content });
-
-        for (const block of verifyResponse.content) {
+        messages.push({ role: 'assistant', content: supResponse.content });
+        for (const block of supResponse.content) {
           if (block.type === 'text' && block.text) {
             outputParts.push(block.text);
             onText?.(block.text);
           }
         }
 
-        // If verification needs tool calls, execute them
-        if (verifyResponse.stopReason === 'tool_use') {
-          const verifyToolCalls = verifyResponse.content.filter(
-            (b): b is MessageContent & { type: 'tool_use' } => b.type === 'tool_use',
-          );
-          const verifyResults: ToolResult[] = [];
-          for (const tc of verifyToolCalls) {
-            allToolCalls.push({ name: tc.name, input: tc.input });
-            const result = await executeTool(
-              { id: tc.id, name: tc.name, input: tc.input },
-              toolExecOptions,
-            );
-            verifyResults.push(result);
-          }
-          // Feed results back for final summary
-          messages.push({
-            role: 'user',
-            content: verifyResults.map((r) => ({
-              type: 'tool_result' as const,
-              tool_use_id: r.tool_use_id,
-              content: r.content,
-              is_error: r.is_error,
-            })) as unknown as MessageContent[],
-          });
+        // If no tool calls, supervision is done
+        if (supResponse.stopReason !== 'tool_use') break;
 
-          if (turns < maxTurns) {
-            turns++;
-            const summaryResponse = await llm.chat(context.systemPrompt, messages, tools, abortSignal);
-            totalInput += summaryResponse.usage.inputTokens;
-            totalOutput += summaryResponse.usage.outputTokens;
-            config.tokenLedger?.record({
-              ts: new Date().toISOString(),
-              jobId: config.jobId ?? 'unknown',
-              roleId,
-              model: config.model ?? 'unknown',
-              inputTokens: summaryResponse.usage.inputTokens,
-              outputTokens: summaryResponse.usage.outputTokens,
+        // Execute tool calls
+        const supToolCalls = supResponse.content.filter(
+          (b): b is MessageContent & { type: 'tool_use' } => b.type === 'tool_use',
+        );
+        const supResults: ToolResult[] = [];
+        for (const tc of supToolCalls) {
+          allToolCalls.push({ name: tc.name, input: tc.input });
+          const result = await executeTool(
+            { id: tc.id, name: tc.name, input: tc.input },
+            toolExecOptions,
+          );
+          supResults.push(result);
+
+          // Track additional dispatches from supervision
+          if (tc.name === 'dispatch' && !result.is_error) {
+            dispatches.push({
+              roleId: String(tc.input.roleId),
+              task: String(tc.input.task),
+              result: result.content,
             });
-            for (const block of summaryResponse.content) {
-              if (block.type === 'text' && block.text) {
-                outputParts.push(block.text);
-                onText?.(block.text);
-              }
-            }
           }
         }
 
+        messages.push({
+          role: 'user',
+          content: supResults.map((r) => ({
+            type: 'tool_result' as const,
+            tool_use_id: r.tool_use_id,
+            content: r.content,
+            is_error: r.is_error,
+          })) as unknown as MessageContent[],
+        });
+
         onTurnComplete?.(turns);
+      }
+    }
+
+    // Phase B: Engineer/CTO Verification — type checking + visual verification
+    const verifiableRoles = ['engineer', 'cto'];
+    if (verifiableRoles.includes(roleId)) {
+      const hasFileChanges = allToolCalls.some((tc) =>
+        ['write', 'edit', 'bash'].includes(tc.name.toLowerCase()),
+      );
+
+      if (hasFileChanges) {
+        const verifyPrompt = [
+          '[AUTO-VERIFICATION] 작업이 완료되었습니다. 아래 검증을 수행하세요:',
+          '1. `cd src/api && npx tsc --noEmit` — 타입 에러 확인',
+          '2. `cd src/web && npx tsc --noEmit` — 프론트엔드 타입 에러 확인',
+          '3. UI/CSS 변경이 있었다면 Playwright MCP로 스크린샷을 촬영하여 시각 검증',
+          '검증 결과를 간단히 보고하세요.',
+        ].join('\n');
+
+        messages.push({ role: 'user', content: verifyPrompt });
+
+        if (turns < maxTurns) {
+          turns++;
+          const verifyResponse = await llm.chat(context.systemPrompt, messages, tools, abortSignal);
+          totalInput += verifyResponse.usage.inputTokens;
+          totalOutput += verifyResponse.usage.outputTokens;
+          config.tokenLedger?.record({
+            ts: new Date().toISOString(),
+            jobId: config.jobId ?? 'unknown',
+            roleId,
+            model: config.model ?? 'unknown',
+            inputTokens: verifyResponse.usage.inputTokens,
+            outputTokens: verifyResponse.usage.outputTokens,
+          });
+
+          messages.push({ role: 'assistant', content: verifyResponse.content });
+          for (const block of verifyResponse.content) {
+            if (block.type === 'text' && block.text) {
+              outputParts.push(block.text);
+              onText?.(block.text);
+            }
+          }
+
+          // Execute verification tool calls if needed
+          if (verifyResponse.stopReason === 'tool_use') {
+            const verifyToolCalls = verifyResponse.content.filter(
+              (b): b is MessageContent & { type: 'tool_use' } => b.type === 'tool_use',
+            );
+            const verifyResults: ToolResult[] = [];
+            for (const tc of verifyToolCalls) {
+              allToolCalls.push({ name: tc.name, input: tc.input });
+              const result = await executeTool(
+                { id: tc.id, name: tc.name, input: tc.input },
+                toolExecOptions,
+              );
+              verifyResults.push(result);
+            }
+            messages.push({
+              role: 'user',
+              content: verifyResults.map((r) => ({
+                type: 'tool_result' as const,
+                tool_use_id: r.tool_use_id,
+                content: r.content,
+                is_error: r.is_error,
+              })) as unknown as MessageContent[],
+            });
+
+            if (turns < maxTurns) {
+              turns++;
+              const summaryResponse = await llm.chat(context.systemPrompt, messages, tools, abortSignal);
+              totalInput += summaryResponse.usage.inputTokens;
+              totalOutput += summaryResponse.usage.outputTokens;
+              config.tokenLedger?.record({
+                ts: new Date().toISOString(),
+                jobId: config.jobId ?? 'unknown',
+                roleId,
+                model: config.model ?? 'unknown',
+                inputTokens: summaryResponse.usage.inputTokens,
+                outputTokens: summaryResponse.usage.outputTokens,
+              });
+              for (const block of summaryResponse.content) {
+                if (block.type === 'text' && block.text) {
+                  outputParts.push(block.text);
+                  onText?.(block.text);
+                }
+              }
+            }
+          }
+
+          onTurnComplete?.(turns);
+        }
       }
     }
   }

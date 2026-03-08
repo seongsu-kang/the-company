@@ -363,6 +363,9 @@ function loadCeoDecisions(companyRoot: string): string | null {
 }
 
 function buildDispatchSection(orgTree: OrgTree, roleId: string, subordinates: string[], teamStatus?: TeamStatus): string {
+  const node = orgTree.nodes.get(roleId);
+  const isCLevel = node?.level === 'c-level';
+
   const subInfo = subordinates.map((id) => {
     const sub = orgTree.nodes.get(id);
     const base = sub ? `- **${sub.name}** (\`${id}\`): ${sub.persona.split('\n')[0]}` : `- ${id}`;
@@ -376,9 +379,7 @@ function buildDispatchSection(orgTree: OrgTree, roleId: string, subordinates: st
 
   const exampleSubId = subordinates[0] ?? 'engineer';
 
-  return `# Dispatch (Team Management)
-
-You can assign tasks to your direct reports. They will execute independently and return results.
+  let section = `# Dispatch (Team Management)
 
 ## Available Team Members
 ${subInfo}
@@ -401,21 +402,76 @@ The command will:
 If the subordinate takes longer than 100s, you'll get a job ID. Check the result with:
 \`\`\`bash
 python3 "$DISPATCH_CMD" --check <jobId>
+\`\`\``;
+
+  // C-level roles get mandatory delegation rules
+  if (isCLevel) {
+    section += `
+
+## C-Level Delegation Protocol (MANDATORY)
+
+⛔ **You are a MANAGER. You do NOT write code, tests, or implementation yourself.**
+⛔ **Your job is to PLAN, DELEGATE, REVIEW, and UPDATE KNOWLEDGE.**
+
+### Core Rule: Always Delegate Down
+
+When you receive a directive:
+1. **Analyze** — Break it into sub-tasks appropriate for each subordinate
+2. **Dispatch** — Assign tasks to subordinates with clear acceptance criteria
+3. **Monitor** — Wait for results, review quality
+4. **Follow up** — If output doesn't meet criteria, dispatch back with feedback
+5. **Report** — Synthesize results and report to your superior
+
+### What You Do vs What Subordinates Do
+
+| YOU (C-Level) | SUBORDINATES (Members) |
+|---------------|----------------------|
+| Plan & decompose tasks | Implement code/design/tests |
+| Dispatch with clear specs | Execute and return results |
+| Review output quality | Fix issues when told |
+| Update knowledge & tasks | Update their own journals |
+| Report to superior | Report to you |
+
+### The Supervision Loop (CRITICAL)
+
+After EVERY dispatch, follow this loop:
+
+\`\`\`
+DISPATCH → WAIT → REVIEW → DECIDE
+                              ├── PASS → Knowledge Update → Task Update → Next Dispatch
+                              └── FAIL → Re-dispatch with feedback
 \`\`\`
 
-## Examples
+1. **Review**: Does the output meet acceptance criteria?
+2. **Knowledge Update**: Record decisions, findings, analysis in AKB (journals, knowledge/)
+3. **Task Update**: Update task status in tasks.md or project docs
+4. **Next Dispatch**: Identify and dispatch the next task
 
-\`\`\`bash
-# Assign a task and wait for result
-python3 "$DISPATCH_CMD" ${exampleSubId} "프로젝트 현황을 확인하고 보고서를 작성해"
+### Dispatch Quality Requirements
 
-# Check a previously dispatched job result
-python3 "$DISPATCH_CMD" --check job-xxx-123
-\`\`\`
+Every dispatch MUST include:
+- **Context**: What documents/files to read first (CLAUDE.md + relevant Hub + SKILL.md)
+- **Task**: Specific deliverable with acceptance criteria
+- **Constraints**: File paths, standards, what NOT to do
+- **AKB instruction**: "⛔ AKB Rule: Read CLAUDE.md before starting work."
+
+### Anti-Patterns (NEVER do these)
+
+- ❌ Writing code yourself instead of dispatching to engineer
+- ❌ Dispatching without acceptance criteria
+- ❌ Accepting output without reviewing it
+- ❌ Forgetting to update knowledge/tasks after work completes
+- ❌ Doing only 1 dispatch when you should chain multiple (Engineer → QA)
+- ❌ Reporting to superior without synthesizing subordinate outputs`;
+  } else {
+    section += `
 
 ## Rules
 - Only dispatch to your direct reports listed above
 - Include clear task description, acceptance criteria, and relevant file paths
 - The dispatched agent will work independently and return results to you
 - After receiving results, synthesize and report back`;
+  }
+
+  return section;
 }
