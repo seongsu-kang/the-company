@@ -97,9 +97,24 @@ async function startServer(): Promise<void> {
     process.env.COMPANY_ROOT = process.cwd();
   }
 
-  // Check for CLAUDE.md (soft — server starts regardless for onboarding wizard)
-  const claudeMdPath = path.join(process.env.COMPANY_ROOT, 'CLAUDE.md');
-  const initialized = fs.existsSync(claudeMdPath);
+  // Check for CLAUDE.md — also scan one level deep (for ~/acme-corp/ scenario)
+  let claudeMdPath = path.join(process.env.COMPANY_ROOT, 'CLAUDE.md');
+  let initialized = fs.existsSync(claudeMdPath);
+  if (!initialized) {
+    // Look for .tycono/ marker in subdirectories (faster than scanning all dirs for CLAUDE.md)
+    try {
+      const entries = fs.readdirSync(process.env.COMPANY_ROOT, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+        if (fs.existsSync(path.join(process.env.COMPANY_ROOT, entry.name, '.tycono', 'config.json'))) {
+          process.env.COMPANY_ROOT = path.join(process.env.COMPANY_ROOT, entry.name);
+          claudeMdPath = path.join(process.env.COMPANY_ROOT, 'CLAUDE.md');
+          initialized = fs.existsSync(claudeMdPath);
+          break;
+        }
+      }
+    } catch { /* permission denied etc — ignore */ }
+  }
 
   // Production mode + auto-detect execution engine (soft-fail)
   process.env.NODE_ENV = 'production';
