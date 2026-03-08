@@ -144,6 +144,7 @@ export function createHttpServer(): http.Server {
 
   server.timeout = 0;
   server.requestTimeout = 0;
+  server.headersTimeout = 0;
 
   return server;
 }
