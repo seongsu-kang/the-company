@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { COMPANY_ROOT } from './file-reader.js';
 
-const ACTIVITY_DIR = path.join(COMPANY_ROOT, 'operations', 'activity');
+function activityDir(): string {
+  return path.join(COMPANY_ROOT, 'operations', 'activity');
+}
 
 export interface RoleActivity {
   roleId: string;
@@ -14,12 +16,13 @@ export interface RoleActivity {
 }
 
 function activityPath(roleId: string): string {
-  return path.join(ACTIVITY_DIR, `${roleId}.json`);
+  return path.join(activityDir(), `${roleId}.json`);
 }
 
 function ensureDir(): void {
-  if (!fs.existsSync(ACTIVITY_DIR)) {
-    fs.mkdirSync(ACTIVITY_DIR, { recursive: true });
+  const dir = activityDir();
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
   }
 }
 
@@ -71,10 +74,10 @@ export function getActivity(roleId: string): RoleActivity | null {
 
 export function getAllActivities(): RoleActivity[] {
   ensureDir();
-  const files = fs.readdirSync(ACTIVITY_DIR).filter(f => f.endsWith('.json'));
+  const files = fs.readdirSync(activityDir()).filter(f => f.endsWith('.json'));
   return files.map(f => {
     try {
-      return JSON.parse(fs.readFileSync(path.join(ACTIVITY_DIR, f), 'utf-8'));
+      return JSON.parse(fs.readFileSync(path.join(activityDir(), f), 'utf-8'));
     } catch {
       return null;
     }

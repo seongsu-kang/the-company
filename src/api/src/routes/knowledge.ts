@@ -13,8 +13,8 @@ import { COMPANY_ROOT } from '../services/file-reader.js';
 
 export const knowledgeRouter = Router();
 
-const knowledgeDir = path.join(COMPANY_ROOT, 'knowledge');
-const companyRoot = COMPANY_ROOT;
+function knowledgeDir(): string { return path.join(COMPANY_ROOT, 'knowledge'); }
+function companyRoot(): string { return COMPANY_ROOT; }
 
 /* ─── Helpers ─────────────────────────────────────── */
 
@@ -61,13 +61,13 @@ function inferCategory(filePath: string, tags: string[]): string {
 
 knowledgeRouter.get('/', (_req: Request, res: Response, next: NextFunction) => {
   try {
-    if (!fs.existsSync(companyRoot)) {
+    if (!fs.existsSync(companyRoot())) {
       res.json([]);
       return;
     }
 
     const files = glob.sync('**/*.{md,html}', {
-      cwd: companyRoot,
+      cwd: companyRoot(),
       ignore: [
         'node_modules/**', '.claude/**', '.obsidian/**', '.tycono/**', '.git/**',
         '**/node_modules/**',
@@ -82,7 +82,7 @@ knowledgeRouter.get('/', (_req: Request, res: Response, next: NextFunction) => {
       .sort();
 
     const docs = files.map((f) => {
-      const absPath = path.join(companyRoot, f);
+      const absPath = path.join(companyRoot(), f);
       let raw = '';
       try { raw = fs.readFileSync(absPath, 'utf-8'); } catch { return null; }
 
@@ -165,9 +165,9 @@ knowledgeRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
     // Sanitize filename
     const safeName = filename.replace(/[^a-zA-Z0-9가-힣_\-. ]/g, '').replace(/\s+/g, '-');
     const fullName = safeName.endsWith('.md') ? safeName : `${safeName}.md`;
-    const absPath = path.join(knowledgeDir, fullName);
+    const absPath = path.join(knowledgeDir(), fullName);
 
-    if (!absPath.startsWith(knowledgeDir)) {
+    if (!absPath.startsWith(knowledgeDir())) {
       res.status(403).json({ error: 'Forbidden' });
       return;
     }
@@ -206,8 +206,8 @@ knowledgeRouter.put('/{*path}', (req: Request, res: Response, next: NextFunction
       return;
     }
 
-    const absPath = path.join(companyRoot, docId);
-    if (!absPath.startsWith(companyRoot)) {
+    const absPath = path.join(companyRoot(), docId);
+    if (!absPath.startsWith(companyRoot())) {
       res.status(403).json({ error: 'Forbidden' });
       return;
     }
@@ -248,8 +248,8 @@ knowledgeRouter.delete('/{*path}', (req: Request, res: Response, next: NextFunct
       return;
     }
 
-    const absPath = path.join(companyRoot, docId);
-    if (!absPath.startsWith(companyRoot)) {
+    const absPath = path.join(companyRoot(), docId);
+    if (!absPath.startsWith(companyRoot())) {
       res.status(403).json({ error: 'Forbidden' });
       return;
     }
@@ -277,10 +277,10 @@ knowledgeRouter.get('/{*path}', (req: Request, res: Response, next: NextFunction
       return;
     }
 
-    const absPath = path.join(knowledgeDir, docId);
+    const absPath = path.join(knowledgeDir(), docId);
 
     // Security: ensure path stays within knowledgeDir
-    if (!absPath.startsWith(knowledgeDir)) {
+    if (!absPath.startsWith(knowledgeDir())) {
       res.status(403).json({ error: 'Forbidden' });
       return;
     }

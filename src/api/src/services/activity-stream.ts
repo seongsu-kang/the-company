@@ -24,16 +24,19 @@ export interface ActivityEvent {
 
 /* ─── Constants ──────────────────────────── */
 
-const STREAMS_DIR = path.join(COMPANY_ROOT, 'operations', 'activity-streams');
+function streamsDir(): string {
+  return path.join(COMPANY_ROOT, 'operations', 'activity-streams');
+}
 
 function ensureDir(): void {
-  if (!fs.existsSync(STREAMS_DIR)) {
-    fs.mkdirSync(STREAMS_DIR, { recursive: true });
+  const dir = streamsDir();
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
   }
 }
 
 function streamPath(jobId: string): string {
-  return path.join(STREAMS_DIR, `${jobId}.jsonl`);
+  return path.join(streamsDir(), `${jobId}.jsonl`);
 }
 
 /* ─── Subscriber type ────────────────────── */
@@ -149,7 +152,7 @@ export class ActivityStream {
   /** List all stream files (job IDs) */
   static listAll(): string[] {
     ensureDir();
-    return fs.readdirSync(STREAMS_DIR)
+    return fs.readdirSync(streamsDir())
       .filter(f => f.endsWith('.jsonl'))
       .map(f => f.replace('.jsonl', ''));
   }

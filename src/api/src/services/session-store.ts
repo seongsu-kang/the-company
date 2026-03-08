@@ -26,16 +26,19 @@ export interface Session {
 
 /* ─── Session directory ─────────────────── */
 
-const SESSIONS_DIR = path.join(COMPANY_ROOT, 'operations', 'sessions');
+function sessionsDir(): string {
+  return path.join(COMPANY_ROOT, 'operations', 'sessions');
+}
 
 function ensureDir(): void {
-  if (!fs.existsSync(SESSIONS_DIR)) {
-    fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+  const dir = sessionsDir();
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
   }
 }
 
 function sessionPath(id: string): string {
-  return path.join(SESSIONS_DIR, `${id}.json`);
+  return path.join(sessionsDir(), `${id}.json`);
 }
 
 /* ─── Debounced write ───────────────────── */
@@ -69,10 +72,10 @@ const cache = new Map<string, Session>();
 
 function loadAll(): void {
   ensureDir();
-  const files = fs.readdirSync(SESSIONS_DIR).filter((f) => f.endsWith('.json'));
+  const files = fs.readdirSync(sessionsDir()).filter((f) => f.endsWith('.json'));
   for (const file of files) {
     try {
-      const data = JSON.parse(fs.readFileSync(path.join(SESSIONS_DIR, file), 'utf-8')) as Session;
+      const data = JSON.parse(fs.readFileSync(path.join(sessionsDir(), file), 'utf-8')) as Session;
       cache.set(data.id, data);
     } catch { /* skip corrupted */ }
   }

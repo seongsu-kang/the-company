@@ -16,6 +16,7 @@ import { AnthropicProvider, type LLMProvider } from '../engine/llm-adapter.js';
 import { jobManager } from '../services/job-manager.js';
 import { applyConfig, readConfig, writeConfig } from '../services/company-config.js';
 import { mergePreferences } from '../services/preferences.js';
+import { setCompanyRoot } from '../services/file-reader.js';
 
 export const setupRouter = Router();
 
@@ -122,7 +123,7 @@ setupRouter.post('/scaffold', (req, res) => {
   try {
     const created = scaffold(config);
 
-    process.env.COMPANY_ROOT = projectRoot;
+    setCompanyRoot(projectRoot);
     // Load config.json written by scaffold and apply to process.env
     const scaffoldConfig = applyConfig(projectRoot);
     // Save codeRoot if provided
@@ -217,7 +218,7 @@ setupRouter.post('/connect-akb', (req, res) => {
     if (match) companyName = match[1].trim();
   } catch { /* ignore */ }
 
-  process.env.COMPANY_ROOT = resolved;
+  setCompanyRoot(resolved);
 
   // Load existing config.json if present
   const config = readConfig(resolved);
