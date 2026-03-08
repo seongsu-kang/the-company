@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import type { ActivityEvent, OrgNode } from '../types';
 import type { StreamStatus } from './useActivityStream';
 
-export type WaveNodeStatus = 'waiting' | 'running' | 'done' | 'error' | 'not-dispatched';
+export type WaveNodeStatus = 'waiting' | 'running' | 'done' | 'error' | 'not-dispatched' | 'awaiting_input';
 
 export interface WaveNode {
   jobId: string | null;
@@ -18,8 +18,9 @@ interface UseWaveTreeResult {
   nodes: Map<string, WaveNode>;
   selectedRoleId: string | null;
   selectNode: (roleId: string) => void;
-  progress: { done: number; total: number; running: number };
+  progress: { done: number; total: number; running: number; awaitingInput: number };
   allDone: boolean;
+  connectStream: (jobId: string, roleId: string) => void;
 }
 
 interface StreamState {
@@ -187,6 +188,13 @@ export default function useWaveTree(
                     } else if (event.type === 'job:error') {
                       updated.status = 'error';
                       updated.streamStatus = 'error';
+                    } else if (event.type === 'job:awaiting_input') {
+                      updated.status = 'awaiting_input';
+                      updated.streamStatus = 'done';
+                    } else if (event.type === 'job:reply') {
+                      // Will get a new child job via dispatch or continuation
+                      updated.status = 'running';
+                      updated.streamStatus = 'streaming';
                     }
 
                     next.set(roleId, updated);
@@ -198,7 +206,9 @@ export default function useWaveTree(
                     const next = new Map(prev);
                     const node = next.get(roleId);
                     if (!node) return prev;
-                    const finalStatus = reason === 'error' ? 'error' : 'done';
+                    const finalStatus = reason === 'error' ? 'error'
+                      : reason === 'awaiting_input' ? 'awaiting_input'
+                      : 'done';
                     next.set(roleId, {
                       ...node,
                       status: node.status === 'running' ? (finalStatus as WaveNodeStatus) : node.status,
@@ -244,18 +254,20 @@ export default function useWaveTree(
   const progress = (() => {
     let done = 0;
     let running = 0;
+    let awaitingInput = 0;
     let total = 0;
     for (const [id, node] of nodes) {
       if (id === rootRoleId) continue; // skip CEO
       total++;
       if (node.status === 'done') done++;
       else if (node.status === 'running') running++;
+      else if (node.status === 'awaiting_input') awaitingInput++;
     }
-    return { done, total, running };
+    return { done, total, running, awaitingInput };
   })();
 
-  const allDone = progress.total > 0 && progress.running === 0 &&
-    Array.from(nodes.values()).every(n => n.status !== 'running' && n.streamStatus !== 'streaming' && n.streamStatus !== 'connecting');
+  const allDone = progress.total > 0 && progress.running === 0 && progress.awaitingInput === 0 &&
+    Array.from(nodes.values()).every(n => n.status !== 'running' && n.status !== 'awaiting_input' && n.streamStatus !== 'streaming' && n.streamStatus !== 'connecting');
 
   // When all done, mark remaining 'waiting' as 'not-dispatched'
   useEffect(() => {
@@ -279,5 +291,6 @@ export default function useWaveTree(
     selectNode: setSelectedRoleId,
     progress,
     allDone,
+    connectStream,
   };
 }

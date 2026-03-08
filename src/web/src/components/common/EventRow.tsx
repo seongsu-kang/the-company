@@ -180,6 +180,31 @@ export default function EventRow({ event, isThinkingCollapsed, onToggleThinking,
         </div>
       );
 
+    case 'job:awaiting_input': {
+      const question = (event.data.question as string) ?? '';
+      return (
+        <div className="mt-2 p-2 rounded-lg border" style={{ background: '#F59E0B11', borderColor: '#F59E0B33' }}>
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full" style={{ background: '#F59E0B', animation: 'wave-pulse 1.5s ease-in-out infinite' }} />
+            <span className="font-bold text-[11px]" style={{ color: '#F59E0B' }}>Awaiting Reply</span>
+          </div>
+          {question && (
+            <div className="mt-1 text-[11px] text-[var(--terminal-text)] whitespace-pre-wrap">{question}</div>
+          )}
+        </div>
+      );
+    }
+
+    case 'job:reply':
+      return (
+        <div className="mt-1 p-2 rounded-lg bg-blue-900/20 border border-blue-800/30">
+          <div className="flex items-center gap-2">
+            <span className="text-blue-300 font-bold text-[11px]">CEO replied:</span>
+            <span className="text-blue-200/80 text-[11px]">{(event.data.response as string) ?? ''}</span>
+          </div>
+        </div>
+      );
+
     case 'import:scan':
     case 'import:process':
     case 'import:created':

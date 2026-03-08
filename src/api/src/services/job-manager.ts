@@ -10,7 +10,7 @@ import { estimateCost } from './pricing.js';
 /* ─── Types ──────────────────────────────── */
 
 export type JobType = 'assign' | 'wave' | 'session-message';
-export type JobStatus = 'running' | 'done' | 'error';
+export type JobStatus = 'running' | 'done' | 'error' | 'awaiting_input';
 
 export interface Job {
   id: string;
@@ -60,6 +60,12 @@ function summarizeInput(input: Record<string, unknown>): Record<string, unknown>
     }
   }
   return summary;
+}
+
+/** Detect if output ends with a question (needs CEO response) */
+function hasQuestion(output: string): boolean {
+  const lastBlock = output.trim().split('\n').slice(-5).join('\n');
+  return /\?\s*$/.test(lastBlock) || /할까요|해볼까요|어떨까요|확인.*필요/.test(lastBlock);
 }
 
 /* ─── JobManager Singleton ───────────────── */
@@ -190,9 +196,7 @@ class JobManager {
 
     handle.promise
       .then((result: RunnerResult) => {
-        job.status = 'done';
         job.result = result;
-        completeActivity(params.roleId);
 
         for (const d of result.dispatches) {
           completeActivity(d.roleId);
@@ -204,14 +208,28 @@ class JobManager {
           model ?? '',
         );
 
-        stream.emit('job:done', params.roleId, {
+        const doneData = {
           output: result.output.slice(-1000),
           turns: result.turns,
           tokens: result.totalTokens,
           costUsd,
           toolCalls: result.toolCalls.length,
           dispatches: result.dispatches.map((d) => ({ roleId: d.roleId, task: d.task })),
-        });
+        };
+
+        // Check if output ends with a question → awaiting_input
+        if (hasQuestion(result.output)) {
+          job.status = 'awaiting_input';
+          stream.emit('job:awaiting_input', params.roleId, {
+            ...doneData,
+            question: result.output.trim().split('\n').slice(-5).join('\n'),
+            awaitingInput: true,
+          });
+        } else {
+          job.status = 'done';
+          completeActivity(params.roleId);
+          stream.emit('job:done', params.roleId, doneData);
+        }
       })
       .catch((err: Error) => {
         job.status = 'error';
@@ -239,15 +257,20 @@ class JobManager {
         const startEvent = events.find(e => e.type === 'job:start');
         const doneEvent = events.find(e => e.type === 'job:done');
         const errorEvent = events.find(e => e.type === 'job:error');
+        const awaitingEvent = events.find(e => e.type === 'job:awaiting_input');
         const dispatchEvents = events.filter(e => e.type === 'dispatch:start');
 
         if (startEvent) {
+          const status: JobStatus = awaitingEvent && !doneEvent ? 'awaiting_input'
+            : doneEvent ? 'done'
+            : errorEvent ? 'error'
+            : 'done';
           return {
             id,
             type: (startEvent.data.type as string ?? 'assign') as JobType,
             roleId: startEvent.roleId,
             task: startEvent.data.task as string ?? '',
-            status: doneEvent ? 'done' : errorEvent ? 'error' : 'done',
+            status,
             parentJobId: startEvent.data.parentJobId as string | undefined,
             childJobIds: dispatchEvents.map(e => e.data.childJobId as string).filter(Boolean),
             createdAt: startEvent.ts,
@@ -290,17 +313,51 @@ class JobManager {
     return result;
   }
 
-  /** Abort a running job */
+  /** Abort a running or awaiting_input job */
   abortJob(id: string): boolean {
     const job = this.jobs.get(id);
-    if (!job || job.status !== 'running') return false;
+    if (!job || (job.status !== 'running' && job.status !== 'awaiting_input')) return false;
 
-    job.abort();
+    if (job.status === 'running') job.abort();
     job.status = 'error';
     job.error = 'Aborted by user';
     completeActivity(job.roleId);
     job.stream.emit('job:error', job.roleId, { message: 'Aborted by user' });
     return true;
+  }
+
+  /** Reply to an awaiting_input job → creates a continuation job */
+  replyToJob(id: string, response: string): Job | null {
+    const job = this.jobs.get(id);
+    if (!job || job.status !== 'awaiting_input') return null;
+
+    // Mark previous job as done
+    job.status = 'done';
+    completeActivity(job.roleId);
+    job.stream.emit('job:reply', job.roleId, { response });
+    job.stream.emit('job:done', job.roleId, {
+      output: job.result?.output?.slice(-1000) ?? '',
+      repliedWith: response,
+    });
+
+    // Build continuation prompt with previous context
+    const prevOutput = job.result?.output ?? '';
+    const contextSummary = prevOutput.length > 2000
+      ? prevOutput.slice(-2000)
+      : prevOutput;
+    const continuationTask = `[Continuation — previous output follows]\n${contextSummary}\n\n[CEO Response]\n${response}`;
+
+    // Create new job for same role
+    const newJob = this.startJob({
+      type: job.type,
+      roleId: job.roleId,
+      task: continuationTask,
+      sourceRole: 'ceo',
+      parentJobId: job.id,
+    });
+
+    job.childJobIds.push(newJob.id);
+    return newJob;
   }
 
   /** Get the active (running) job for a given role */

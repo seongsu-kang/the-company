@@ -93,6 +93,8 @@ export const api = {
     return get<{ jobs: JobInfo[] }>(`/jobs${qs ? '?' + qs : ''}`);
   },
   abortJob: (id: string) => del<{ ok: boolean }>(`/jobs/${id}`),
+  replyToJob: (id: string, message: string) =>
+    post<{ jobId: string; roleId: string }>(`/jobs/${id}/reply`, { message }),
 
   // Setup / Onboarding
   getStatus: () => get<CompanyStatus>('/status'),

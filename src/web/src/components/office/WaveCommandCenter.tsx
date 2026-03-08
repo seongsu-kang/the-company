@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import useWaveTree from '../../hooks/useWaveTree';
 import OrgTreeLive from './OrgTreeLive';
 import EventRow from '../common/EventRow';
 import type { OrgNode } from '../../types';
+import { api } from '../../api/client';
 
 const ROLE_COLORS: Record<string, string> = {
   cto: '#1565C0', cbo: '#E65100', pm: '#2E7D32',
@@ -25,12 +26,50 @@ export default function WaveCommandCenter({
   directive, rootJobs, orgNodes, rootRoleId,
   onClose, onMinimize, onDone, onOpenKnowledgeDoc,
 }: Props) {
-  const { nodes, selectedRoleId, selectNode, progress, allDone } = useWaveTree(rootJobs, orgNodes, rootRoleId);
+  const { nodes, selectedRoleId, selectNode, progress, allDone, connectStream } = useWaveTree(rootJobs, orgNodes, rootRoleId);
   const [elapsed, setElapsed] = useState(0);
   const [collapsedThinking, setCollapsedThinking] = useState<Set<number>>(new Set());
+  const [replyText, setReplyText] = useState('');
+  const [replying, setReplying] = useState(false);
   const outputRef = useRef<HTMLDivElement>(null);
   const startTime = useRef(Date.now());
   const doneFired = useRef(false);
+
+  const handleReply = useCallback(async () => {
+    if (!selectedRoleId || !replyText.trim()) return;
+    const node = nodes.get(selectedRoleId);
+    if (!node?.jobId || node.status !== 'awaiting_input') return;
+
+    setReplying(true);
+    try {
+      const { jobId: newJobId } = await api.replyToJob(node.jobId, replyText.trim());
+      setReplyText('');
+      // Connect to the new continuation job stream
+      connectStream(newJobId, selectedRoleId);
+    } catch (err) {
+      console.error('Reply failed:', err);
+    } finally {
+      setReplying(false);
+    }
+  }, [selectedRoleId, replyText, nodes, connectStream]);
+
+  const handleForceStop = useCallback(async (roleId: string) => {
+    const node = nodes.get(roleId);
+    if (!node?.jobId) return;
+    try {
+      await api.abortJob(node.jobId);
+    } catch (err) {
+      console.error('Abort failed:', err);
+    }
+  }, [nodes]);
+
+  const handleStopAll = useCallback(async () => {
+    for (const [, node] of nodes) {
+      if ((node.status === 'running' || node.status === 'awaiting_input') && node.jobId) {
+        try { await api.abortJob(node.jobId); } catch { /* ignore */ }
+      }
+    }
+  }, [nodes]);
 
   // Timer
   useEffect(() => {
@@ -97,12 +136,30 @@ export default function WaveCommandCenter({
           </div>
           <div className="flex items-center gap-4">
             <span className="text-[var(--terminal-text-muted)] text-xs font-mono">{fmtTime(elapsed)}</span>
+            {progress.awaitingInput > 0 && (
+              <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{
+                background: '#F59E0B22',
+                color: '#F59E0B',
+              }}>
+                {progress.awaitingInput} awaiting reply
+              </span>
+            )}
             <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{
               background: allDone ? '#2E7D3222' : '#B71C1C22',
               color: allDone ? '#2E7D32' : '#B71C1C',
             }}>
               {progress.done}/{progress.total} done
             </span>
+            {!allDone && (progress.running > 0 || progress.awaitingInput > 0) && (
+              <button
+                onClick={handleStopAll}
+                className="text-xs px-2 py-0.5 rounded font-semibold cursor-pointer"
+                style={{ background: '#C6282822', color: '#C62828', border: '1px solid #C6282844' }}
+                title="Stop all running jobs"
+              >
+                Stop All
+              </button>
+            )}
             <button
               onClick={onMinimize}
               title="Minimize"
@@ -150,6 +207,7 @@ export default function WaveCommandCenter({
             <div className="px-3 py-2 border-t border-[var(--terminal-border)] flex flex-wrap gap-x-3 gap-y-1">
               {[
                 { label: 'running', color: '#FBBF24', dot: true },
+                { label: 'awaiting', color: '#F59E0B', dot: true },
                 { label: 'done', color: '#2E7D32', dot: false },
                 { label: 'waiting', color: '#888', dot: false },
                 { label: 'error', color: '#C62828', dot: false },
@@ -185,16 +243,27 @@ export default function WaveCommandCenter({
                 <span
                   className="ml-auto text-[10px] px-2 py-0.5 rounded-full font-semibold"
                   style={{
-                    background: `${selectedColor}22`,
-                    color: selectedColor,
+                    background: selectedNode.status === 'awaiting_input' ? '#F59E0B22' : `${selectedColor}22`,
+                    color: selectedNode.status === 'awaiting_input' ? '#F59E0B' : selectedColor,
                   }}
                 >
                   {selectedNode.status === 'running' ? 'Working' :
                    selectedNode.status === 'done' ? 'Complete' :
                    selectedNode.status === 'error' ? 'Error' :
                    selectedNode.status === 'waiting' ? 'Waiting' :
+                   selectedNode.status === 'awaiting_input' ? 'Awaiting Reply' :
                    'Not dispatched'}
                 </span>
+                {(selectedNode.status === 'running' || selectedNode.status === 'awaiting_input') && selectedNode.jobId && (
+                  <button
+                    onClick={() => handleForceStop(selectedNode.roleId)}
+                    className="text-[10px] px-2 py-0.5 rounded font-semibold cursor-pointer ml-1"
+                    style={{ background: '#C6282822', color: '#C62828', border: '1px solid #C6282844' }}
+                    title="Force stop this job"
+                  >
+                    Stop
+                  </button>
+                )}
               </div>
             )}
 
@@ -233,6 +302,39 @@ export default function WaveCommandCenter({
                 <span className="inline-block w-2 h-4 bg-green-400 animate-pulse ml-0.5" />
               )}
             </div>
+
+            {/* Reply input for awaiting_input */}
+            {selectedNode?.status === 'awaiting_input' && (
+              <div className="px-4 py-3 border-t border-[var(--terminal-border)] shrink-0"
+                   style={{ background: '#F59E0B0A' }}>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="w-2 h-2 rounded-full inline-block" style={{ background: '#F59E0B', animation: 'wave-pulse 1.5s ease-in-out infinite' }} />
+                  <span className="text-[11px] font-semibold" style={{ color: '#F59E0B' }}>
+                    {selectedNode.roleName} is waiting for your response
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={replyText}
+                    onChange={(e) => setReplyText(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleReply(); } }}
+                    placeholder="Type your response..."
+                    disabled={replying}
+                    className="flex-1 px-3 py-1.5 text-xs rounded border bg-[var(--terminal-bg)] text-[var(--terminal-text)] border-[var(--terminal-border)] outline-none focus:border-[#F59E0B]"
+                    autoFocus
+                  />
+                  <button
+                    onClick={handleReply}
+                    disabled={replying || !replyText.trim()}
+                    className="px-4 py-1.5 text-xs rounded font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    style={{ background: '#F59E0B', color: '#000' }}
+                  >
+                    {replying ? '...' : 'Reply'}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Footer */}
             {!selectedNode && (

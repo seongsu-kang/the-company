@@ -83,6 +83,13 @@ function handleJobsRequest(url: string, method: string, req: IncomingMessage, re
     return;
   }
 
+  // Match /api/jobs/:id/reply
+  const replyMatch = path.match(/^\/api\/jobs\/([^/]+)\/reply$/);
+  if (replyMatch && method === 'POST') {
+    readBody(req).then((body) => handleReplyToJob(replyMatch[1], body, res));
+    return;
+  }
+
   // Match /api/jobs/:id/history
   const historyMatch = path.match(/^\/api\/jobs\/([^/]+)\/history$/);
   if (historyMatch && method === 'GET') {
@@ -213,8 +220,8 @@ function handleJobStream(jobId: string, fromSeq: number, req: IncomingMessage, r
     sendSSE(res, 'activity', event);
   }
 
-  // If the job is not running (or doesn't exist in memory), send end and close
-  if (!job || job.status !== 'running') {
+  // If the job is finished (not running/awaiting), send end and close
+  if (!job || (job.status !== 'running' && job.status !== 'awaiting_input')) {
     sendSSE(res, 'stream:end', { reason: job ? job.status : 'not-found' });
     res.end();
     return;
@@ -225,12 +232,13 @@ function handleJobStream(jobId: string, fromSeq: number, req: IncomingMessage, r
     if (event.seq >= fromSeq) {
       sendSSE(res, 'activity', event);
     }
-    // Auto-close SSE when job ends
+    // Auto-close SSE when job ends (done or error, NOT awaiting_input)
     if (event.type === 'job:done' || event.type === 'job:error') {
       sendSSE(res, 'stream:end', { reason: event.type === 'job:done' ? 'done' : 'error' });
       res.end();
       job.stream.unsubscribe(subscriber);
     }
+    // awaiting_input keeps SSE open (sends event but doesn't close)
   };
 
   job.stream.subscribe(subscriber);
@@ -261,6 +269,24 @@ function handleAbortJob(jobId: string, res: ServerResponse): void {
     return;
   }
   jsonResponse(res, 200, { ok: true });
+}
+
+/* ─── POST /api/jobs/:id/reply ──────────── */
+
+function handleReplyToJob(jobId: string, body: Record<string, unknown>, res: ServerResponse): void {
+  const message = body.message as string;
+  if (!message) {
+    jsonResponse(res, 400, { error: 'message is required' });
+    return;
+  }
+
+  const newJob = jobManager.replyToJob(jobId, message);
+  if (!newJob) {
+    jsonResponse(res, 400, { error: 'Job not found or not awaiting input' });
+    return;
+  }
+
+  jsonResponse(res, 200, { jobId: newJob.id, roleId: newJob.roleId });
 }
 
 /* ═══════════════════════════════════════════════

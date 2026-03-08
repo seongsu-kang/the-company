@@ -88,6 +88,7 @@ export default function OrgTreeLive({ nodes, rootId, selectedRoleId, onSelectNod
   const statusColor = (node: WaveNode) => {
     switch (node.status) {
       case 'running': return ROLE_COLORS[node.roleId] ?? '#FBBF24';
+      case 'awaiting_input': return '#F59E0B';
       case 'done': return '#2E7D32';
       case 'error': return '#C62828';
       case 'not-dispatched': return '#666';
@@ -126,6 +127,10 @@ export default function OrgTreeLive({ nodes, rootId, selectedRoleId, onSelectNod
         if (node?.status === 'done' || parentNode?.status === 'done') {
           stroke = '#2E7D3266';
           dashArray = '';
+        } else if (node?.status === 'awaiting_input') {
+          stroke = '#F59E0B';
+          dashArray = '6 4';
+          className = 'wave-edge-flow';
         } else if (node?.status === 'running') {
           stroke = ROLE_COLORS[item.roleId] ?? '#FBBF24';
           dashArray = '6 4';
@@ -178,9 +183,9 @@ export default function OrgTreeLive({ nodes, rootId, selectedRoleId, onSelectNod
               cx={14} cy={NODE_H / 2}
               r={4}
               fill={color}
-              filter={node.status === 'running' ? 'url(#glow)' : undefined}
+              filter={node.status === 'running' || node.status === 'awaiting_input' ? 'url(#glow)' : undefined}
             >
-              {node.status === 'running' && (
+              {(node.status === 'running' || node.status === 'awaiting_input') && (
                 <animate attributeName="opacity" values="1;0.4;1" dur="1.5s" repeatCount="indefinite" />
               )}
             </circle>
@@ -204,6 +209,7 @@ export default function OrgTreeLive({ nodes, rootId, selectedRoleId, onSelectNod
               fontFamily="var(--pixel-font)"
             >
               {node.status === 'running' ? 'Working...' :
+               node.status === 'awaiting_input' ? 'Awaiting Reply' :
                node.status === 'done' ? 'Complete' :
                node.status === 'error' ? 'Error' :
                node.status === 'waiting' ? 'Waiting' : ''}

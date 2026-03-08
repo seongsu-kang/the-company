@@ -6,6 +6,7 @@ import { COMPANY_ROOT } from './file-reader.js';
 
 export type ActivityEventType =
   | 'job:start' | 'job:done' | 'job:error'
+  | 'job:awaiting_input' | 'job:reply'
   | 'text' | 'thinking'
   | 'tool:start' | 'tool:result'
   | 'dispatch:start' | 'dispatch:done'
