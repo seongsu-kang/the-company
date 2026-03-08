@@ -127,7 +127,7 @@ export default function WaveCommandCenter({
   return (
     <>
       {/* Dimmer — no auto-close on backdrop click */}
-      <div className="fixed inset-0 bg-black/40 z-[60] backdrop-blur-sm" />
+      <div className="fixed inset-0 bg-black/40 z-[60] backdrop-blur-sm pointer-events-none" />
 
       {/* Main panel */}
       <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[960px] max-w-[95vw] h-[85vh] z-[61] bg-[var(--terminal-bg)] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
@@ -279,7 +279,7 @@ export default function WaveCommandCenter({
             )}
 
             {/* Events */}
-            <div ref={outputRef} className="flex-1 overflow-y-auto p-4 space-y-1 text-xs font-mono">
+            <div ref={outputRef} className="flex-1 overflow-y-auto p-4 space-y-1 text-xs font-mono select-text">
               {selectedNode && selectedNode.events.length === 0 && (
                 <div className="text-[var(--terminal-text-muted)]">
                   {selectedNode.status === 'waiting'
