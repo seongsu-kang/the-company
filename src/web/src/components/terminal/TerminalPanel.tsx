@@ -178,6 +178,8 @@ export default function TerminalPanel({
                 title={ses.title}
                 roleColor={ROLE_COLORS[ses.roleId] ?? '#666'}
                 active={!isViewingChat && ses.id === activeSessionId}
+                isWave={ses.source === 'wave'}
+                isWaveStreaming={ses.source === 'wave' && ses.status === 'active'}
                 onClick={() => {
                   onSwitchChatChannel?.(null);
                   onSwitchSession(ses.id);
@@ -318,13 +320,25 @@ export default function TerminalPanel({
             roleId={activeSession.roleId}
             roleColor={ROLE_COLORS[activeSession.roleId] ?? '#666'}
           />
-          <InputBar
-            mode={activeSession.mode}
-            onModeChange={(mode) => onModeChange(activeSession.id, mode)}
-            onSend={(content, attachments) => onSendMessage(activeSession.id, content, activeSession.mode, attachments)}
-            disabled={isStreaming}
-            disabledReason={isStreaming ? `${activeSession.roleId.toUpperCase()} is responding...` : undefined}
-          />
+          {activeSession.source === 'wave' ? (
+            <div className="shrink-0 px-4 py-2 border-t border-[var(--terminal-border)] bg-[var(--terminal-bg-deeper)] flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" style={activeSession.status === 'active' ? { animation: 'pulse 2s infinite' } : undefined} />
+              <span className="text-[11px] text-amber-400/80">
+                Wave execution · read-only
+              </span>
+              <span className="text-[10px] text-[var(--terminal-text-muted)] ml-auto">
+                Interact via Wave Command Center
+              </span>
+            </div>
+          ) : (
+            <InputBar
+              mode={activeSession.mode}
+              onModeChange={(mode) => onModeChange(activeSession.id, mode)}
+              onSend={(content, attachments) => onSendMessage(activeSession.id, content, activeSession.mode, attachments)}
+              disabled={isStreaming}
+              disabledReason={isStreaming ? `${activeSession.roleId.toUpperCase()} is responding...` : undefined}
+            />
+          )}
         </>
       ) : (
         <div className="flex-1 flex items-center justify-center text-[var(--terminal-text-muted)] text-sm">

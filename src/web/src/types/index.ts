@@ -213,6 +213,8 @@ export interface Session {
   status: 'active' | 'closed';
   createdAt: string;
   updatedAt: string;
+  source?: 'chat' | 'wave';
+  jobId?: string;
 }
 
 /* ─── Onboarding / Setup Types ──────────── */

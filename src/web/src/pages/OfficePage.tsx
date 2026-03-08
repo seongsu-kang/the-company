@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { api } from '../api/client';
-import type { Role, RoleDetail, Project, Standup, Wave, Decision, Session, Message, StreamEvent, CreateRoleInput, ImportJob, KnowledgeDoc, OrgNode, GitStatus, ImageAttachment } from '../types';
+import type { Role, RoleDetail, Project, Standup, Wave, Decision, Session, Message, StreamEvent, CreateRoleInput, ImportJob, KnowledgeDoc, OrgNode, GitStatus, ImageAttachment, ActivityEvent } from '../types';
 import SidePanel from '../components/office/SidePanel';
 import OperationsPanel from '../components/office/OperationsPanel';
 import ProjectPanel from '../components/office/ProjectPanel';
@@ -298,6 +298,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [streamingSessionId, setStreamingSessionId] = useState<string | null>(null);
   const { sendMessage: streamSend } = useSessionStream();
+  const waveStreamsRef = useRef<Map<string, AbortController>>(new Map());
 
   /* Fetch essential data on mount — lazy-load the rest when needed */
   useEffect(() => {
@@ -452,6 +453,109 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
     api.getCostSummary().then((s) => updateRoleLevels(computeRoleLevels(s.byRole))).catch(() => {});
   };
 
+  /** Connect SSE stream for a wave job → update virtual terminal session */
+  const connectWaveStream = (jobId: string, roleId: string) => {
+    const sessionId = `wave-${jobId}`;
+    const controller = new AbortController();
+    waveStreamsRef.current.set(jobId, controller);
+
+    // Create initial role message (streaming)
+    const roleMsg: Message = {
+      id: `msg-wave-${jobId}-role`,
+      from: 'role',
+      content: '',
+      type: 'conversation',
+      status: 'streaming',
+      timestamp: new Date().toISOString(),
+      streamEvents: [],
+    };
+    setSessions((prev) => prev.map((s) =>
+      s.id === sessionId ? { ...s, messages: [...s.messages, roleMsg] } : s,
+    ));
+
+    fetch(`/api/jobs/${jobId}/stream?from=0`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok || !response.body) return;
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+
+          let currentEvent = '';
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              currentEvent = line.slice(7).trim();
+            } else if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                if (currentEvent === 'activity') {
+                  const evt = data as ActivityEvent;
+                  setSessions((prev) => prev.map((s) => {
+                    if (s.id !== sessionId) return s;
+                    const msgs = [...s.messages];
+                    const lastMsg = msgs[msgs.length - 1];
+                    if (!lastMsg || lastMsg.from !== 'role') return s;
+
+                    const updated = { ...lastMsg };
+
+                    if (evt.type === 'text') {
+                      updated.content = (updated.content ?? '') + ((evt.data.text as string) ?? '');
+                    } else if (evt.type === 'thinking') {
+                      updated.thinking = (updated.thinking ?? '') + ((evt.data.text as string) ?? '');
+                      updated.streamEvents = [...(updated.streamEvents ?? []), { type: 'thinking', timestamp: Date.now(), text: evt.data.text as string }];
+                    } else if (evt.type === 'tool:start') {
+                      updated.streamEvents = [...(updated.streamEvents ?? []), { type: 'tool', timestamp: Date.now(), toolName: evt.data.name as string, toolInput: evt.data.input as Record<string, unknown> }];
+                    } else if (evt.type === 'dispatch:start') {
+                      updated.streamEvents = [...(updated.streamEvents ?? []), { type: 'dispatch', timestamp: Date.now(), roleId: evt.data.targetRoleId as string, task: evt.data.task as string }];
+                    } else if (evt.type === 'turn:complete') {
+                      updated.streamEvents = [...(updated.streamEvents ?? []), { type: 'turn', timestamp: Date.now(), turn: evt.data.turn as number }];
+                    } else if (evt.type === 'job:done') {
+                      updated.status = 'done';
+                      msgs[msgs.length - 1] = updated;
+                      return { ...s, messages: msgs, status: 'closed' as const };
+                    } else if (evt.type === 'job:error') {
+                      updated.status = 'error';
+                      if (evt.data.message) updated.content = updated.content || (evt.data.message as string);
+                      msgs[msgs.length - 1] = updated;
+                      return { ...s, messages: msgs, status: 'closed' as const };
+                    }
+
+                    msgs[msgs.length - 1] = updated;
+                    return { ...s, messages: msgs };
+                  }));
+                } else if (currentEvent === 'stream:end') {
+                  setSessions((prev) => prev.map((s) => {
+                    if (s.id !== sessionId) return s;
+                    const msgs = s.messages.map((m) =>
+                      m.status === 'streaming' ? { ...m, status: 'done' as const } : m,
+                    );
+                    return { ...s, messages: msgs, status: 'closed' as const };
+                  }));
+                }
+              } catch { /* skip malformed */ }
+              currentEvent = '';
+            }
+          }
+        }
+      })
+      .catch((err) => {
+        if (err.name === 'AbortError') return;
+        setSessions((prev) => prev.map((s) => {
+          if (s.id !== sessionId) return s;
+          const msgs = s.messages.map((m) =>
+            m.status === 'streaming' ? { ...m, status: 'error' as const } : m,
+          );
+          return { ...s, messages: msgs, status: 'closed' as const };
+        }));
+      });
+  };
+
   const handleWaveDispatch = async (directive: string) => {
     setShowWaveModal(false);
     try {
@@ -486,6 +590,39 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
         if (wj.length > 0) {
           setJobStack([{ jobId: wj[0].jobId, title: `CEO WAVE · ${wj[0].roleId.toUpperCase()}`, color: '#B71C1C' }]);
         }
+      }
+
+      // Create virtual wave sessions in terminal
+      const now = new Date().toISOString();
+      const waveSessions: Session[] = wj.map((w) => ({
+        id: `wave-${w.jobId}`,
+        roleId: w.roleId,
+        title: `WAVE: ${w.roleName}`,
+        mode: 'do' as const,
+        source: 'wave' as const,
+        jobId: w.jobId,
+        messages: [{
+          id: `msg-wave-${w.jobId}-ceo`,
+          from: 'ceo' as const,
+          content: directive,
+          type: 'directive' as const,
+          status: 'done' as const,
+          timestamp: now,
+        }],
+        status: 'active' as const,
+        createdAt: now,
+        updatedAt: now,
+      }));
+
+      setSessions((prev) => [...waveSessions, ...prev]);
+      if (waveSessions.length > 0) {
+        setActiveSessionId(waveSessions[0].id);
+        setTerminalOpen(true);
+      }
+
+      // Connect SSE streams for each wave job
+      for (const w of wj) {
+        connectWaveStream(w.jobId, w.roleId);
       }
     } catch (err) {
       addToast(`Failed to start wave: ${err instanceof Error ? err.message : 'unknown'}`, '#C62828');
@@ -593,6 +730,23 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   };
 
   const handleCloseSession = async (sessionId: string) => {
+    // Wave sessions are virtual — no API call needed
+    const session = sessions.find((s) => s.id === sessionId);
+    if (session?.source === 'wave') {
+      // Abort SSE stream if still running
+      if (session.jobId) {
+        const ctrl = waveStreamsRef.current.get(session.jobId);
+        if (ctrl) { ctrl.abort(); waveStreamsRef.current.delete(session.jobId); }
+      }
+      setSessions((prev) => {
+        const remaining = prev.filter((s) => s.id !== sessionId);
+        if (activeSessionId === sessionId) {
+          setActiveSessionId(remaining[0]?.id ?? null);
+        }
+        return remaining;
+      });
+      return;
+    }
     try {
       await api.deleteSession(sessionId);
       setSessions((prev) => {
@@ -627,9 +781,17 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
 
   const handleCloseAllSessions = async () => {
     if (!confirm('Close all sessions? This cannot be undone.')) return;
-    const ids = sessions.map((s) => s.id);
+    // Only send API delete for non-wave sessions
+    const apiIds = sessions.filter((s) => s.source !== 'wave').map((s) => s.id);
+    // Abort all wave SSE streams
+    for (const s of sessions) {
+      if (s.source === 'wave' && s.jobId) {
+        const ctrl = waveStreamsRef.current.get(s.jobId);
+        if (ctrl) { ctrl.abort(); waveStreamsRef.current.delete(s.jobId); }
+      }
+    }
     try {
-      await api.deleteSessions(ids);
+      if (apiIds.length > 0) await api.deleteSessions(apiIds);
       setSessions([]);
       setActiveSessionId(null);
       addToast('All sessions closed', '#2E7D32');
