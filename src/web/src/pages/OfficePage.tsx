@@ -1495,6 +1495,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           onSpeechSettingsChange={setSpeechSettings}
           language={language}
           onLanguageChange={setLanguage}
+          roleLevel={roleLevels[customizeTarget.id]?.level}
         />
       )}
 

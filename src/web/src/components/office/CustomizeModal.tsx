@@ -21,20 +21,21 @@ interface CustomizeModalProps {
   onSpeechSettingsChange?: (s: Partial<SpeechSettings>) => void;
   language?: string;
   onLanguageChange?: (lang: string) => void;
+  roleLevel?: number;
 }
 
 export default function CustomizeModal({
   role, appearance, onSave, onReset, onClose,
   theme, onThemeChange, onUpdateName, initialTab,
   speechSettings, onSpeechSettingsChange,
-  language, onLanguageChange,
+  language, onLanguageChange, roleLevel,
 }: CustomizeModalProps) {
   const [tab, setTab] = useState<'character' | 'office' | 'settings'>(initialTab ?? 'character');
   const [draft, setDraft] = useState<CharacterAppearance>({ ...appearance });
   const [nameValue, setNameValue] = useState(role.name);
   const [nameSaving, setNameSaving] = useState(false);
 
-  const handleRandomize = useCallback(() => setDraft(randomAppearance()), []);
+  const handleRandomize = useCallback(() => setDraft(randomAppearance(roleLevel)), [roleLevel]);
 
   const handleReset = useCallback(() => {
     const def = getDefaultAppearance(role.id);
@@ -116,6 +117,7 @@ export default function CustomizeModal({
               onRandomize={handleRandomize}
               onReset={handleReset}
               label={nameLabel}
+              roleLevel={roleLevel}
             />
           </div>
         ) : tab === 'office' ? (
