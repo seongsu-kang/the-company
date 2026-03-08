@@ -200,8 +200,8 @@ export function createExpressApp(): express.Application {
     });
   }
 
-  app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    console.error(`[ERROR] ${err.message}`);
+  app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error(`[ERROR] ${req.method} ${req.url} — ${err.message}`);
     const status = err.name === 'FileNotFoundError' ? 404 : 500;
     res.status(status).json({ error: err.message });
   });
