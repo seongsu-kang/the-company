@@ -831,8 +831,15 @@ export default function TopDownOfficeView({
     if (!overlay) return;
     overlay.innerHTML = '';
 
+    const roleNameMap: Record<string, string> = {};
+    for (const r of roles) { roleNameMap[r.id] = r.name; }
+
     for (const id of assignedRoleIds) {
       const color = ROLE_COLORS[id] ?? '#8b949e';
+      const rName = roleNameMap[id];
+      const displayName = rName && rName.toLowerCase() !== id.toLowerCase()
+        ? `${id.toUpperCase()} · ${rName}`
+        : id.toUpperCase();
 
       // Name tag
       const tag = document.createElement('div');
@@ -842,7 +849,7 @@ export default function TopDownOfficeView({
       dotEl.className = 'td-dot';
       dotEl.style.background = color;
       tag.appendChild(dotEl);
-      tag.appendChild(document.createTextNode(id.toUpperCase()));
+      tag.appendChild(document.createTextNode(displayName));
       overlay.appendChild(tag);
 
       // Speech bubble
@@ -875,7 +882,7 @@ export default function TopDownOfficeView({
       lbl.addEventListener('mouseleave', () => { _hoverFacility = null; });
       overlay.appendChild(lbl);
     }
-  }, [assignedRoleIds, projects, onProjectClick, onBulletinClick, onDecisionsClick, onKnowledgeClick, onSettingsClick, onThemeClick, onStatsClick]);
+  }, [assignedRoleIds, roles, projects, onProjectClick, onBulletinClick, onDecisionsClick, onKnowledgeClick, onSettingsClick, onThemeClick, onStatsClick]);
 
   // Update overlay positions
   const updateOverlay = useCallback(() => {
