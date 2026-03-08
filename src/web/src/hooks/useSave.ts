@@ -40,6 +40,7 @@ export interface UseSaveReturn {
   loadHistory: () => Promise<void>;
   restore: (sha: string) => Promise<void>;
   refresh: () => Promise<void>;
+  initGit: () => Promise<void>;
 }
 
 const POLL_INTERVAL = 30_000;
@@ -103,8 +104,17 @@ export function useSave(): UseSaveReturn {
     }
   }, [fetchStatus]);
 
+  const initGit = useCallback(async () => {
+    try {
+      await api.initGit();
+      await fetchStatus();
+    } catch {
+      setState('error');
+    }
+  }, [fetchStatus]);
+
   const dirtyCount = status ? status.modified.length + status.untracked.length : 0;
   const lastSaved = status?.lastCommit?.date ?? null;
 
-  return { state, dirtyCount, lastSaved, status, save, history, loadHistory, restore, refresh: fetchStatus };
+  return { state, dirtyCount, lastSaved, status, save, history, loadHistory, restore, refresh: fetchStatus, initGit };
 }

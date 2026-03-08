@@ -899,14 +899,18 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
             </span>
           )}
           <button
-            onClick={() => saveHook.state !== 'no-git' && setShowSaveModal(true)}
+            onClick={() => {
+              if (saveHook.state === 'no-git') {
+                saveHook.initGit();
+              } else {
+                setShowSaveModal(true);
+              }
+            }}
             className="flex items-center gap-1 cursor-pointer px-1.5 py-0.5"
             style={{
               background: 'var(--hud-bg-alt)', border: '1px solid var(--pixel-border)',
-              opacity: saveHook.state === 'no-git' ? 0.5 : 1,
-              cursor: saveHook.state === 'no-git' ? 'default' : 'pointer',
             }}
-            title={saveHook.state === 'no-git' ? 'No git repository — run "git init" to enable save'
+            title={saveHook.state === 'no-git' ? 'Click to initialize git repository'
               : saveHook.state === 'dirty' ? `${saveHook.dirtyCount} unsaved changes`
               : 'All saved'}
           >

@@ -65,19 +65,34 @@ const SAVE_PATHS = [
 
 function run(cmd: string, cwd: string): string {
   try {
-    return execSync(cmd, { cwd, encoding: 'utf-8', timeout: 30000 }).trim();
+    return execSync(cmd, { cwd, encoding: 'utf-8', timeout: 30000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
   } catch {
     return '';
   }
 }
 
 function runOrThrow(cmd: string, cwd: string): string {
-  return execSync(cmd, { cwd, encoding: 'utf-8', timeout: 30000 }).trim();
+  return execSync(cmd, { cwd, encoding: 'utf-8', timeout: 30000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 }
 
 /** Check if directory is a git repository */
 function isGitRepo(root: string): boolean {
   return run('git rev-parse --is-inside-work-tree', root) === 'true';
+}
+
+/** Initialize a new git repository */
+export function gitInit(root: string): { ok: boolean; message: string } {
+  if (isGitRepo(root)) {
+    return { ok: true, message: 'Already a git repository' };
+  }
+  try {
+    runOrThrow('git init', root);
+    runOrThrow('git add -A', root);
+    runOrThrow('git commit -m "Initial commit by Tycono"', root);
+    return { ok: true, message: 'Git repository initialized with initial commit' };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : 'git init failed' };
+  }
 }
 
 /** Get current git status. Returns noGit=true if not a git repo. */

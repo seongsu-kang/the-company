@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { COMPANY_ROOT } from '../services/file-reader.js';
-import { getGitStatus, gitSave, gitHistory, gitRestore } from '../services/git-save.js';
+import { getGitStatus, gitSave, gitHistory, gitRestore, gitInit } from '../services/git-save.js';
 
 export const saveRouter = Router();
 
@@ -33,6 +33,20 @@ saveRouter.get('/history', (req: Request, res: Response, next: NextFunction) => 
   try {
     const limit = Math.min(Number(req.query.limit) || 20, 100);
     res.json(gitHistory(COMPANY_ROOT, limit));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/save/init — initialize git repo
+saveRouter.post('/init', (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = gitInit(COMPANY_ROOT);
+    if (!result.ok) {
+      res.status(500).json({ error: result.message });
+      return;
+    }
+    res.json(result);
   } catch (err) {
     next(err);
   }

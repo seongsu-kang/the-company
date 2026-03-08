@@ -144,4 +144,5 @@ export const api = {
   restoreSave: (sha: string, paths?: string[]) => post<{
     ok: boolean; commitSha: string; restoredFiles: string[];
   }>('/save/restore', { sha, paths }),
+  initGit: () => post<{ ok: boolean; message: string }>('/save/init', {}),
 };
