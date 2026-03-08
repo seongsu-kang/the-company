@@ -17,6 +17,7 @@ interface CustomizeModalProps {
   onThemeChange: (t: OfficeTheme) => void;
   onUpdateName?: (roleId: string, name: string) => Promise<void>;
   initialTab?: 'character' | 'office' | 'settings';
+  characterOnly?: boolean;
   speechSettings?: SpeechSettings;
   onSpeechSettingsChange?: (s: Partial<SpeechSettings>) => void;
   language?: string;
@@ -27,6 +28,7 @@ interface CustomizeModalProps {
 export default function CustomizeModal({
   role, appearance, onSave, onReset, onClose,
   theme, onThemeChange, onUpdateName, initialTab,
+  characterOnly,
   speechSettings, onSpeechSettingsChange,
   language, onLanguageChange, roleLevel,
 }: CustomizeModalProps) {
@@ -92,18 +94,22 @@ export default function CustomizeModal({
             >
               CHARACTER
             </button>
-            <button
-              className={`customize-tab ${tab === 'office' ? 'active' : ''}`}
-              onClick={() => setTab('office')}
-            >
-              OFFICE THEME
-            </button>
-            <button
-              className={`customize-tab ${tab === 'settings' ? 'active' : ''}`}
-              onClick={() => setTab('settings')}
-            >
-              SETTINGS
-            </button>
+            {!characterOnly && (
+              <>
+                <button
+                  className={`customize-tab ${tab === 'office' ? 'active' : ''}`}
+                  onClick={() => setTab('office')}
+                >
+                  OFFICE THEME
+                </button>
+                <button
+                  className={`customize-tab ${tab === 'settings' ? 'active' : ''}`}
+                  onClick={() => setTab('settings')}
+                >
+                  SETTINGS
+                </button>
+              </>
+            )}
           </div>
           <button className="customize-close" onClick={onClose}>X</button>
         </div>

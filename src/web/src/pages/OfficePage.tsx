@@ -26,6 +26,8 @@ import SaveModal from '../components/office/SaveModal';
 import CompanyStatsPanel from '../components/office/CompanyStatsPanel';
 import SyncPanel from '../components/office/SyncPanel';
 import GitStatusPanel from '../components/office/GitStatusPanel';
+import SettingsPanel from '../components/office/SettingsPanel';
+import ThemeDropup from '../components/office/ThemeDropup';
 import { OFFICE_THEMES } from '../types/appearance';
 import type { CharacterAppearance } from '../types/appearance';
 import { computeRoleLevels, type RoleLevelData } from '../utils/role-level';
@@ -133,6 +135,8 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   const [showStatsPanel, setShowStatsPanel] = useState(false);
   const [showSyncPanel, setShowSyncPanel] = useState(false);
   const [showGitPanel, setShowGitPanel] = useState(false);
+  const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+  const [showThemeDropup, setShowThemeDropup] = useState(false);
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
 
   // Cmd+S / Ctrl+S → open save modal (or quick save if no modal open)
@@ -274,7 +278,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   }, [importJob]);
 
   /* View mode: card grid vs topdown */
-  const [viewMode, setViewMode] = useState<'card' | 'iso'>('card');
+  const [viewMode, setViewMode] = useState<'card' | 'iso'>('iso');
 
   /* Window width for mobile responsive */
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
@@ -1303,30 +1307,31 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
             onClick={() => setViewMode('iso')}
             className={`view-toggle-btn ${viewMode === 'iso' ? 'active' : ''}`}
           >
-            ISO
+            OFFICE
           </button>
           <span className="mx-1">|</span>
+          <div style={{ position: 'relative' }}>
+            <button
+              className={`theme-btn${showThemeDropup ? ' active' : ''}`}
+              onClick={() => setShowThemeDropup(v => !v)}
+              title="Office Theme"
+            >
+              {OFFICE_THEMES[theme]?.icon ?? ''}{'\u25BE'}
+            </button>
+            {showThemeDropup && (
+              <ThemeDropup
+                theme={theme}
+                onThemeChange={setTheme}
+                onClose={() => setShowThemeDropup(false)}
+              />
+            )}
+          </div>
           <button
             className="theme-btn"
-            onClick={() => { setCustomizeInitialTab('office'); setCustomizeTarget(roles[0] ?? null); }}
-            title="Customize"
+            onClick={() => setShowSettingsPanel(true)}
+            title="Settings"
           >
-            {OFFICE_THEMES[theme]?.icon ?? ''} {OFFICE_THEMES[theme]?.name ?? 'THEME'}
-          </button>
-          <span className="mx-1">|</span>
-          <button
-            className="theme-btn"
-            onClick={() => setShowStatsPanel(true)}
-            title="Company Stats"
-          >
-            STATS
-          </button>
-          <button
-            className="theme-btn"
-            onClick={() => setShowSyncPanel(true)}
-            title="Role Sync"
-          >
-            SYNC
+            {'\u2699'}
           </button>
           <span className="mx-1">|</span>
           {/* Git Status Indicator */}
@@ -1610,7 +1615,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
         />
       )}
 
-      {/* Customize Modal */}
+      {/* Customize Modal — CHARACTER only */}
       {customizeTarget && (
         <CustomizeModal
           role={customizeTarget}
@@ -1621,7 +1626,8 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           theme={theme}
           onThemeChange={setTheme}
           onUpdateName={async (roleId, name) => { await handleUpdateRole(roleId, { name }); }}
-          initialTab={customizeInitialTab}
+          initialTab={'character'}
+          characterOnly
           speechSettings={speechSettings}
           onSpeechSettingsChange={setSpeechSettings}
           language={language}
@@ -1662,6 +1668,20 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
             <SyncPanel onClose={() => setShowSyncPanel(false)} onSyncComplete={() => { /* refresh roles if needed */ }} />
           </div>
         </div>
+      )}
+
+      {/* Settings Panel */}
+      {showSettingsPanel && (
+        <SettingsPanel
+          onClose={() => setShowSettingsPanel(false)}
+          speechSettings={speechSettings}
+          onSpeechSettingsChange={setSpeechSettings}
+          language={language}
+          onLanguageChange={setLanguage}
+          onOpenSync={() => setShowSyncPanel(true)}
+          onOpenGitStatus={() => setShowGitPanel(true)}
+          onOpenStats={() => setShowStatsPanel(true)}
+        />
       )}
 
       {/* Git Status Panel */}

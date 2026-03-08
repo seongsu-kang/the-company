@@ -914,12 +914,12 @@ export default function TopDownOfficeView({
         const isWorking = rs[id] === 'working';
         const activeTask = ae.find(e => e.roleId === id)?.task;
         const speech = gs(id);
-        const text = isWorking && activeTask ? activeTask.slice(0, 30) : speech ? speech.slice(0, 30) : '';
+        const text = isWorking && activeTask ? activeTask.slice(0, 60) : speech ? speech.slice(0, 60) : '';
 
         if (text && ch.state === 'sitting') {
           bub.style.display = '';
           bub.style.left = ox + '%';
-          bub.style.top = ((charTopY - 5) * z) + 'px';
+          bub.style.top = ((charTopY - 10) * z) + 'px';
           bub.textContent = text;
         } else {
           bub.style.display = 'none';
