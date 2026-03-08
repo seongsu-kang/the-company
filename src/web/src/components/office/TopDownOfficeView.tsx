@@ -8,6 +8,16 @@ import { applyStyles } from './TopDownCharCanvas';
 import './sprites/data'; // trigger blueprint registration
 import { WALK_FRAMES } from './sprites/data/walk-frames-mini';
 import type { WalkDirection } from './sprites/data/walk-frames-mini';
+import { generateFloorLayout, selectPreset } from './floor-template';
+import type { FloorLayout, DeskDef, RoomDef } from './floor-template';
+import {
+  setRenderContext, px, dot, srand, rand,
+  shadowOf, highlightOf,
+  drawDesk, drawChair,
+  renderWallDecorations, pushFurnitureEntities,
+  buildFacilityZonesFromFurniture,
+  type FacilityZone,
+} from './furniture-renderer';
 
 /* ═══════════════════════════════════════════
    TopDown 3/4 Office View
@@ -34,61 +44,23 @@ interface TopDownOfficeViewProps {
   getRoleSpeech: (roleId: string) => string;
   getAppearance?: (roleId: string) => CharacterAppearance;
   onCustomize?: (roleId: string) => void;
+  onHireClick?: () => void;
 }
 
 /* ─── Canvas constants ──────────────────── */
 
 const T = 16;
-const AW = 288, AH = 208;
 const DEFAULT_ZOOM = 4;
 
 const BORDER = 4;
-const WALL_H = 28;
+// WALL_H moved to floor-template.ts
 const BASEBOARD = 2;
 const DIV_H = 4;
-const MID_X = AW / 2;
 const SIDE_W = 4;
 
-/* ─── Room layout ───────────────────────── */
+/* ─── Dynamic floor layout (set by FloorTemplate) ── */
 
-interface RoomDef {
-  wx: number; wy: number; ww: number; wh: number;
-  fx: number; fy: number; fw: number; fh: number;
-  wallColor: string; baseboardColor: string;
-}
-
-const ROOMS: Record<string, RoomDef> = {
-  exec: {
-    wx: BORDER + SIDE_W, wy: BORDER,
-    ww: MID_X - BORDER - SIDE_W - DIV_H / 2, wh: WALL_H,
-    fx: BORDER + SIDE_W, fy: BORDER + WALL_H + BASEBOARD,
-    fw: MID_X - BORDER - SIDE_W - DIV_H / 2, fh: 66,
-    wallColor: '#C8B898', baseboardColor: '#6A5840',
-  },
-  work: {
-    wx: MID_X + DIV_H / 2 + SIDE_W, wy: BORDER,
-    ww: AW - MID_X - DIV_H / 2 - SIDE_W - BORDER, wh: WALL_H,
-    fx: MID_X + DIV_H / 2 + SIDE_W, fy: BORDER + WALL_H + BASEBOARD,
-    fw: AW - MID_X - DIV_H / 2 - SIDE_W - BORDER, fh: 66,
-    wallColor: '#A8B8C8', baseboardColor: '#586878',
-  },
-  meet: {
-    wx: BORDER + SIDE_W, wy: BORDER + WALL_H + BASEBOARD + 66 + DIV_H,
-    ww: MID_X - BORDER - SIDE_W - DIV_H / 2, wh: WALL_H,
-    fx: BORDER + SIDE_W, fy: BORDER + WALL_H + BASEBOARD + 66 + DIV_H + WALL_H + BASEBOARD,
-    fw: MID_X - BORDER - SIDE_W - DIV_H / 2, fh: 70,
-    wallColor: '#A8C8B0', baseboardColor: '#4A6A50',
-  },
-  comm: {
-    wx: MID_X + DIV_H / 2 + SIDE_W, wy: BORDER + WALL_H + BASEBOARD + 66 + DIV_H,
-    ww: AW - MID_X - DIV_H / 2 - SIDE_W - BORDER, wh: WALL_H,
-    fx: MID_X + DIV_H / 2 + SIDE_W, fy: BORDER + WALL_H + BASEBOARD + 66 + DIV_H + WALL_H + BASEBOARD,
-    fw: AW - MID_X - DIV_H / 2 - SIDE_W - BORDER, fh: 70,
-    wallColor: '#C8C0A8', baseboardColor: '#7A6A50',
-  },
-};
-
-const E = ROOMS.exec, W = ROOMS.work, M = ROOMS.meet, Co = ROOMS.comm;
+let _layout: FloorLayout = generateFloorLayout(7);  // default M preset
 
 /* ─── Role colors ───────────────────────── */
 
@@ -98,139 +70,38 @@ const ROLE_COLORS: Record<string, string> = {
   'data-analyst': '#0277BD',
 };
 
-/* ─── Facility definitions ─────────────── */
-// Each facility: draw origin (dx, dy) + pixel size (pw, ph) from its draw function.
-// Hit zone & label position are derived automatically.
+/* ─── Facility zones (built from furniture data) ─── */
 
-interface FacilityDef {
-  id: string;
-  label: string;
-  icon: string;
-  color: string;
-  /** draw origin (passed to draw function) */
-  dx: number; dy: number;
-  /** pixel size of the drawn object */
-  pw: number; ph: number;
-}
+let _facilityZones: FacilityZone[] = buildFacilityZonesFromFurniture(_layout);
 
-// Sizes from draw functions:
-//   drawMeetingTable: 36w body, chairs extend -4 above / +11 below → total ~44w x 40h
-//   drawBulletinBoard: 22w x 16h
-//   drawScreen: 16w x 12h
-//   drawBookshelf: 22w x 22h (incl shadow)
-const FACILITY_ZONES: FacilityDef[] = [
-  { id: 'meeting',   label: 'MEETING',   icon: '\u{1F3E2}', color: '#3B82F6', dx: M.fx + 10,   dy: M.fy + 14,   pw: 44, ph: 40 },
-  { id: 'bulletin',  label: 'BULLETIN',  icon: '\u{1F4CB}', color: '#F59E0B', dx: M.wx + 6,    dy: M.wy + 4,    pw: 22, ph: 16 },
-  { id: 'decisions', label: 'DECISIONS', icon: '\u{1F4DC}', color: '#EF4444', dx: Co.wx + 6,   dy: Co.wy + 6,   pw: 16, ph: 12 },
-  { id: 'knowledge', label: 'KNOWLEDGE', icon: '\u{1F4DA}', color: '#10B981', dx: Co.fx + 108, dy: Co.fy + 16,  pw: 22, ph: 22 },
-];
-
-/** Derived hit zone from facility def */
-function facilityHitBox(f: FacilityDef) {
+function facilityHitBox(f: FacilityZone) {
   return { x: f.dx, y: f.dy, w: f.pw, h: f.ph };
 }
-/** Label position: centered below object */
-function facilityLabelPos(f: FacilityDef) {
+function facilityLabelPos(f: FacilityZone) {
   return { cx: f.dx + f.pw / 2, botY: f.dy + f.ph };
 }
 
-/* ─── Desk placement ────────────────────── */
+/* ─── Desk placement (from FloorLayout) ─── */
 
-interface DeskDef { dx: number; dy: number; room: string; }
+// DESKS maps roleId → desk. Built when layout changes.
+let DESKS: Record<string, DeskDef> = {};
 
-const DESKS: Record<string, DeskDef> = {
-  cbo:      { dx: E.fx + 30,  dy: E.fy + 14, room: 'exec' },
-  cto:      { dx: E.fx + 78,  dy: E.fy + 14, room: 'exec' },
-  pm:       { dx: W.fx + 8,   dy: W.fy + 10, room: 'work' },
-  engineer: { dx: W.fx + 52,  dy: W.fy + 10, room: 'work' },
-  designer: { dx: W.fx + 96,  dy: W.fy + 10, room: 'work' },
-  qa:       { dx: M.fx + 82,  dy: M.fy + 10, room: 'meet' },
-  'data-analyst': { dx: Co.fx + 14, dy: Co.fy + 14, room: 'comm' },
-};
-
-/* ─── Pathfinding ───────────────────────── */
-
-const CORRIDOR_Y: Record<string, number> = {
-  exec: E.fy + 52, work: W.fy + 48, meet: M.fy + 56, comm: Co.fy + 42,
-};
-
-const divY = BORDER + WALL_H + BASEBOARD + 66;
-const divX = MID_X - DIV_H / 2;
-
-const DOORS: Record<string, { type: 'v' | 'h'; doorY?: number; doorX?: number; xA?: number; xB?: number; yA?: number; yB?: number }> = {
-  exec_work: { type: 'v', doorY: BORDER + WALL_H + BASEBOARD + 20 + 12, xA: divX - 2, xB: W.fx + 2 },
-  meet_comm: { type: 'v', doorY: BORDER + WALL_H + BASEBOARD + 66 + DIV_H + WALL_H + BASEBOARD + 20 + 12, xA: divX - 2, xB: Co.fx + 2 },
-  exec_meet: { type: 'h', doorX: BORDER + SIDE_W + 40 + 14, yA: divY - 2, yB: M.fy + 2 },
-  work_comm: { type: 'h', doorX: MID_X + DIV_H / 2 + SIDE_W + 40 + 14, yA: divY - 2, yB: Co.fy + 2 },
-};
-
-const ADJACENCY: Record<string, { room: string; door: string; side: 'A' | 'B' }[]> = {
-  exec: [{ room: 'work', door: 'exec_work', side: 'A' }, { room: 'meet', door: 'exec_meet', side: 'A' }],
-  work: [{ room: 'exec', door: 'exec_work', side: 'B' }, { room: 'comm', door: 'work_comm', side: 'A' }],
-  meet: [{ room: 'exec', door: 'exec_meet', side: 'B' }, { room: 'comm', door: 'meet_comm', side: 'A' }],
-  comm: [{ room: 'work', door: 'work_comm', side: 'B' }, { room: 'meet', door: 'meet_comm', side: 'B' }],
-};
-
-const WAYPOINTS: Record<string, { x: number; y: number }[]> = {
-  exec: [{ x: E.fx + 6, y: E.fy + 52 }, { x: E.fx + 60, y: E.fy + 54 }, { x: E.fx + 112, y: E.fy + 50 }, { x: E.fx + 50, y: E.fy + 52 }],
-  work: [{ x: W.fx + 14, y: W.fy + 48 }, { x: W.fx + 44, y: W.fy + 48 }, { x: W.fx + 70, y: W.fy + 48 }, { x: W.fx + 100, y: W.fy + 48 }],
-  meet: [{ x: M.fx + 60, y: M.fy + 56 }, { x: M.fx + 30, y: M.fy + 54 }, { x: M.fx + 110, y: M.fy + 50 }, { x: M.fx + 80, y: M.fy + 56 }],
-  comm: [{ x: Co.fx + 96, y: Co.fy + 8 }, { x: Co.fx + 60, y: Co.fy + 42 }, { x: Co.fx + 40, y: Co.fy + 42 }, { x: Co.fx + 20, y: Co.fy + 42 }],
-};
+/** Assign role IDs to layout desks (1:1 by index) */
+function assignDesks(roleIds: string[]): Record<string, DeskDef> {
+  const result: Record<string, DeskDef> = {};
+  for (let i = 0; i < roleIds.length && i < _layout.desks.length; i++) {
+    result[roleIds[i]] = _layout.desks[i];
+  }
+  return result;
+}
 
 /* ═══════════════════════════════════════════
-   DRAWING HELPERS
+   DRAWING STATE
    ═══════════════════════════════════════════ */
 
 let _ctx: CanvasRenderingContext2D;
 let _hoverRole: string | null = null;
 let _hoverFacility: string | null = null;
-
-function px(x: number, y: number, w: number, h: number, c: string, a?: number) {
-  x = Math.round(x); y = Math.round(y);
-  if (a !== undefined && a < 0.01) return;
-  if (a !== undefined && a !== 1) _ctx.globalAlpha = a;
-  _ctx.fillStyle = c; _ctx.fillRect(x, y, w, h);
-  if (a !== undefined && a !== 1) _ctx.globalAlpha = 1;
-}
-
-function dot(x: number, y: number, c: string, a?: number) { px(x, y, 1, 1, c, a); }
-
-let _s = 1;
-function srand(s: number) { _s = s; }
-function rand() { _s = (_s * 16807) % 2147483647; return (_s & 0xffff) / 0xffff; }
-
-/* ─── Color helpers ─────────────────────── */
-
-function hexToHsl(hex: string): [number, number, number] {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
-  let h = 0, s = 0;
-  const l = (mx + mn) / 2;
-  if (mx !== mn) {
-    const d = mx - mn;
-    s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
-    if (mx === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
-    else if (mx === g) h = ((b - r) / d + 2) / 6;
-    else h = ((r - g) / d + 4) / 6;
-  }
-  return [h * 360, s * 100, l * 100];
-}
-
-function hslToHex(h: number, s: number, l: number): string {
-  h = ((h % 360) + 360) % 360;
-  s = Math.max(0, Math.min(100, s)) / 100;
-  l = Math.max(0, Math.min(100, l)) / 100;
-  const a = s * Math.min(l, 1 - l);
-  const f = (n: number) => { const k = (n + h / 30) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); };
-  const x = (v: number) => Math.round(v * 255).toString(16).padStart(2, '0');
-  return '#' + x(f(0)) + x(f(8)) + x(f(4));
-}
-
-function shadowOf(hex: string, amt = 1) { const [h, s, l] = hexToHsl(hex); return hslToHex(h + 15 * amt, Math.min(100, s + 8), l - 12 * amt); }
-function highlightOf(hex: string, amt = 1) { const [h, s, l] = hexToHsl(hex); return hslToHex(h - 10 * amt, s - 3, l + 10 * amt); }
 
 
 /* ═══════════════════════════════════════════
@@ -346,15 +217,31 @@ function drawTileFloor(room: { fx: number; fy: number; fw: number; fh: number })
 /* ─── Frame & Dividers ──────────────────── */
 
 function drawFrame() {
+  const { canvasW: AW, canvasH: AH, rooms, doors } = _layout;
   const frame = '#2A1E14', frameHi = '#3A2E24';
   px(0, 0, AW, BORDER, frame); px(0, AH - BORDER, AW, BORDER, frame);
   px(0, 0, BORDER, AH, frame); px(AW - BORDER, 0, BORDER, AH, frame);
   px(0, 0, AW, 1, frameHi, 0.3); px(0, 0, 1, AH, frameHi, 0.2);
 
-  const doorY1 = BORDER + WALL_H + BASEBOARD + 20, doorH = 24;
-  const doorX1 = BORDER + SIDE_W + 40, doorW = 28;
-  const doorX2 = MID_X + DIV_H / 2 + SIDE_W + 40;
-  const doorY2 = BORDER + WALL_H + BASEBOARD + 66 + DIV_H + WALL_H + BASEBOARD + 20;
+  // Only draw dividers for 4-room presets
+  if (!rooms['exec'] || !rooms['work'] || !rooms['meet'] || !rooms['comm']) return;
+
+  const E = rooms['exec'], M2 = rooms['meet'];
+  const MID_X = AW / 2;
+  const divX = MID_X - DIV_H / 2;
+  const divY = E.fy + E.fh;
+
+  // Read door positions from layout instead of hardcoding
+  const dEW = doors['exec_work'];
+  const dMC = doors['meet_comm'];
+  const dEM = doors['exec_meet'];
+  const dWC = doors['work_comm'];
+
+  const doorH = 24, doorW = 28;
+  const doorY1 = (dEW?.doorY ?? E.fy + 20) - doorH / 2;
+  const doorX1 = (dEM?.doorX ?? BORDER + SIDE_W + 54) - doorW / 2;
+  const doorX2 = (dWC?.doorX ?? MID_X + DIV_H / 2 + SIDE_W + 54) - doorW / 2;
+  const doorY2 = (dMC?.doorY ?? M2.fy + 20) - doorH / 2;
 
   // Horizontal divider segments
   px(0, divY, doorX1, DIV_H, frame); px(doorX1 + doorW, divY, divX - doorX1 - doorW, DIV_H, frame);
@@ -380,172 +267,9 @@ function drawFrame() {
   px(divX, doorY2 - 1, DIV_H, 1, df); px(divX, doorY2 + doorH, DIV_H, 1, df);
 }
 
-/* ─── Wall decorations ──────────────────── */
+/* ─── Wall & furniture draw functions: see furniture-renderer.ts ─── */
 
-function drawWindow(x: number, y: number, w = 14, h = 12) {
-  px(x, y, w, h, '#4A3828'); px(x + 1, y + 1, w - 2, h - 2, '#5A4838');
-  px(x + 2, y + 2, w - 4, h - 4, '#4A7098');
-  px(x + 2, y + 2, w - 4, Math.floor((h - 4) / 2), '#6A90B8', 0.35);
-  const mw = Math.floor(w / 2); px(x + mw, y + 1, 1, h - 2, '#4A3828');
-  px(x + 1, y + Math.floor(h / 2), w - 2, 1, '#4A3828', 0.5);
-  dot(x + 3, y + 3, '#8AB8E8', 0.35); dot(x + mw + 2, y + 3, '#8AB8E8', 0.25);
-  px(x - 1, y + h, w + 2, 2, '#5A4838'); px(x - 1, y + h, w + 2, 1, highlightOf('#5A4838', 0.5), 0.35);
-}
-
-function drawPicture(x: number, y: number, c: string) {
-  px(x, y, 10, 8, '#3A2818'); px(x + 1, y + 1, 8, 6, c);
-  px(x + 2, y + 2, 4, 3, highlightOf(c, 1.2), 0.3); dot(x + 3, y + 2, highlightOf(c, 2), 0.25);
-}
-
-function drawClock(x: number, y: number) {
-  px(x, y, 7, 7, '#3A2818'); px(x + 1, y + 1, 5, 5, '#F0EDE5');
-  dot(x + 3, y + 1, '#AAA'); dot(x + 3, y + 5, '#AAA'); dot(x + 1, y + 3, '#AAA'); dot(x + 5, y + 3, '#AAA');
-  dot(x + 3, y + 3, '#222'); px(x + 3, y + 1, 1, 2, '#333'); dot(x + 4, y + 3, '#D32F2F');
-}
-
-function drawWhiteboard(x: number, y: number) {
-  px(x, y, 26, 16, '#586878'); px(x + 1, y + 1, 24, 13, '#ECEFF1');
-  px(x + 1, y + 1, 24, 1, '#F5F5F5', 0.4);
-  px(x + 3, y + 3, 14, 1, '#1565C0', 0.6); px(x + 3, y + 5, 18, 1, '#333', 0.2);
-  px(x + 3, y + 7, 12, 1, '#D32F2F', 0.35); px(x + 3, y + 9, 16, 1, '#333', 0.15);
-  px(x + 1, y + 14, 24, 2, '#708898');
-  px(x + 3, y + 14, 3, 1, '#D32F2F'); px(x + 7, y + 14, 3, 1, '#1565C0'); px(x + 11, y + 14, 3, 1, '#2E7D32');
-}
-
-function drawBulletinBoard(x: number, y: number) {
-  px(x, y, 22, 16, '#6A5030'); px(x + 1, y + 1, 20, 14, '#C4A66A');
-  srand(88);
-  for (let cy = 0; cy < 14; cy++) for (let cx = 0; cx < 20; cx++) {
-    if (rand() > .5) dot(x + 1 + cx, y + 1 + cy, rand() > .5 ? '#B89858' : '#D4B87A', 0.18);
-  }
-  px(x + 2, y + 2, 5, 4, '#FFF176'); px(x + 8, y + 2, 5, 4, '#90CAF9'); px(x + 14, y + 3, 5, 4, '#CE93D8');
-  px(x + 3, y + 8, 7, 4, '#C8E6C9'); px(x + 11, y + 8, 8, 4, '#F8BBD0');
-  dot(x + 4, y + 2, '#E53935'); dot(x + 10, y + 2, '#1E88E5'); dot(x + 16, y + 3, '#FF9800');
-}
-
-function drawShelf(x: number, y: number) {
-  px(x, y, 20, 3, '#5A4030'); px(x, y, 20, 1, highlightOf('#5A4030', 0.5), 0.35);
-  px(x, y + 2, 20, 1, shadowOf('#5A4030', 0.5), 0.3);
-  px(x + 2, y - 4, 3, 4, '#E53935'); px(x + 2, y - 4, 3, 1, highlightOf('#E53935', 1), 0.3);
-  px(x + 6, y - 3, 2, 3, '#1E88E5'); px(x + 9, y - 5, 4, 5, '#43A047');
-  px(x + 14, y - 3, 3, 3, '#FFD54F'); dot(x + 15, y - 3, '#FFF176', 0.4);
-}
-
-function drawScreen(x: number, y: number) {
-  px(x, y, 16, 12, '#1E1E28'); px(x + 1, y + 1, 14, 9, '#0C1420');
-  px(x + 2, y + 2, 12, 1, '#EF4444', 0.6);
-  dot(x + 2, y + 4, '#4CAF50'); px(x + 4, y + 4, 7, 1, '#8b949e', 0.4);
-  dot(x + 2, y + 6, '#FF9800'); px(x + 4, y + 6, 5, 1, '#8b949e', 0.3);
-  dot(x + 2, y + 8, '#42A5F5'); px(x + 4, y + 8, 8, 1, '#8b949e', 0.25);
-  px(x + 7, y + 10, 2, 2, '#1E1E28'); px(x + 5, y + 11, 6, 1, '#586878');
-}
-
-/* ═══════════════════════════════════════════
-   FURNITURE
-   ═══════════════════════════════════════════ */
-
-const WD = { hi: '#D4AA5C', base: '#B08040', sh: '#7A5038', deep: '#4E3028' };
-const DW = { hi: '#8A6848', base: '#604832', sh: '#3A2E24', deep: '#2A1E18' };
-const CH = { hi: '#5A6A80', base: '#485868', sh: '#364858', deep: '#283848' };
-const SH = '#100A06';
-
-function drawDesk(x: number, y: number) {
-  px(x + 2, y + 16, 26, 3, SH, 0.18);
-  px(x, y, 26, 10, WD.deep); px(x + 1, y + 1, 24, 8, WD.base);
-  px(x + 1, y + 2, 24, 1, WD.hi, 0.2); px(x + 1, y + 4, 24, 1, shadowOf(WD.base, 0.2), 0.1);
-  px(x + 1, y + 6, 24, 1, WD.hi, 0.15); px(x + 1, y + 1, 24, 1, WD.hi, 0.4); px(x + 1, y + 1, 1, 8, WD.hi, 0.2);
-  px(x, y + 10, 26, 5, WD.deep); px(x + 1, y + 11, 24, 3, WD.sh);
-  px(x + 1, y + 10, 24, 1, shadowOf(WD.base, 1.5), 0.4); px(x + 1, y + 14, 24, 1, WD.base, 0.15);
-  px(x + 2, y + 12, 10, 1, WD.deep, 0.4); px(x + 14, y + 12, 10, 1, WD.deep, 0.4);
-  dot(x + 7, y + 11, '#C8D0D8', 0.6); dot(x + 19, y + 11, '#C8D0D8', 0.6);
-  // Monitor
-  px(x + 6, y - 5, 14, 7, '#1E1E28'); px(x + 7, y - 4, 12, 5, '#0C1420');
-  px(x + 8, y - 3, 5, 1, '#2A6898', 0.6); px(x + 8, y - 2, 8, 1, '#1A3858', 0.4);
-  px(x + 8, y - 1, 3, 1, '#2A6898', 0.35); dot(x + 7, y - 4, '#4A98D8', 0.25);
-  dot(x + 12, y + 1, '#4CAF50', 0.4); px(x + 12, y + 2, 2, 3, '#586878'); px(x + 10, y + 4, 6, 1, '#8898A8');
-  // Keyboard
-  px(x + 6, y + 4, 12, 4, '#222228'); px(x + 6, y + 4, 12, 1, '#333338', 0.4);
-  for (let k = 0; k < 5; k++) { dot(x + 7 + k * 2, y + 5, '#444', 0.6); dot(x + 7 + k * 2, y + 6, '#3A3A3E', 0.4); }
-  px(x + 20, y + 5, 3, 4, '#333338'); px(x + 20, y + 5, 3, 1, '#444448');
-  // Papers
-  px(x + 1, y + 3, 4, 4, '#F0EDE8'); px(x + 1, y + 3, 4, 1, '#F8F6F2'); dot(x + 2, y + 5, '#6D4C41');
-}
-
-function drawChair(x: number, y: number, facing: 'up' | 'down') {
-  px(x + 1, y + 9, 10, 2, SH, 0.1);
-  dot(x + 5, y + 9, '#1E1E22'); dot(x + 1, y + 10, '#1A1A1E'); dot(x + 9, y + 10, '#1A1A1E');
-  dot(x + 3, y + 11, '#1A1A1E'); dot(x + 7, y + 11, '#1A1A1E');
-  px(x + 1, y + 2, 8, 6, CH.base); px(x + 2, y + 3, 6, 4, CH.hi, 0.35);
-  px(x + 2, y + 3, 6, 1, highlightOf(CH.hi, 0.5), 0.25); px(x + 1, y + 7, 8, 1, CH.deep);
-  if (facing === 'up') { px(x, y + 7, 10, 3, CH.deep); px(x + 1, y + 8, 8, 1, CH.sh); }
-  else { px(x, y - 1, 10, 3, CH.deep); px(x + 1, y, 8, 1, CH.sh); }
-  px(x, y + 3, 1, 4, CH.sh); px(x + 9, y + 3, 1, 4, CH.sh);
-}
-
-function drawPlant(x: number, y: number) {
-  px(x + 2, y + 11, 6, 2, SH, 0.1); px(x + 2, y + 8, 6, 4, '#8B5E3C');
-  px(x + 1, y + 7, 8, 2, shadowOf('#A06E48', 0.3)); px(x + 2, y + 7, 6, 1, highlightOf('#A06E48', 0.5), 0.4);
-  px(x + 1, y + 3, 3, 4, '#2E7D32'); px(x + 5, y + 2, 3, 4, '#2E7D32');
-  px(x + 2, y + 1, 4, 4, '#43A047'); px(x + 3, y + 0, 3, 3, '#66BB6A');
-  dot(x + 4, y, '#81C784'); dot(x + 3, y + 1, '#A5D6A7', 0.4);
-}
-
-function drawBookshelf(x: number, y: number, accent?: string) {
-  px(x + 2, y + 20, 22, 2, SH, 0.15); px(x, y, 22, 20, DW.deep); px(x + 1, y + 1, 20, 18, DW.base);
-  px(x, y, 22, 1, DW.hi, 0.35); px(x, y, 1, 20, DW.hi, 0.2);
-  for (const sy of [6, 12]) { px(x + 1, y + sy, 20, 2, DW.sh); px(x + 1, y + sy, 20, 1, DW.hi, 0.2); }
-  const cols = ['#E53935', '#1E88E5', '#43A047', '#8E24AA', '#FB8C00', '#00897B', '#5C6BC0'];
-  let bx = x + 2;
-  for (let i = 0; i < 5; i++) { const bw = 2 + (i % 2); px(bx, y + 1, bw, 5, cols[i]); px(bx, y + 1, bw, 1, highlightOf(cols[i], 1), 0.35); bx += bw + 1; }
-  bx = x + 2; for (let i = 0; i < 4; i++) { px(bx, y + 7, 4, 5, cols[i + 3]); px(bx, y + 7, 4, 1, highlightOf(cols[i + 3], 1), 0.25); bx += 5; }
-  px(x + 2, y + 14, 4, 4, '#FFD54F'); px(x + 8, y + 14, 7, 4, '#90CAF9');
-  // Accent strip on top for interactive bookshelves
-  if (accent) { px(x, y - 1, 22, 1, accent, 0.7); }
-}
-
-function drawMeetingTable(x: number, y: number) {
-  // Top chairs first (behind table in 3/4 view)
-  drawChair(x + 4, y - 4, 'down'); drawChair(x + 16, y - 4, 'down'); drawChair(x + 28, y - 4, 'down');
-  // Table surface (covers bottom of top chairs)
-  px(x + 3, y + 24, 34, 3, SH, 0.15);
-  px(x, y + 2, 36, 18, WD.deep); px(x + 1, y + 3, 34, 16, WD.base);
-  px(x + 1, y + 3, 34, 1, WD.hi, 0.35);
-  for (let g = 0; g < 14; g += 3) px(x + 1, y + 4 + g, 34, 1, shadowOf(WD.base, 0.2), 0.08);
-  px(x, y + 20, 36, 4, WD.deep); px(x + 1, y + 21, 34, 2, WD.sh);
-  px(x + 6, y + 7, 10, 6, '#1A1A24'); px(x + 7, y + 8, 8, 4, '#0C1420');
-  px(x + 8, y + 9, 4, 1, '#2A6898', 0.4);
-  px(x + 20, y + 8, 6, 4, '#F0F0F0'); px(x + 15, y + 7, 3, 3, '#ECEFF1'); dot(x + 16, y + 8, '#795548');
-  // Bottom chairs last (in front of table)
-  drawChair(x + 4, y + 24, 'up'); drawChair(x + 16, y + 24, 'up'); drawChair(x + 28, y + 24, 'up');
-}
-
-function drawSofa(x: number, y: number) {
-  px(x + 2, y + 16, 36, 3, SH, 0.15);
-  px(x, y, 36, 5, '#5D4037'); px(x + 1, y + 1, 34, 3, '#6D4C41');
-  px(x + 1, y + 1, 34, 1, highlightOf('#6D4C41', 0.5), 0.3);
-  px(x, y + 5, 36, 8, '#5D4037');
-  px(x + 2, y + 6, 15, 6, '#6D4C41'); px(x + 3, y + 6, 13, 1, highlightOf('#6D4C41', 0.5), 0.35);
-  px(x + 19, y + 6, 15, 6, '#6D4C41'); px(x + 20, y + 6, 13, 1, highlightOf('#6D4C41', 0.5), 0.35);
-  px(x + 17, y + 6, 2, 6, '#5D4037');
-  px(x, y + 13, 36, 3, shadowOf('#5D4037', 1));
-  px(x - 2, y + 2, 3, 12, '#5D4037'); px(x + 35, y + 2, 3, 12, '#5D4037');
-  px(x + 4, y + 7, 6, 4, '#FF8A65'); px(x + 5, y + 7, 4, 1, highlightOf('#FF8A65', 1), 0.35);
-}
-
-function drawCoffeeTable(x: number, y: number) {
-  px(x + 2, y + 10, 22, 2, SH, 0.12);
-  px(x, y, 22, 8, DW.deep); px(x + 1, y + 1, 20, 6, DW.base);
-  px(x + 1, y + 1, 20, 1, DW.hi, 0.3); px(x, y + 8, 22, 2, DW.sh);
-  px(x + 3, y + 2, 6, 4, '#F0F0F0'); px(x + 13, y + 3, 3, 3, '#ECEFF1'); dot(x + 14, y + 4, '#795548');
-}
-
-function drawCoffeeMachine(x: number, y: number) {
-  px(x + 1, y + 14, 10, 2, SH, 0.12);
-  px(x, y, 10, 14, '#546E7A'); px(x, y, 10, 1, highlightOf('#546E7A', 1), 0.35);
-  px(x + 1, y + 1, 8, 3, '#78909C'); px(x + 1, y + 5, 8, 4, '#37474F');
-  dot(x + 2, y + 6, '#EF5350'); dot(x + 4, y + 6, '#66BB6A');
-  px(x + 2, y + 11, 4, 2, '#ECEFF1');
-}
+/* ─── Furniture draw functions: see furniture-renderer.ts ─── */
 
 /* ═══════════════════════════════════════════
    CHARACTERS — TyconoForge mini blueprints
@@ -631,7 +355,7 @@ function createChars(roleIds: string[]): Record<string, CharState> {
 }
 
 function buildPathInRoom(fromX: number, fromY: number, tx: number, ty: number, room: string) {
-  const corrY = CORRIDOR_Y[room];
+  const corrY = _layout.corridorY[room] ?? fromY;
   const path: { x: number; y: number }[] = [];
   if (fromY < corrY - 4) path.push({ x: fromX, y: corrY });
   if (Math.abs(fromX - tx) > 4) path.push({ x: tx, y: corrY });
@@ -640,13 +364,15 @@ function buildPathInRoom(fromX: number, fromY: number, tx: number, ty: number, r
 }
 
 function buildCrossRoomPath_single(fx: number, fy: number, fromRoom: string, toRoom: string) {
-  const adj = ADJACENCY[fromRoom];
+  const adj = _layout.adjacency[fromRoom];
+  if (!adj) return [];
   const conn = adj.find(a => a.room === toRoom);
   if (!conn) return [];
-  const door = DOORS[conn.door];
+  const door = _layout.doors[conn.door];
+  if (!door) return [];
   const path: { x: number; y: number }[] = [];
-  const corrY = CORRIDOR_Y[fromRoom];
-  const tCorrY = CORRIDOR_Y[toRoom];
+  const corrY = _layout.corridorY[fromRoom] ?? fy;
+  const tCorrY = _layout.corridorY[toRoom] ?? fy;
   if (Math.abs(fy - corrY) > 4) path.push({ x: fx, y: corrY });
   if (door.type === 'v') {
     const approachX = conn.side === 'A' ? door.xA! : door.xB!;
@@ -663,12 +389,13 @@ function buildCrossRoomPath_single(fx: number, fy: number, fromRoom: string, toR
 }
 
 function buildCrossRoomPath(ch: CharState, targetRoom: string) {
-  const adj = ADJACENCY[ch.room];
+  const adj = _layout.adjacency[ch.room];
+  if (!adj) return [];
   let conn = adj.find(a => a.room === targetRoom);
   if (!conn) {
     for (const mid of adj) {
-      const midAdj = ADJACENCY[mid.room];
-      if (midAdj.find(a => a.room === targetRoom)) {
+      const midAdj = _layout.adjacency[mid.room];
+      if (midAdj?.find(a => a.room === targetRoom)) {
         const path1 = buildCrossRoomPath_single(ch.x, ch.y, ch.room, mid.room);
         const last = path1[path1.length - 1];
         const path2 = buildCrossRoomPath_single(last?.x ?? ch.x, last?.y ?? ch.y, mid.room, targetRoom);
@@ -700,20 +427,27 @@ function updateChars(chars: Record<string, CharState>, frame: number) {
         ch.state = 'walking';
         ch.x = ch.homeX; ch.y = ch.homeY;
         ch.room = ch.homeRoom;
-        if (Math.random() < 0.25) {
-          const rooms = ['exec', 'work', 'meet', 'comm'].filter(r => r !== ch.room);
+        const allRooms = Object.keys(_layout.rooms);
+        if (Math.random() < 0.25 && allRooms.length > 1) {
+          const rooms = allRooms.filter(r => r !== ch.room);
           const targetRoom = rooms[Math.floor(Math.random() * rooms.length)];
           const crossPath = buildCrossRoomPath(ch, targetRoom);
-          const tWp = WAYPOINTS[targetRoom];
-          const twp = tWp[Math.floor(Math.random() * tWp.length)];
-          const lastPt = crossPath[crossPath.length - 1] ?? { x: ch.x, y: ch.y };
-          const inRoomPath = buildPathInRoom(lastPt.x, lastPt.y, twp.x, twp.y, targetRoom);
-          ch.path = [...crossPath, ...inRoomPath];
+          const tWp = _layout.waypoints[targetRoom];
+          if (tWp && tWp.length > 0) {
+            const twp = tWp[Math.floor(Math.random() * tWp.length)];
+            const lastPt = crossPath[crossPath.length - 1] ?? { x: ch.x, y: ch.y };
+            const inRoomPath = buildPathInRoom(lastPt.x, lastPt.y, twp.x, twp.y, targetRoom);
+            ch.path = [...crossPath, ...inRoomPath];
+          } else {
+            ch.path = crossPath;
+          }
           ch.walkTimer = 0;
         } else {
-          const pts = WAYPOINTS[ch.room];
-          const wp = pts[Math.floor(Math.random() * pts.length)];
-          ch.path = buildPathInRoom(ch.x, ch.y, wp.x, wp.y, ch.room);
+          const pts = _layout.waypoints[ch.room];
+          if (pts && pts.length > 0) {
+            const wp = pts[Math.floor(Math.random() * pts.length)];
+            ch.path = buildPathInRoom(ch.x, ch.y, wp.x, wp.y, ch.room);
+          }
           ch.walkTimer = 0;
         }
       }
@@ -733,7 +467,7 @@ function updateChars(chars: Record<string, CharState>, frame: number) {
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist < 1.5) {
         ch.x = tgt.x; ch.y = tgt.y; ch.path.shift();
-        for (const [rn, rm] of Object.entries(ROOMS)) {
+        for (const [rn, rm] of Object.entries(_layout.rooms)) {
           if (ch.x >= rm.fx && ch.x <= rm.fx + rm.fw && ch.y >= rm.fy && ch.y <= rm.fy + rm.fh) {
             ch.room = rn; break;
           }
@@ -750,9 +484,11 @@ function updateChars(chars: Record<string, CharState>, frame: number) {
       if (ch.stateTimer <= 0) {
         if (Math.random() < 0.3) {
           ch.state = 'walking';
-          const pts = WAYPOINTS[ch.room];
-          const wp = pts[Math.floor(Math.random() * pts.length)];
-          ch.path = buildPathInRoom(ch.x, ch.y, wp.x, wp.y, ch.room);
+          const pts = _layout.waypoints[ch.room];
+          if (pts && pts.length > 0) {
+            const wp = pts[Math.floor(Math.random() * pts.length)];
+            ch.path = buildPathInRoom(ch.x, ch.y, wp.x, wp.y, ch.room);
+          }
           ch.walkTimer = 0;
         } else {
           ch.state = 'returning';
@@ -773,59 +509,60 @@ function drawScene(
   getAp: (roleId: string) => CharacterAppearance,
   roleStatuses: Record<string, string>,
 ) {
+  const { canvasW: AW, canvasH: AH, rooms } = _layout;
   _ctx.clearRect(0, 0, AW, AH);
   px(0, 0, AW, AH, '#2A1E14');
 
-  // Floors
-  drawWoodFloor(ROOMS.exec); drawDarkFloor(ROOMS.work);
-  drawCarpetFloor(ROOMS.meet); drawTileFloor(ROOMS.comm);
+  // Floors — draw based on room floorType
+  const floorDrawers: Record<string, (r: { fx: number; fy: number; fw: number; fh: number }) => void> = {
+    wood: drawWoodFloor, dark: drawDarkFloor, carpet: drawCarpetFloor, tile: drawTileFloor,
+  };
+  for (const rm of Object.values(rooms)) {
+    const drawFloor = floorDrawers[rm.floorType] ?? drawWoodFloor;
+    drawFloor(rm);
+  }
 
-  // Door floor patches
-  const doorX1 = BORDER + SIDE_W + 40, doorW = 28;
-  const doorX2 = MID_X + DIV_H / 2 + SIDE_W + 40;
-  const gapTop = BORDER + WALL_H + BASEBOARD + 66;
-  const gapBot = M.fy;
-  drawWoodFloor({ fx: doorX1, fy: gapTop, fw: doorW, fh: gapBot - gapTop });
-  drawDarkFloor({ fx: doorX2, fy: gapTop, fw: doorW, fh: gapBot - gapTop });
+  // Door floor patches (only for 4-room presets)
+  const roomIds = Object.keys(rooms);
+  if (roomIds.length >= 4) {
+    const E = rooms['exec'], M2 = rooms['meet'];
+    const { doors } = _layout;
+    if (E && M2 && doors['exec_meet'] && doors['work_comm']) {
+      const doorW = 28;
+      const doorX1 = (doors['exec_meet'].doorX ?? 0) - doorW / 2;
+      const doorX2 = (doors['work_comm'].doorX ?? 0) - doorW / 2;
+      const gapTop = E.fy + E.fh;
+      const gapBot = M2.fy;
+      drawWoodFloor({ fx: doorX1, fy: gapTop, fw: doorW, fh: gapBot - gapTop });
+      drawDarkFloor({ fx: doorX2, fy: gapTop, fw: doorW, fh: gapBot - gapTop });
+    }
+  }
 
-  // Walls
-  drawWallFace(ROOMS.exec); drawWallFace(ROOMS.work);
-  drawWallFace(ROOMS.meet, { x: doorX1, w: doorW });
-  drawWallFace(ROOMS.comm, { x: doorX2, w: doorW });
-  drawSideWalls(ROOMS.exec); drawSideWalls(ROOMS.work);
-  drawSideWalls(ROOMS.meet); drawSideWalls(ROOMS.comm);
+  // Walls — pass door gaps so meet/comm top walls don't cover horizontal doors
+  const doorGaps: Record<string, { x: number; w: number }> = {};
+  if (roomIds.length >= 4) {
+    const { doors: drs } = _layout;
+    const dw = 28;
+    const dEM = drs['exec_meet'];
+    const dWC = drs['work_comm'];
+    if (dEM?.doorX) doorGaps['meet'] = { x: dEM.doorX - dw / 2, w: dw };
+    if (dWC?.doorX) doorGaps['comm'] = { x: dWC.doorX - dw / 2, w: dw };
+  }
+  for (const rm of Object.values(rooms)) {
+    drawWallFace(rm, doorGaps[rm.id]);
+    drawSideWalls(rm);
+  }
   drawFrame();
 
-  // Wall decorations
-  drawWindow(E.wx + 10, E.wy + 6, 16, 14);
-  drawPicture(E.wx + 34, E.wy + 8, '#1565C0'); drawPicture(E.wx + 48, E.wy + 8, '#E65100');
-  drawClock(E.wx + 64, E.wy + 10); drawShelf(E.wx + 78, E.wy + 18);
-  drawWindow(E.wx + 104, E.wy + 6, 16, 14);
-  drawWhiteboard(W.wx + 6, W.wy + 4);
-  drawWindow(W.wx + 50, W.wy + 6, 16, 14); drawWindow(W.wx + 92, W.wy + 6, 16, 14);
-  drawBulletinBoard(M.wx + 6, M.wy + 4); drawPicture(M.wx + 28, M.wy + 8, '#10B981');
-  drawWindow(M.wx + 80, M.wy + 6, 16, 14); drawShelf(M.wx + 102, M.wy + 18);
-  drawScreen(Co.wx + 6, Co.wy + 6); drawPicture(Co.wx + 28, Co.wy + 8, '#d4956a');
-  drawWindow(Co.wx + 76, Co.wy + 6, 16, 14); drawClock(Co.wx + 98, Co.wy + 10);
-  drawShelf(Co.wx + 108, Co.wy + 18);
+  // Wall decorations (data-driven)
+  renderWallDecorations(_layout);
 
   // Y-sorted entities
   const entities: { y: number; draw: () => void }[] = [];
 
-  // Static furniture
-  entities.push({ y: E.fy + 4, draw: () => drawBookshelf(E.fx + 2, E.fy + 4) });
-  entities.push({ y: E.fy + 4, draw: () => drawPlant(E.fx + 112, E.fy + 4) });
-  entities.push({ y: E.fy + 4, draw: () => drawPlant(E.fx + 68, E.fy + 4) });
-  entities.push({ y: W.fy + 4, draw: () => drawPlant(W.fx + 36, W.fy + 4) });
-  entities.push({ y: W.fy + 4, draw: () => drawPlant(W.fx + 80, W.fy + 4) });
-  entities.push({ y: M.fy + 4, draw: () => drawPlant(M.fx + 110, M.fy + 4) });
-  entities.push({ y: M.fy + 14, draw: () => drawMeetingTable(M.fx + 10, M.fy + 14) });
-  entities.push({ y: Co.fy + 4, draw: () => drawCoffeeMachine(Co.fx + 92, Co.fy + 4) });
-  entities.push({ y: Co.fy + 4, draw: () => drawPlant(Co.fx + 38, Co.fy + 4) });
-  entities.push({ y: Co.fy + 16, draw: () => drawBookshelf(Co.fx + 108, Co.fy + 16, '#10B981') });
-  entities.push({ y: Co.fy + 30, draw: () => drawSofa(Co.fx + 44, Co.fy + 30) });
-  entities.push({ y: Co.fy + 50, draw: () => drawCoffeeTable(Co.fx + 50, Co.fy + 50) });
-  entities.push({ y: Co.fy + 50, draw: () => drawPlant(Co.fx + 38, Co.fy + 50) });
+  // Static furniture (data-driven)
+  const deskRooms = new Set(Object.values(DESKS).map(d => d.room));
+  pushFurnitureEntities(_layout, entities, deskRooms);
 
   // Desk units with characters
   for (const [id, d] of Object.entries(DESKS)) {
@@ -863,7 +600,7 @@ function drawScene(
   for (const e of entities) e.draw();
 
   // Facility interaction indicators
-  for (const fz of FACILITY_ZONES) {
+  for (const fz of _facilityZones) {
     const isHov = _hoverFacility === fz.id;
     const lp = facilityLabelPos(fz);
     // Small colored dot below object
@@ -906,7 +643,7 @@ function drawScene(
 export default function TopDownOfficeView({
   roles, projects, roleStatuses, activeExecs,
   onRoleClick, onProjectClick, onBulletinClick, onDecisionsClick, onKnowledgeClick,
-  getRoleSpeech, getAppearance,
+  getRoleSpeech, getAppearance, onHireClick,
 }: TopDownOfficeViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -919,14 +656,28 @@ export default function TopDownOfficeView({
   const propsRef = useRef({ roleStatuses, activeExecs, getRoleSpeech, getAppearance });
   propsRef.current = { roleStatuses, activeExecs, getRoleSpeech, getAppearance };
 
-  // Role IDs that have desk assignments
-  const assignedRoleIds = useMemo(() => {
-    return roles.map(r => r.id).filter(id => DESKS[id]);
-  }, [roles]);
+  // All role IDs — layout adapts to count
+  const assignedRoleIds = useMemo(() => roles.map(r => r.id), [roles]);
 
-  // Initialize characters when roles change
+  // Generate layout + assign desks when role count changes
+  const layoutRef = useRef<FloorLayout>(_layout);
   useEffect(() => {
+    const count = assignedRoleIds.length;
+    const newPreset = selectPreset(count, layoutRef.current.preset);
+    const newLayout = generateFloorLayout(count, newPreset);
+    _layout = newLayout;
+    layoutRef.current = newLayout;
+    DESKS = assignDesks(assignedRoleIds);
+    _facilityZones = buildFacilityZonesFromFurniture(newLayout);
     charsRef.current = createChars(assignedRoleIds);
+
+    // Update canvas dimensions
+    const canvas = canvasRef.current;
+    if (canvas) {
+      canvas.width = newLayout.canvasW;
+      canvas.height = newLayout.canvasH;
+    }
+    updateZoom();
   }, [assignedRoleIds]);
 
   // Get appearance helper
@@ -945,15 +696,15 @@ export default function TopDownOfficeView({
     const ph = parent.clientHeight;
     if (pw === 0 || ph === 0) return;
 
-    // Find best integer zoom that fits
-    let z = Math.floor(Math.min(pw / AW, ph / AH));
+    const { canvasW, canvasH } = _layout;
+    let z = Math.floor(Math.min(pw / canvasW, ph / canvasH));
     z = Math.max(2, Math.min(z, 5));
     zoomRef.current = z;
 
-    canvas.style.width = AW * z + 'px';
-    canvas.style.height = AH * z + 'px';
-    wrap.style.width = AW * z + 'px';
-    wrap.style.height = AH * z + 'px';
+    canvas.style.width = canvasW * z + 'px';
+    canvas.style.height = canvasH * z + 'px';
+    wrap.style.width = canvasW * z + 'px';
+    wrap.style.height = canvasH * z + 'px';
   }, []);
 
   // Animation loop
@@ -963,6 +714,7 @@ export default function TopDownOfficeView({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     _ctx = ctx;
+    setRenderContext(ctx);
 
     updateZoom();
     const resizeObs = new ResizeObserver(() => updateZoom());
@@ -1020,7 +772,7 @@ export default function TopDownOfficeView({
       decisions: onDecisionsClick,
       knowledge: onKnowledgeClick,
     };
-    for (const fz of FACILITY_ZONES) {
+    for (const fz of _facilityZones) {
       const lbl = document.createElement('div');
       lbl.className = 'td-facility-label';
       lbl.dataset.facility = fz.id;
@@ -1054,7 +806,7 @@ export default function TopDownOfficeView({
         cx = Math.round(ch.x) + 6; charTopY = Math.round(ch.y) - 2; charBotY = Math.round(ch.y) + 18;
       }
 
-      const ox = (cx / AW * 100);
+      const ox = (cx / _layout.canvasW * 100);
 
       // Name tag
       const tag = overlay.querySelector(`.td-nametag[data-role="${id}"]`) as HTMLElement;
@@ -1091,11 +843,11 @@ export default function TopDownOfficeView({
     }
 
     // Facility labels
-    for (const fz of FACILITY_ZONES) {
+    for (const fz of _facilityZones) {
       const lbl = overlay.querySelector(`.td-facility-label[data-facility="${fz.id}"]`) as HTMLElement;
       if (lbl) {
         const lp = facilityLabelPos(fz);
-        lbl.style.left = (lp.cx / AW * 100) + '%';
+        lbl.style.left = (lp.cx / _layout.canvasW * 100) + '%';
         lbl.style.top = (lp.botY * z + 2) + 'px';
         lbl.classList.toggle('td-facility-label--hover', _hoverFacility === fz.id);
       }
@@ -1125,7 +877,7 @@ export default function TopDownOfficeView({
       }
     }
     // Check facilities
-    for (const fz of FACILITY_ZONES) {
+    for (const fz of _facilityZones) {
       const hb = facilityHitBox(fz);
       if (mx >= hb.x && mx <= hb.x + hb.w && my >= hb.y && my <= hb.y + hb.h)
         return { type: 'facility' as const, id: fz.id };
@@ -1171,8 +923,8 @@ export default function TopDownOfficeView({
       <div ref={wrapRef} className="td-wrap">
         <canvas
           ref={canvasRef}
-          width={AW}
-          height={AH}
+          width={_layout.canvasW}
+          height={_layout.canvasH}
           className="td-canvas"
           onClick={handleClick}
           onMouseMove={handleMouseMove}
@@ -1180,6 +932,12 @@ export default function TopDownOfficeView({
         />
         <div ref={overlayRef} className="td-overlay" />
       </div>
+      {onHireClick && (
+        <button className="td-hire-btn" onClick={onHireClick} title="Hire New Role">
+          <span className="td-hire-btn__icon">+</span>
+          <span className="td-hire-btn__label">HIRE</span>
+        </button>
+      )}
     </div>
   );
 }
