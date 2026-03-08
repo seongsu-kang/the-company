@@ -320,7 +320,132 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
 
         {/* Body */}
         <div className="p-5 min-h-[240px] overflow-y-auto flex-1">
-          {mode === 'single' ? (
+          {mode === 'store' ? (
+            /* ─── Store import mode ─── */
+            <>
+              {storeStep === 'input' && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[11px] font-bold text-[var(--desk-dark)] uppercase tracking-wider mb-2">Character ID</label>
+                    <div className="flex gap-2">
+                      <input
+                        value={storeId}
+                        onChange={(e) => setStoreId(e.target.value)}
+                        placeholder="tycono:engineer"
+                        className="flex-1 p-2.5 rounded-lg border border-white/10 bg-white/5 text-sm text-white/90 placeholder-white/25 font-mono focus:outline-none focus:border-white/25 transition-colors"
+                        onKeyDown={(e) => { if (e.key === 'Enter' && storeId.trim()) handleStoreFetch(); }}
+                        autoFocus
+                      />
+                      <button
+                        onClick={handleStoreFetch}
+                        disabled={!storeId.trim() || storeFetching}
+                        className="px-4 py-2 text-sm text-white rounded-lg font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        style={{ background: '#2E7D32' }}
+                      >
+                        {storeFetching ? 'Fetching...' : 'Fetch'}
+                      </button>
+                    </div>
+                    <div className="text-[10px] text-gray-400 mt-1">
+                      Copy a character ID from <a href="https://tycono.ai/store.html" target="_blank" className="text-green-400 hover:underline">tycono.ai/store</a> and paste it here
+                    </div>
+                  </div>
+                  {storeError && (
+                    <div className="text-xs text-red-400 bg-red-900/20 p-2 rounded-lg border border-red-800/30">{storeError}</div>
+                  )}
+                </div>
+              )}
+
+              {storeStep === 'review' && storeCharacter && (
+                <div className="space-y-4">
+                  <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                    <div className="flex gap-4">
+                      {storeCharacter.appearance && (
+                        <div className="flex-shrink-0 rounded-lg overflow-hidden" style={{ background: '#0d1117', padding: 8 }}>
+                          <TopDownCharCanvas roleId="store-preview" appearance={storeCharacter.appearance} scale={4} />
+                        </div>
+                      )}
+                      <div className="flex-1 space-y-2.5">
+                        <div>
+                          <label className="block text-[10px] text-white/30 uppercase tracking-wider mb-0.5">Name</label>
+                          <input
+                            value={storeName}
+                            onChange={(e) => setStoreName(e.target.value)}
+                            className="w-full p-2 rounded-lg border border-white/10 bg-white/5 text-sm text-white/90 focus:outline-none focus:border-white/25 transition-colors"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-white/30 uppercase tracking-wider mb-0.5">Role ID</label>
+                          <input
+                            value={storeRoleId}
+                            onChange={(e) => setStoreRoleId(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                            className="w-full p-2 rounded-lg border border-white/10 bg-white/5 text-sm text-white/90 font-mono focus:outline-none focus:border-white/25 transition-colors"
+                          />
+                          {existingRoles.some(r => r.id === storeRoleId) && storeRoleId.length > 0 && (
+                            <div className="text-xs text-red-500 mt-1">ID already exists</div>
+                          )}
+                        </div>
+                        <div className="flex gap-3">
+                          <div className="flex-1">
+                            <label className="block text-[10px] text-white/30 uppercase tracking-wider mb-0.5">Level</label>
+                            <div className="text-sm text-white/70 p-2 rounded-lg bg-white/5 border border-white/10">
+                              {storeCharacter.level === 'c-level' ? 'C-Level' : storeCharacter.level === 'team-lead' ? 'Lead' : 'Member'}
+                            </div>
+                          </div>
+                          <div className="flex-1">
+                            <label className="block text-[10px] text-white/30 uppercase tracking-wider mb-0.5">Reports To</label>
+                            <select
+                              value={storeReportsTo}
+                              onChange={(e) => setStoreReportsTo(e.target.value)}
+                              className="w-full p-2 rounded-lg border border-white/10 bg-white/5 text-sm text-white/90 focus:outline-none focus:border-white/25 transition-colors"
+                            >
+                              <option value="ceo" className="bg-[var(--wall)] text-white">CEO</option>
+                              {existingRoles.map((r) => (
+                                <option key={r.id} value={r.id} className="bg-[var(--wall)] text-white">{r.name} ({r.id})</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    {storeCharacter.persona && (
+                      <div className="pt-3 mt-3 border-t border-white/10">
+                        <div className="text-[10px] text-white/30 uppercase tracking-wider mb-1">Persona</div>
+                        <div className="text-xs text-white/60 leading-relaxed line-clamp-3">{storeCharacter.persona}</div>
+                      </div>
+                    )}
+                    {storeCharacter.skills && (
+                      <div className="pt-3 mt-3 border-t border-white/10">
+                        <div className="text-[10px] text-white/30 uppercase tracking-wider mb-1">Skills</div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {(() => {
+                            const sk = storeCharacter.skills;
+                            const isExp = sk && typeof sk === 'object' && !Array.isArray(sk) && 'primary' in sk;
+                            if (isExp) {
+                              const names: string[] = [];
+                              if (sk.primary?.frontmatter?.name) names.push(sk.primary.frontmatter.name);
+                              if (sk.shared) sk.shared.forEach((s: any) => names.push(s.frontmatter?.name || s.id));
+                              return names.map((n: string) => (
+                                <span key={n} className="px-2 py-0.5 rounded text-[10px] font-mono bg-green-900/20 border border-green-800/30 text-green-400">{n}</span>
+                              ));
+                            }
+                            const arr = Array.isArray(sk) ? sk : [];
+                            return arr.map((s: any, i: number) => (
+                              <span key={i} className="px-2 py-0.5 rounded text-[10px] font-mono bg-green-900/20 border border-green-800/30 text-green-400">
+                                {typeof s === 'string' ? s : s.name}
+                              </span>
+                            ));
+                          })()}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {error && (
+                    <div className="text-xs text-red-400 bg-red-900/20 p-2 rounded-lg border border-red-800/30">{error}</div>
+                  )}
+                </div>
+              )}
+            </>
+          ) : mode === 'single' ? (
             <>
               {step === 1 && (
                 <div className="space-y-4">
@@ -592,6 +717,15 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
                 Back
               </button>
             )}
+            {mode === 'store' && storeStep === 'review' && (
+              <button
+                onClick={() => { setStoreStep('input'); setStoreCharacter(null); setError(''); }}
+                disabled={busy}
+                className="px-4 py-2 text-sm rounded-lg border border-white/15 text-white/60 hover:bg-white/5 cursor-pointer disabled:opacity-40"
+              >
+                Back
+              </button>
+            )}
           </div>
           <div className="flex gap-3">
             <button
@@ -620,7 +754,7 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
                   {busy ? 'Hiring...' : 'HIRE'}
                 </button>
               )
-            ) : (
+            ) : mode === 'bulk' ? (
               bulkStep === 'input' ? (
                 <button
                   onClick={() => setBulkStep('review')}
@@ -640,6 +774,17 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
                   {busy ? `Hiring ${bulkProgress.done}/${bulkProgress.total}...` : `HIRE ALL (${bulkEntries.length})`}
                 </button>
               )
+            ) : (
+              storeStep === 'review' ? (
+                <button
+                  onClick={handleStoreHire}
+                  disabled={busy || !storeName.trim() || !storeRoleId.trim() || existingRoles.some(r => r.id === storeRoleId)}
+                  className="px-5 py-2 text-sm text-white rounded-lg font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{ background: '#2E7D32' }}
+                >
+                  {busy ? 'Hiring...' : 'HIRE'}
+                </button>
+              ) : null
             )}
           </div>
         </div>
