@@ -413,6 +413,54 @@ body {
   animation: wave-edge-flow 1s linear infinite;
 }
 
+/* Event markdown styles */
+.event-markdown h1, .event-markdown h2, .event-markdown h3,
+.event-markdown h4, .event-markdown h5, .event-markdown h6 {
+  font-weight: 700;
+  margin: 0.5em 0 0.25em;
+}
+.event-markdown h1 { font-size: 1.1em; }
+.event-markdown h2 { font-size: 1em; }
+.event-markdown h3 { font-size: 0.95em; color: rgba(134, 239, 172, 0.7); }
+.event-markdown p { margin: 0.25em 0; }
+.event-markdown ul, .event-markdown ol { margin: 0.25em 0; padding-left: 1.5em; }
+.event-markdown li { margin: 0.1em 0; }
+.event-markdown ul { list-style: disc; }
+.event-markdown ol { list-style: decimal; }
+.event-markdown code {
+  background: rgba(255,255,255,0.08);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+.event-markdown pre {
+  background: rgba(0,0,0,0.3);
+  padding: 0.5em 0.75em;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 0.4em 0;
+}
+.event-markdown pre code { background: none; padding: 0; }
+.event-markdown table {
+  border-collapse: collapse;
+  margin: 0.4em 0;
+  font-size: 0.9em;
+}
+.event-markdown th, .event-markdown td {
+  border: 1px solid rgba(255,255,255,0.15);
+  padding: 0.25em 0.5em;
+}
+.event-markdown th { background: rgba(255,255,255,0.06); font-weight: 600; }
+.event-markdown strong { color: rgba(134, 239, 172, 1); }
+.event-markdown blockquote {
+  border-left: 3px solid rgba(134, 239, 172, 0.3);
+  padding-left: 0.75em;
+  margin: 0.3em 0;
+  opacity: 0.8;
+}
+.event-markdown a { color: #60a5fa; text-decoration: underline; }
+.event-markdown hr { border-color: rgba(255,255,255,0.1); margin: 0.5em 0; }
+
 /* Notification toast slide */
 @keyframes toast-in {
   from { transform: translateX(120%); opacity: 0; }

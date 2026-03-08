@@ -1,3 +1,5 @@
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { ActivityEvent } from '../../types';
 
 const ROLE_COLORS: Record<string, string> = {
@@ -16,12 +18,24 @@ export default function EventRow({ event, isThinkingCollapsed, onToggleThinking,
   const roleColor = ROLE_COLORS[event.roleId] ?? '#888';
 
   switch (event.type) {
-    case 'text':
+    case 'text': {
+      const rawText = (event.data.text as string) ?? '';
+      const displayText = compact ? rawText.slice(0, 300) : rawText;
+      // Only use markdown renderer if text contains markdown syntax
+      const hasMarkdown = /[#*|`\[\]_~>-]/.test(displayText);
+      if (!hasMarkdown) {
+        return (
+          <div className="text-green-300/90 whitespace-pre-wrap leading-relaxed">
+            {displayText}
+          </div>
+        );
+      }
       return (
-        <div className="text-green-300/90 whitespace-pre-wrap leading-relaxed">
-          {compact ? (event.data.text as string ?? '').slice(0, 300) : event.data.text as string}
+        <div className="text-green-300/90 leading-relaxed event-markdown">
+          <Markdown remarkPlugins={[remarkGfm]}>{displayText}</Markdown>
         </div>
       );
+    }
 
     case 'thinking': {
       const text = event.data.text as string ?? '';
