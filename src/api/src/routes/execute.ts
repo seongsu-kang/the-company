@@ -157,7 +157,6 @@ function handleStartJob(body: Record<string, unknown>, res: ServerResponse): voi
         sourceRole: 'ceo',
         parentJobId,
       });
-      roleStatus.set(cRole, 'working');
       jobIds.push(job.id);
     }
 
@@ -186,7 +185,6 @@ function handleStartJob(body: Record<string, unknown>, res: ServerResponse): voi
     parentJobId,
   });
 
-  roleStatus.set(roleId, 'working');
   jsonResponse(res, 200, { jobId: job.id });
 }
 
@@ -474,9 +472,8 @@ function handleAssign(body: Record<string, unknown>, req: IncomingMessage, res: 
     return;
   }
 
-  // Start job via JobManager
+  // Start job via JobManager (JobManager is source of truth for job status)
   const job = jobManager.startJob({ type: 'assign', roleId, task, sourceRole, readOnly });
-  roleStatus.set(roleId, 'working');
 
   // Bridge: stream job events as legacy SSE format
   startSSE(res);
@@ -511,14 +508,12 @@ function handleAssign(body: Record<string, unknown>, req: IncomingMessage, res: 
         break;
       case 'job:done':
         cleanupLifecycle();
-        roleStatus.set(roleId, 'idle');
         sendSSE(res, 'done', event.data);
         if (!res.writableEnded) res.end();
         job.stream.unsubscribe(subscriber);
         break;
       case 'job:error':
         cleanupLifecycle();
-        roleStatus.set(roleId, 'idle');
         sendSSE(res, 'error', { message: event.data.message });
         if (!res.writableEnded) res.end();
         job.stream.unsubscribe(subscriber);
@@ -562,7 +557,6 @@ function handleWave(body: Record<string, unknown>, req: IncomingMessage, res: Se
       task: `[CEO Wave] ${directive}`,
       sourceRole: 'ceo',
     });
-    roleStatus.set(cRole, 'working');
     jobs.push(job);
   }
 
@@ -600,7 +594,6 @@ function handleWave(body: Record<string, unknown>, req: IncomingMessage, res: Se
           sendSSE(res, 'stderr', { roleId: rolePrefix, message: event.data.message });
           break;
         case 'job:done':
-          roleStatus.set(rolePrefix, 'idle');
           sendSSE(res, 'role:done', { roleId: rolePrefix, ...event.data });
           doneCount++;
           if (doneCount >= jobs.length) {
@@ -609,7 +602,6 @@ function handleWave(body: Record<string, unknown>, req: IncomingMessage, res: Se
           }
           break;
         case 'job:error':
-          roleStatus.set(rolePrefix, 'idle');
           sendSSE(res, 'role:error', { roleId: rolePrefix, message: event.data.message });
           doneCount++;
           if (doneCount >= jobs.length) {
