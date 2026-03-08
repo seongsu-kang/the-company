@@ -637,6 +637,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   /* Hire/Fire handlers */
   const refreshRoles = () => {
     api.getCompany().then((c) => setRoles(c.roles)).catch(console.error);
+    api.getOrgTree().then((tree) => { setOrgNodes(tree.nodes); setOrgRootId(tree.root); }).catch(console.error);
   };
 
   const handleHireRole = async (input: CreateRoleInput, appearance: CharacterAppearance) => {
