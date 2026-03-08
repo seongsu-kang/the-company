@@ -131,13 +131,20 @@ async function startServer(): Promise<void> {
   const port = process.env.PORT ? Number(process.env.PORT) : await findFreePort();
   process.env.PORT = String(port);
 
-  // Detect company name from CLAUDE.md
+  // Detect company name from company/company.md (user-owned), fallback to CLAUDE.md
   let companyName = 'My Company';
   if (initialized) {
     try {
-      const claudeContent = fs.readFileSync(claudeMdPath, 'utf-8');
-      const titleMatch = claudeContent.match(/^#\s+(.+)/m);
-      if (titleMatch) companyName = titleMatch[1].trim();
+      const companyMdPath = path.join(process.env.COMPANY_ROOT!, 'company', 'company.md');
+      if (fs.existsSync(companyMdPath)) {
+        const companyContent = fs.readFileSync(companyMdPath, 'utf-8');
+        const titleMatch = companyContent.match(/^#\s+(.+)/m);
+        if (titleMatch) companyName = titleMatch[1].trim();
+      } else {
+        const claudeContent = fs.readFileSync(claudeMdPath, 'utf-8');
+        const titleMatch = claudeContent.match(/^#\s+(.+)/m);
+        if (titleMatch) companyName = titleMatch[1].trim();
+      }
     } catch {
       // ignore
     }
