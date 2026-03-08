@@ -963,6 +963,12 @@ body {
   display: inline-block;
   flex-shrink: 0;
 }
+.td-lvl {
+  font-size: 7px;
+  color: #FFD700;
+  margin-left: 1px;
+  opacity: 0.85;
+}
 .td-bubble {
   position: absolute;
   font-family: 'Courier New', monospace;

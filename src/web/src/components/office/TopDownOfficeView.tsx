@@ -53,6 +53,7 @@ interface TopDownOfficeViewProps {
   getAppearance?: (roleId: string) => CharacterAppearance;
   onCustomize?: (roleId: string) => void;
   onHireClick?: () => void;
+  roleLevels?: Record<string, { level: number; totalTokens: number; progress: number }>;
 }
 
 /* ─── Canvas constants ──────────────────── */
@@ -682,7 +683,7 @@ function drawScene(
 export default function TopDownOfficeView({
   roles, projects, roleStatuses, activeExecs,
   onRoleClick, onProjectClick, onBulletinClick, onDecisionsClick, onKnowledgeClick, onSettingsClick, onThemeClick, onStatsClick,
-  getRoleSpeech, getAppearance, onHireClick,
+  getRoleSpeech, getAppearance, onHireClick, roleLevels,
 }: TopDownOfficeViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -850,6 +851,14 @@ export default function TopDownOfficeView({
       dotEl.style.background = color;
       tag.appendChild(dotEl);
       tag.appendChild(document.createTextNode(displayName));
+      // Level badge
+      const lvl = roleLevels?.[id]?.level ?? 1;
+      if (lvl > 1) {
+        const lvlEl = document.createElement('span');
+        lvlEl.className = 'td-lvl';
+        lvlEl.textContent = `Lv.${lvl}`;
+        tag.appendChild(lvlEl);
+      }
       overlay.appendChild(tag);
 
       // Speech bubble
@@ -882,7 +891,7 @@ export default function TopDownOfficeView({
       lbl.addEventListener('mouseleave', () => { _hoverFacility = null; });
       overlay.appendChild(lbl);
     }
-  }, [assignedRoleIds, roles, projects, onProjectClick, onBulletinClick, onDecisionsClick, onKnowledgeClick, onSettingsClick, onThemeClick, onStatsClick]);
+  }, [assignedRoleIds, roles, projects, onProjectClick, onBulletinClick, onDecisionsClick, onKnowledgeClick, onSettingsClick, onThemeClick, onStatsClick, roleLevels]);
 
   // Update overlay positions
   const updateOverlay = useCallback(() => {

@@ -1279,6 +1279,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
               getRoleSpeech={ambient.getSpeech}
               getAppearance={getAppearance}
               onHireClick={() => setShowHireModal(true)}
+              roleLevels={roleLevels}
             />
           ) : (
           <div className={`${terminalOpen ? 'max-w-full' : 'max-w-[1100px]'} mx-auto h-full p-4 flex flex-col gap-3 relative z-[1]`}>

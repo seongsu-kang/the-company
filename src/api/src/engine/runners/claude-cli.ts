@@ -5,6 +5,7 @@ import os from 'node:os';
 import { assembleContext } from '../context-assembler.js';
 import { getSubordinates } from '../org-tree.js';
 import { readConfig } from '../../services/company-config.js';
+import { getTokenLedger } from '../../services/token-ledger.js';
 import type { ExecutionRunner, RunnerConfig, RunnerCallbacks, RunnerHandle, RunnerResult } from './types.js';
 
 /* ─── Dispatch Bridge Script (Python3) ────── */
@@ -221,8 +222,11 @@ export class ClaudeCliRunner implements ExecutionRunner {
 
     let output = '';
     let turnCount = 0;
+    let totalInput = 0;
+    let totalOutput = 0;
     const toolCalls: RunnerResult['toolCalls'] = [];
     const dispatches: RunnerResult['dispatches'] = [];
+    const tokenLedger = getTokenLedger(companyRoot);
 
     const promise = new Promise<RunnerResult>((resolve, reject) => {
       let buffer = '';
@@ -253,6 +257,18 @@ export class ClaudeCliRunner implements ExecutionRunner {
                 }
               },
               incrementTurn: () => { turnCount++; callbacks.onTurnComplete?.(turnCount); },
+              recordTokens: (input, out) => {
+                totalInput += input;
+                totalOutput += out;
+                tokenLedger.record({
+                  ts: new Date().toISOString(),
+                  jobId: config.jobId ?? 'unknown',
+                  roleId,
+                  model: modelName,
+                  inputTokens: input,
+                  outputTokens: out,
+                });
+              },
             });
           } catch {
             // JSON 파싱 실패 — 일반 텍스트로 처리
@@ -276,6 +292,18 @@ export class ClaudeCliRunner implements ExecutionRunner {
               appendOutput: (t) => { output += t; },
               addToolCall: (name, input) => { toolCalls.push({ name, input }); },
               incrementTurn: () => { turnCount++; },
+              recordTokens: (input, out) => {
+                totalInput += input;
+                totalOutput += out;
+                tokenLedger.record({
+                  ts: new Date().toISOString(),
+                  jobId: config.jobId ?? 'unknown',
+                  roleId,
+                  model: modelName,
+                  inputTokens: input,
+                  outputTokens: out,
+                });
+              },
             });
           } catch {
             output += buffer;
@@ -292,7 +320,7 @@ export class ClaudeCliRunner implements ExecutionRunner {
         resolve({
           output,
           turns: turnCount || 1,
-          totalTokens: { input: 0, output: 0 }, // CLI에서는 토큰 추적 불가
+          totalTokens: { input: totalInput, output: totalOutput },
           toolCalls,
           dispatches,
         });
@@ -319,6 +347,7 @@ interface StreamHandlers {
   appendOutput: (text: string) => void;
   addToolCall: (name: string, input?: Record<string, unknown>) => void;
   incrementTurn: () => void;
+  recordTokens?: (inputTokens: number, outputTokens: number) => void;
 }
 
 function processStreamEvent(
@@ -353,8 +382,17 @@ function processStreamEvent(
     }
 
     case 'result': {
-      // 최종 결과: { type: "result", result: "..." }
+      // 최종 결과: { type: "result", result: "...", usage: { input_tokens, output_tokens }, cost_usd, ... }
       // result 텍스트는 assistant 이벤트에서 이미 전달됨 — 중복 방지를 위해 스킵
+      // But extract token usage for tracking
+      const usage = event.usage as Record<string, number> | undefined;
+      if (usage && handlers.recordTokens) {
+        const inputTk = usage.input_tokens ?? 0;
+        const outputTk = usage.output_tokens ?? 0;
+        if (inputTk > 0 || outputTk > 0) {
+          handlers.recordTokens(inputTk, outputTk);
+        }
+      }
       break;
     }
 
