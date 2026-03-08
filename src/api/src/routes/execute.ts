@@ -396,14 +396,25 @@ function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
 
 /* ─── SSE helpers ────────────────────────────── */
 
-function sendSSE(res: ServerResponse, event: string, data: unknown): void {
-  res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+function sendSSE(res: ServerResponse, event: string, data: unknown): boolean {
+  if (res.destroyed || res.writableEnded) return false;
+  try {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function jsonResponse(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(body));
 }
+
+/** SSE timeout: max duration for a single SSE connection (10 minutes) */
+const SSE_TIMEOUT_MS = 10 * 60 * 1000;
+/** SSE heartbeat interval (15 seconds) */
+const SSE_HEARTBEAT_MS = 15 * 1000;
 
 function startSSE(res: ServerResponse): void {
   res.writeHead(200, {
@@ -412,6 +423,31 @@ function startSSE(res: ServerResponse): void {
     'Connection': 'keep-alive',
     'X-Accel-Buffering': 'no',
   });
+}
+
+/** Start SSE heartbeat + timeout. Returns cleanup function. */
+function startSSELifecycle(res: ServerResponse, onTimeout: () => void): () => void {
+  const heartbeat = setInterval(() => {
+    if (res.destroyed || res.writableEnded) {
+      clearInterval(heartbeat);
+      return;
+    }
+    try {
+      res.write(': heartbeat\n\n');
+    } catch {
+      clearInterval(heartbeat);
+    }
+  }, SSE_HEARTBEAT_MS);
+
+  const timeout = setTimeout(() => {
+    console.warn('[SSE] Connection timeout — forcing close');
+    onTimeout();
+  }, SSE_TIMEOUT_MS);
+
+  return () => {
+    clearInterval(heartbeat);
+    clearTimeout(timeout);
+  };
 }
 
 /* ─── POST /api/exec/assign ──────────────────── */
@@ -445,6 +481,13 @@ function handleAssign(body: Record<string, unknown>, req: IncomingMessage, res: 
   startSSE(res);
   sendSSE(res, 'start', { id: job.id, roleId, task, sourceRole });
 
+  const cleanupLifecycle = startSSELifecycle(res, () => {
+    roleStatus.set(roleId, 'idle');
+    sendSSE(res, 'error', { message: 'SSE timeout — connection forcibly closed after 10 minutes' });
+    if (!res.writableEnded) res.end();
+    job.stream.unsubscribe(subscriber);
+  });
+
   const subscriber = (event: ActivityEvent) => {
     switch (event.type) {
       case 'text':
@@ -466,15 +509,17 @@ function handleAssign(body: Record<string, unknown>, req: IncomingMessage, res: 
         sendSSE(res, 'stderr', { message: event.data.message });
         break;
       case 'job:done':
+        cleanupLifecycle();
         roleStatus.set(roleId, 'idle');
         sendSSE(res, 'done', event.data);
-        res.end();
+        if (!res.writableEnded) res.end();
         job.stream.unsubscribe(subscriber);
         break;
       case 'job:error':
+        cleanupLifecycle();
         roleStatus.set(roleId, 'idle');
         sendSSE(res, 'error', { message: event.data.message });
-        res.end();
+        if (!res.writableEnded) res.end();
         job.stream.unsubscribe(subscriber);
         break;
     }
@@ -484,6 +529,7 @@ function handleAssign(body: Record<string, unknown>, req: IncomingMessage, res: 
 
   // Client disconnect → unsubscribe only (job keeps running!)
   req.on('close', () => {
+    cleanupLifecycle();
     job.stream.unsubscribe(subscriber);
   });
 }
@@ -743,6 +789,18 @@ function handleSessionMessage(
   startSSE(res);
   sendSSE(res, 'session', { sessionId, ceoMessageId: ceoMsg.id, roleMessageId: roleMsg.id });
 
+  // SSE lifecycle: heartbeat keeps connection alive, timeout prevents stuck connections
+  const cleanupSSELifecycle = startSSELifecycle(res, () => {
+    // Timeout reached — force close the SSE connection
+    cleanupChildSubscriptions();
+    updateMessage(sessionId, roleMsg.id, { status: 'error' });
+    roleStatus.set(roleId, 'idle');
+    completeActivity(roleId);
+    sendSSE(res, 'error', { message: 'SSE timeout — connection forcibly closed after 10 minutes' });
+    if (!res.writableEnded) res.end();
+    handle.abort();
+  });
+
   roleStatus.set(roleId, 'working');
   setActivity(roleId, content.slice(0, 80));
 
@@ -842,6 +900,7 @@ function handleSessionMessage(
 
   handle.promise
     .then((result: RunnerResult) => {
+      cleanupSSELifecycle();
       cleanupChildSubscriptions();
       updateMessage(sessionId, roleMsg.id, { content: roleMsg.content, status: 'done' });
       roleStatus.set(roleId, 'idle');
@@ -856,18 +915,20 @@ function handleSessionMessage(
         turns: result.turns,
         tokens: result.totalTokens,
       });
-      res.end();
+      if (!res.writableEnded) res.end();
     })
     .catch((err: Error) => {
+      cleanupSSELifecycle();
       cleanupChildSubscriptions();
       updateMessage(sessionId, roleMsg.id, { status: 'error' });
       roleStatus.set(roleId, 'idle');
       completeActivity(roleId);
       sendSSE(res, 'error', { message: err.message });
-      res.end();
+      if (!res.writableEnded) res.end();
     });
 
   req.on('close', () => {
+    cleanupSSELifecycle();
     cleanupChildSubscriptions();
     if (roleMsg.status === 'streaming') {
       handle.abort();

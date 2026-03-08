@@ -230,6 +230,32 @@ export class ClaudeCliRunner implements ExecutionRunner {
 
     const promise = new Promise<RunnerResult>((resolve, reject) => {
       let buffer = '';
+      let resolved = false;
+      let exitCode: number | null = null;
+      let exitSignal: string | null = null;
+
+      // Safety net: if 'exit' fires but 'close' doesn't follow within 5s,
+      // force resolve. This handles grandchild processes keeping stdout pipe open.
+      proc.on('exit', (code, signal) => {
+        exitCode = code;
+        exitSignal = signal ?? null;
+        setTimeout(() => {
+          if (!resolved) {
+            console.warn(`[Runner] Safety net: 'close' not fired 5s after 'exit' (code=${code}, signal=${signal}). Force resolving.`);
+            resolved = true;
+            try { fs.unlinkSync(promptFile); } catch { /* ignore */ }
+            try { fs.unlinkSync(dispatchScript); } catch { /* ignore */ }
+            try { fs.rmSync(runnerOutputDir, { recursive: true, force: true }); } catch { /* ignore */ }
+            resolve({
+              output,
+              turns: turnCount || 1,
+              totalTokens: { input: totalInput, output: totalOutput },
+              toolCalls,
+              dispatches,
+            });
+          }
+        }, 5000);
+      });
 
       proc.stdout.on('data', (data: Buffer) => {
         buffer += data.toString();
@@ -283,6 +309,11 @@ export class ClaudeCliRunner implements ExecutionRunner {
       });
 
       proc.on('close', (code, signal) => {
+        if (resolved) {
+          console.log(`[Runner] 'close' fired after safety-net resolve (code=${code}, signal=${signal})`);
+          return;
+        }
+        resolved = true;
         console.log(`[Runner] Done: code=${code}, signal=${signal}, output=${output.length}chars`);
         // 버퍼에 남은 데이터 처리
         if (buffer.trim()) {
@@ -327,6 +358,8 @@ export class ClaudeCliRunner implements ExecutionRunner {
       });
 
       proc.on('error', (err) => {
+        if (resolved) return;
+        resolved = true;
         try { fs.unlinkSync(promptFile); } catch { /* ignore */ }
         try { fs.unlinkSync(dispatchScript); } catch { /* ignore */ }
         try { fs.rmSync(runnerOutputDir, { recursive: true, force: true }); } catch { /* ignore */ }

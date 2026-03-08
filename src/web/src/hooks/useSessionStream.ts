@@ -48,10 +48,25 @@ export default function useSessionStream() {
       const decoder = new TextDecoder();
       let buffer = '';
 
+      // Stale connection detection: if no data received for 60s, consider dead
+      // Server sends heartbeats every 15s, so 60s = 4 missed heartbeats
+      let lastDataAt = Date.now();
+      const STALE_TIMEOUT_MS = 60_000;
+      const staleCheck = setInterval(() => {
+        if (Date.now() - lastDataAt > STALE_TIMEOUT_MS) {
+          clearInterval(staleCheck);
+          controller.abort();
+          callbacks.onError('Connection stale — no data received for 60s');
+        }
+      }, 10_000);
+
+      try {
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
+        lastDataAt = Date.now();
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop() ?? '';
@@ -120,6 +135,10 @@ export default function useSessionStream() {
             currentEvent = '';
           }
         }
+      }
+
+      } finally {
+        clearInterval(staleCheck);
       }
     }).catch((err) => {
       if (err.name !== 'AbortError') {
