@@ -52,6 +52,8 @@ interface Props {
   onLoadHistory: () => Promise<void>;
   onRestore: (sha: string) => Promise<void>;
   saving: boolean;
+  onDelegate?: (filesSummary: string) => void;
+  delegateRoleName?: string;
 }
 
 type Tab = 'save' | 'history';
@@ -67,7 +69,7 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
-export default function SaveModal({ status, history, onClose, onSave, onLoadHistory, onRestore, saving }: Props) {
+export default function SaveModal({ status, history, onClose, onSave, onLoadHistory, onRestore, saving, onDelegate, delegateRoleName }: Props) {
   const [tab, setTab] = useState<Tab>('save');
   const [message, setMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -251,9 +253,9 @@ export default function SaveModal({ status, history, onClose, onSave, onLoadHist
                 </div>
               )}
 
-              {/* Save Button */}
+              {/* Save Buttons */}
               {allFiles.length > 0 && (
-                <div className="flex gap-3">
+                <div className="flex gap-2">
                   <button
                     onClick={handleSave}
                     disabled={saving}
@@ -266,6 +268,24 @@ export default function SaveModal({ status, history, onClose, onSave, onLoadHist
                   >
                     {saving ? 'SAVING...' : (status?.hasRemote ? 'SAVE & PUSH' : 'SAVE')}
                   </button>
+                  {onDelegate && (
+                    <button
+                      onClick={() => {
+                        const summary = allFiles.map(f => `${f.status} ${f.file}`).join('\n');
+                        onDelegate(summary);
+                      }}
+                      disabled={saving}
+                      className="py-2.5 px-4 text-[11px] font-bold uppercase tracking-wider cursor-pointer disabled:opacity-50"
+                      style={{
+                        background: 'var(--terminal-bg)',
+                        color: 'var(--terminal-text)',
+                        border: '2px solid var(--pixel-border)',
+                      }}
+                      title={`Delegate to ${delegateRoleName ?? 'AI role'} — they'll review, commit, push & merge`}
+                    >
+                      {'\uD83E\uDD16'} {delegateRoleName?.toUpperCase() ?? 'DELEGATE'}
+                    </button>
+                  )}
                 </div>
               )}
 

@@ -1635,20 +1635,41 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
       )}
 
       {/* Save Modal */}
-      {showSaveModal && (
-        <SaveModal
-          status={saveHook.status}
-          history={saveHook.history}
-          onClose={() => setShowSaveModal(false)}
-          onSave={async (msg) => {
-            const result = await saveHook.save(msg);
-            return result;
-          }}
-          onLoadHistory={saveHook.loadHistory}
-          onRestore={saveHook.restore}
-          saving={saveHook.state === 'saving'}
-        />
-      )}
+      {showSaveModal && (() => {
+        // Pick best delegate: CTO > any C-level > any role
+        const delegateRole = roles.find(r => r.id === 'cto')
+          ?? roles.find(r => r.level === 'c-level')
+          ?? roles[0];
+        return (
+          <SaveModal
+            status={saveHook.status}
+            history={saveHook.history}
+            onClose={() => setShowSaveModal(false)}
+            onSave={async (msg) => {
+              const result = await saveHook.save(msg);
+              return result;
+            }}
+            onLoadHistory={saveHook.loadHistory}
+            onRestore={saveHook.restore}
+            saving={saveHook.state === 'saving'}
+            delegateRoleName={delegateRole?.name ?? delegateRole?.id}
+            onDelegate={delegateRole ? async (filesSummary) => {
+              setShowSaveModal(false);
+              // Create session and send "do" message
+              try {
+                const session = await api.createSession(delegateRole.id, 'do');
+                setSessions((prev) => [session, ...prev]);
+                setActiveSessionId(session.id);
+                setTerminalOpen(true);
+                const prompt = `Review the following unsaved changes, write a proper commit message, save (git add + commit), and push. If the current branch is not the main branch, create a PR and merge it.\n\nChanged files:\n${filesSummary}`;
+                handleSendMessage(session.id, prompt, 'do');
+              } catch (err) {
+                addToast(`Failed to delegate: ${err instanceof Error ? err.message : 'error'}`, '#B71C1C');
+              }
+            } : undefined}
+          />
+        );
+      })()}
 
       {/* Stats Panel */}
       {showStatsPanel && (
