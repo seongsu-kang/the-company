@@ -170,7 +170,8 @@ async function startServer(): Promise<void> {
   const { createHttpServer } = await import('../src/api/src/create-server.js');
   const server = createHttpServer();
 
-  server.listen(port, () => {
+  const host = process.env.HOST || '0.0.0.0';
+  server.listen(port, host, () => {
     openBrowser(url);
   });
 
