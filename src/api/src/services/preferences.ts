@@ -24,11 +24,17 @@ export interface SpeechSettings {
   dailyBudgetUsd: number;
 }
 
+export interface FurnitureOverride {
+  offsetX: number;
+  offsetY: number;
+}
+
 export interface Preferences {
   appearances: Record<string, CharacterAppearance>;
   theme: string;
   speech?: SpeechSettings;
   language?: string; // 'en' | 'ko' | 'ja' | 'auto'
+  furnitureOverrides?: Record<string, FurnitureOverride>; // keyed by FurnitureDef.id
 }
 
 const CONFIG_DIR = '.tycono';
@@ -50,6 +56,7 @@ export function readPreferences(companyRoot: string): Preferences {
       theme: data.theme ?? 'default',
       speech: data.speech ?? undefined,
       language: data.language ?? undefined,
+      furnitureOverrides: data.furnitureOverrides ?? undefined,
     };
   } catch {
     return { ...DEFAULT, appearances: {} };
@@ -75,6 +82,9 @@ export function mergePreferences(companyRoot: string, partial: Partial<Preferenc
       ? { ...current.speech, ...partial.speech }
       : current.speech,
     language: partial.language !== undefined ? partial.language : current.language,
+    furnitureOverrides: partial.furnitureOverrides !== undefined
+      ? { ...current.furnitureOverrides, ...partial.furnitureOverrides }
+      : current.furnitureOverrides,
   };
   writePreferences(companyRoot, merged);
   return merged;

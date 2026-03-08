@@ -250,7 +250,7 @@ const DRAW_MAP: Record<FurnitureType, DrawFn> = {
 };
 
 /** Resolve absolute position from room-relative offset */
-function resolvePos(def: FurnitureDef, room: RoomDef): { x: number; y: number } {
+export function resolvePos(def: FurnitureDef, room: RoomDef): { x: number; y: number } {
   const baseX = def.zone === 'wall' ? room.wx : room.fx;
   const baseY = def.zone === 'wall' ? room.wy : room.fy;
   const x = def.anchorX === 'right'
@@ -317,4 +317,84 @@ export function buildFacilityZonesFromFurniture(layout: FloorLayout): FacilityZo
     });
   }
   return zones;
+}
+
+/* ═══════════════════════════════════════════
+   EDIT MODE HELPERS
+   ═══════════════════════════════════════════ */
+
+/** Approximate bounding box for each furniture type */
+const FURNITURE_BOUNDS: Record<FurnitureType, { w: number; h: number }> = {
+  'bookshelf': { w: 22, h: 20 },
+  'plant': { w: 10, h: 12 },
+  'meeting-table': { w: 36, h: 28 },
+  'sofa': { w: 38, h: 16 },
+  'coffee-table': { w: 22, h: 10 },
+  'coffee-machine': { w: 10, h: 14 },
+  'window': { w: 16, h: 14 },
+  'picture': { w: 10, h: 8 },
+  'clock': { w: 7, h: 7 },
+  'whiteboard': { w: 26, h: 16 },
+  'bulletin-board': { w: 22, h: 16 },
+  'shelf': { w: 20, h: 8 },
+  'screen': { w: 16, h: 12 },
+};
+
+export function getFurnitureBounds(type: FurnitureType): { w: number; h: number } {
+  return FURNITURE_BOUNDS[type] ?? { w: 16, h: 16 };
+}
+
+/** Hit-test floor furniture at canvas coords (mx, my). Returns def id or null. */
+export function hitTestFurniture(
+  layout: FloorLayout, mx: number, my: number, deskRooms: Set<string>,
+): string | null {
+  // Check floor furniture (reverse order = top items first)
+  for (let i = layout.furniture.length - 1; i >= 0; i--) {
+    const def = layout.furniture[i];
+    const room = layout.rooms[def.room];
+    if (!room) continue;
+    if (def.condition === 'no-desks' && deskRooms.has(def.room)) continue;
+    const { x, y } = resolvePos(def, room);
+    const b = getFurnitureBounds(def.type);
+    if (mx >= x && mx <= x + b.w && my >= y && my <= y + b.h) return def.id;
+  }
+  // Check wall decorations too
+  for (let i = layout.wallDecorations.length - 1; i >= 0; i--) {
+    const def = layout.wallDecorations[i];
+    const room = layout.rooms[def.room];
+    if (!room) continue;
+    const { x, y } = resolvePos(def, room);
+    const b = getFurnitureBounds(def.type);
+    if (mx >= x && mx <= x + b.w && my >= y && my <= y + b.h) return def.id;
+  }
+  return null;
+}
+
+/** Draw edit-mode highlight around a furniture piece */
+export function drawFurnitureHighlight(
+  ctx: CanvasRenderingContext2D,
+  layout: FloorLayout,
+  defId: string,
+  color: string,
+  deskRooms: Set<string>,
+): void {
+  const allDefs = [...layout.wallDecorations, ...layout.furniture];
+  const def = allDefs.find(d => d.id === defId);
+  if (!def) return;
+  if (def.condition === 'no-desks' && deskRooms.has(def.room)) return;
+  const room = layout.rooms[def.room];
+  if (!room) return;
+  const { x, y } = resolvePos(def, room);
+  const b = getFurnitureBounds(def.type);
+  ctx.save();
+  // Semi-transparent fill
+  ctx.fillStyle = color;
+  ctx.globalAlpha = 0.2;
+  ctx.fillRect(x - 1, y - 1, b.w + 2, b.h + 2);
+  // Solid border
+  ctx.globalAlpha = 0.9;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x - 0.5, y - 0.5, b.w + 1, b.h + 1);
+  ctx.restore();
 }

@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useMemo } from 'react';
+import { useRef, useEffect, useCallback, useMemo, useState } from 'react';
 import type { Role, Project, Wave, Standup, Decision } from '../../types/index';
 import type { CharacterAppearance } from '../../types/appearance';
 import { getDefaultAppearance } from '../../types/appearance';
@@ -8,7 +8,7 @@ import { applyStyles } from './TopDownCharCanvas';
 import './sprites/data'; // trigger blueprint registration
 import { WALK_FRAMES } from './sprites/data/walk-frames-mini';
 import type { WalkDirection } from './sprites/data/walk-frames-mini';
-import { generateFloorLayout, selectPreset } from './floor-template';
+import { generateFloorLayout, selectPreset, applyFurnitureOverrides } from './floor-template';
 import type { FloorLayout, DeskDef, RoomDef } from './floor-template';
 import {
   setRenderContext, px, dot, srand, rand,
@@ -16,8 +16,10 @@ import {
   drawDesk, drawChair,
   renderWallDecorations, pushFurnitureEntities,
   buildFacilityZonesFromFurniture,
+  hitTestFurniture, drawFurnitureHighlight,
   type FacilityZone,
 } from './furniture-renderer';
+import { api } from '../../api/client';
 
 /* ═══════════════════════════════════════════
    TopDown 3/4 Office View
@@ -102,6 +104,10 @@ function assignDesks(roleIds: string[]): Record<string, DeskDef> {
 let _ctx: CanvasRenderingContext2D;
 let _hoverRole: string | null = null;
 let _hoverFacility: string | null = null;
+let _editMode = false;
+let _hoverFurniture: string | null = null;
+let _selectedFurniture: string | null = null;
+let _dragging: { defId: string; startMx: number; startMy: number; origOffX: number; origOffY: number } | null = null;
 
 
 /* ═══════════════════════════════════════════
@@ -618,6 +624,17 @@ function drawScene(
     _ctx.restore();
   }
 
+  // Edit mode: furniture highlights
+  if (_editMode) {
+    const editDeskRooms = new Set(Object.values(DESKS).map(d => d.room));
+    if (_hoverFurniture && _hoverFurniture !== _selectedFurniture) {
+      drawFurnitureHighlight(_ctx, _layout, _hoverFurniture, '#FBBF24', editDeskRooms);
+    }
+    if (_selectedFurniture) {
+      drawFurnitureHighlight(_ctx, _layout, _selectedFurniture, '#3B82F6', editDeskRooms);
+    }
+  }
+
   // Draw hover highlight
   if (_hoverRole) {
     const d = DESKS[_hoverRole];
@@ -651,6 +668,23 @@ export default function TopDownOfficeView({
   const charsRef = useRef<Record<string, CharState>>({});
   const frameRef = useRef(0);
   const zoomRef = useRef(DEFAULT_ZOOM);
+  const [editMode, setEditMode] = useState(false);
+  const overridesRef = useRef<Record<string, { offsetX: number; offsetY: number }>>({});
+
+  // Sync editMode to module-level flag for drawScene
+  useEffect(() => { _editMode = editMode; }, [editMode]);
+
+  // Load furniture overrides from preferences on mount
+  useEffect(() => {
+    api.getPreferences().then((prefs: Record<string, unknown>) => {
+      const ov = prefs.furnitureOverrides as Record<string, { offsetX: number; offsetY: number }> | undefined;
+      if (ov && Object.keys(ov).length > 0) {
+        overridesRef.current = ov;
+        _layout = applyFurnitureOverrides(_layout, ov);
+        _facilityZones = buildFacilityZonesFromFurniture(_layout);
+      }
+    }).catch(() => { /* ignore */ });
+  }, []);
 
   // Mutable refs for data the animation loop reads
   const propsRef = useRef({ roleStatuses, activeExecs, getRoleSpeech, getAppearance });
@@ -664,7 +698,10 @@ export default function TopDownOfficeView({
   useEffect(() => {
     const count = assignedRoleIds.length;
     const newPreset = selectPreset(count, layoutRef.current.preset);
-    const newLayout = generateFloorLayout(count, newPreset);
+    let newLayout = generateFloorLayout(count, newPreset);
+    if (Object.keys(overridesRef.current).length > 0) {
+      newLayout = applyFurnitureOverrides(newLayout, overridesRef.current);
+    }
     _layout = newLayout;
     layoutRef.current = newLayout;
     DESKS = assignDesks(assignedRoleIds);
@@ -885,23 +922,120 @@ export default function TopDownOfficeView({
     return null;
   }, []);
 
-  // Mouse move — hover detection
-  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    const hit = hitTest(e);
+  // Helper: get canvas-space coords from mouse event
+  const canvasCoords = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
+    if (!canvas) return { mx: 0, my: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const z = zoomRef.current;
+    return { mx: (e.clientX - rect.left) / z, my: (e.clientY - rect.top) / z };
+  }, []);
+
+  // Save furniture overrides to server
+  const saveFurnitureOverrides = useCallback((overrides: Record<string, { offsetX: number; offsetY: number }>) => {
+    overridesRef.current = overrides;
+    api.updatePreferences({ furnitureOverrides: overrides }).catch(() => { /* ignore */ });
+  }, []);
+
+  // Mouse move — hover detection + drag
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+
+    // Dragging furniture
+    if (_editMode && _dragging) {
+      const { mx, my } = canvasCoords(e);
+      const allDefs = [..._layout.furniture, ..._layout.wallDecorations];
+      const def = allDefs.find(d => d.id === _dragging!.defId);
+      if (!def) return;
+      const room = _layout.rooms[def.room];
+      if (!room) return;
+
+      // Calculate new offset from mouse delta
+      const dx = mx - _dragging.startMx;
+      const dy = my - _dragging.startMy;
+      const newOffX = Math.round(_dragging.origOffX + dx);
+      const newOffY = Math.round(_dragging.origOffY + dy);
+
+      // Update the def in the layout directly (mutate for perf — rebuilt on release)
+      def.offsetX = newOffX;
+      def.offsetY = newOffY;
+      // Rebuild facility zones during drag for live preview
+      _facilityZones = buildFacilityZonesFromFurniture(_layout);
+      if (canvas) canvas.style.cursor = 'grabbing';
+      return;
+    }
+
+    if (_editMode) {
+      const { mx, my } = canvasCoords(e);
+      const deskRooms = new Set(Object.values(DESKS).map(d => d.room));
+      const fId = hitTestFurniture(_layout, mx, my, deskRooms);
+      _hoverFurniture = fId;
+      _hoverRole = null;
+      _hoverFacility = null;
+      if (canvas) canvas.style.cursor = fId ? 'grab' : 'default';
+      return;
+    }
+
+    const hit = hitTest(e);
     _hoverRole = hit?.type === 'role' ? hit.id : null;
     _hoverFacility = hit?.type === 'facility' ? hit.id : null;
+    _hoverFurniture = null;
     if (canvas) canvas.style.cursor = hit ? 'pointer' : 'default';
-  }, [hitTest]);
+  }, [hitTest, canvasCoords]);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!_editMode) return;
+    const { mx, my } = canvasCoords(e);
+    const deskRooms = new Set(Object.values(DESKS).map(d => d.room));
+    const fId = hitTestFurniture(_layout, mx, my, deskRooms);
+    if (fId) {
+      const allDefs = [..._layout.furniture, ..._layout.wallDecorations];
+      const def = allDefs.find(d => d.id === fId);
+      if (def) {
+        _selectedFurniture = fId;
+        _dragging = { defId: fId, startMx: mx, startMy: my, origOffX: def.offsetX, origOffY: def.offsetY };
+        e.preventDefault();
+      }
+    } else {
+      _selectedFurniture = null;
+    }
+  }, [canvasCoords]);
+
+  const handleMouseUp = useCallback((_e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!_dragging) return;
+    const allDefs = [..._layout.furniture, ..._layout.wallDecorations];
+    const def = allDefs.find(d => d.id === _dragging!.defId);
+    if (def) {
+      // Persist the override
+      const newOverrides = { ...overridesRef.current, [def.id]: { offsetX: def.offsetX, offsetY: def.offsetY } };
+      saveFurnitureOverrides(newOverrides);
+      _facilityZones = buildFacilityZonesFromFurniture(_layout);
+    }
+    _dragging = null;
+    if (canvasRef.current) canvasRef.current.style.cursor = 'grab';
+  }, [saveFurnitureOverrides]);
 
   const handleMouseLeave = useCallback(() => {
+    if (_dragging) {
+      // Cancel drag on leave — revert
+      const allDefs = [..._layout.furniture, ..._layout.wallDecorations];
+      const def = allDefs.find(d => d.id === _dragging!.defId);
+      if (def) {
+        def.offsetX = _dragging.origOffX;
+        def.offsetY = _dragging.origOffY;
+        _facilityZones = buildFacilityZonesFromFurniture(_layout);
+      }
+      _dragging = null;
+    }
     _hoverRole = null;
     _hoverFacility = null;
+    _hoverFurniture = null;
     if (canvasRef.current) canvasRef.current.style.cursor = 'default';
   }, []);
 
   // Canvas click handler
   const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (_editMode) return; // clicks handled by mouseDown/Up in edit mode
     const hit = hitTest(e);
     if (!hit) return;
     if (hit.type === 'role') { onRoleClick(hit.id); return; }
@@ -927,11 +1061,21 @@ export default function TopDownOfficeView({
           height={_layout.canvasH}
           className="td-canvas"
           onClick={handleClick}
+          onMouseDown={handleMouseDown}
+          onMouseUp={handleMouseUp}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
         />
         <div ref={overlayRef} className="td-overlay" />
       </div>
+      <button
+        className={`td-edit-btn${editMode ? ' td-edit-btn--active' : ''}`}
+        onClick={() => { setEditMode(m => !m); _selectedFurniture = null; _dragging = null; }}
+        title={editMode ? 'Exit Edit Mode' : 'Edit Furniture Layout'}
+      >
+        <span className="td-edit-btn__icon">{editMode ? '✓' : '✎'}</span>
+        <span className="td-edit-btn__label">{editMode ? 'DONE' : 'EDIT'}</span>
+      </button>
       {onHireClick && (
         <button className="td-hire-btn" onClick={onHireClick} title="Hire New Role">
           <span className="td-hire-btn__icon">+</span>

@@ -483,3 +483,24 @@ export function generateFloorLayout(deskCount: number, preset?: Preset): FloorLa
     case 'L': return presetL(deskCount);
   }
 }
+
+/** Apply user overrides (from preferences) to furniture offsets */
+export function applyFurnitureOverrides(
+  layout: FloorLayout,
+  overrides: Record<string, { offsetX: number; offsetY: number }>,
+): FloorLayout {
+  if (!overrides || Object.keys(overrides).length === 0) return layout;
+
+  const applyTo = (defs: FurnitureDef[]): FurnitureDef[] =>
+    defs.map(d => {
+      const ov = overrides[d.id];
+      if (!ov) return d;
+      return { ...d, offsetX: ov.offsetX, offsetY: ov.offsetY };
+    });
+
+  return {
+    ...layout,
+    wallDecorations: applyTo(layout.wallDecorations),
+    furniture: applyTo(layout.furniture),
+  };
+}
