@@ -3,25 +3,187 @@
  *
  * POST /api/speech/chat — History-aware channel conversation.
  * AI reads channel history and responds in character.
- * Uses Haiku for cost efficiency (~$0.0006/call).
+ * Uses Haiku with AKB tool-use for grounded, context-aware chat.
  */
 import { Router, Request, Response, NextFunction } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
+import { glob } from 'glob';
 import { COMPANY_ROOT, readFile, fileExists, listFiles } from '../services/file-reader.js';
 import { buildOrgTree } from '../engine/index.js';
 import { parseMarkdownTable, extractBoldKeyValues } from '../services/markdown-parser.js';
-import { AnthropicProvider, ClaudeCliProvider, type LLMProvider } from '../engine/llm-adapter.js';
+import {
+  AnthropicProvider, ClaudeCliProvider,
+  type LLMProvider, type ToolDefinition, type LLMMessage, type LLMResponse, type MessageContent,
+} from '../engine/llm-adapter.js';
 import { TokenLedger } from '../services/token-ledger.js';
 import { readConfig } from '../services/company-config.js';
 import { calcLevel } from '../utils/role-level.js';
 
 export const speechRouter = Router();
 
+/* ══════════════════════════════════════════════════
+ * AKB Tools — Let chat roles explore company knowledge
+ * ══════════════════════════════════════════════════ */
+
+const MAX_TOOL_ROUNDS = 2;
+const MAX_FILE_CHARS = 1500; // truncate large files
+
+const AKB_TOOLS: ToolDefinition[] = [
+  {
+    name: 'search_akb',
+    description: 'Search the company knowledge base (AKB) for keywords. Returns matching file paths and snippets. Use to find decisions, journals, projects, waves, standups, or any company knowledge.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string', description: 'Search keywords (e.g. "landing deploy", "refactoring decision", "Store Import")' },
+        path: { type: 'string', description: 'Optional subdirectory to search in (e.g. "operations/decisions", "projects", "knowledge"). Defaults to entire AKB.' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'read_file',
+    description: 'Read a specific file from the AKB. Use after search_akb to read full content of interesting files.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        path: { type: 'string', description: 'File path relative to AKB root (e.g. "operations/decisions/008-repo-structure.md", "projects/projects.md")' },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'list_files',
+    description: 'List files in a directory. Useful to discover what exists (e.g. "operations/waves/", "roles/engineer/journal/").',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        path: { type: 'string', description: 'Directory path relative to AKB root (e.g. "operations/standups", "roles/pm/journal")' },
+        pattern: { type: 'string', description: 'Glob pattern (default: "*.md")' },
+      },
+      required: ['path'],
+    },
+  },
+];
+
+function executeAkbTool(name: string, input: Record<string, unknown>): string {
+  try {
+    switch (name) {
+      case 'search_akb': {
+        const query = String(input.query || '');
+        const searchPath = input.path ? String(input.path) : '';
+        const searchDir = path.resolve(COMPANY_ROOT, searchPath);
+
+        if (!fs.existsSync(searchDir)) return `Directory not found: ${searchPath || '/'}`;
+
+        // Find all .md files, then grep for query keywords
+        const mdFiles = glob.sync('**/*.md', { cwd: searchDir, nodir: true }).slice(0, 100);
+        const keywords = query.toLowerCase().split(/\s+/).filter(Boolean);
+        const results: string[] = [];
+
+        for (const file of mdFiles) {
+          const fullPath = path.join(searchDir, file);
+          const content = fs.readFileSync(fullPath, 'utf-8');
+          const lower = content.toLowerCase();
+          const matchCount = keywords.filter(k => lower.includes(k)).length;
+          if (matchCount >= Math.max(1, Math.ceil(keywords.length * 0.5))) {
+            // Extract a relevant snippet (first matching line + context)
+            const lines = content.split('\n');
+            let snippet = '';
+            for (let i = 0; i < lines.length; i++) {
+              const ll = lines[i].toLowerCase();
+              if (keywords.some(k => ll.includes(k))) {
+                snippet = lines.slice(Math.max(0, i - 1), i + 3).join('\n').slice(0, 200);
+                break;
+              }
+            }
+            const relPath = searchPath ? `${searchPath}/${file}` : file;
+            results.push(`📄 ${relPath} (${matchCount}/${keywords.length} keywords)\n${snippet}`);
+          }
+          if (results.length >= 8) break;
+        }
+
+        return results.length > 0
+          ? results.join('\n\n')
+          : `No results for "${query}" in ${searchPath || 'AKB'}`;
+      }
+
+      case 'read_file': {
+        const filePath = String(input.path || '');
+        const absolute = path.resolve(COMPANY_ROOT, filePath);
+        if (!fs.existsSync(absolute)) return `File not found: ${filePath}`;
+        const content = fs.readFileSync(absolute, 'utf-8');
+        return content.length > MAX_FILE_CHARS
+          ? content.slice(0, MAX_FILE_CHARS) + `\n\n... (truncated, ${content.length} chars total)`
+          : content;
+      }
+
+      case 'list_files': {
+        const dirPath = String(input.path || '');
+        const pat = String(input.pattern || '*.md');
+        const absolute = path.resolve(COMPANY_ROOT, dirPath);
+        if (!fs.existsSync(absolute)) return `Directory not found: ${dirPath}`;
+        const files = glob.sync(pat, { cwd: absolute, nodir: true }).sort();
+        return files.length > 0
+          ? files.map(f => `- ${dirPath}/${f}`).join('\n')
+          : `No files matching "${pat}" in ${dirPath}`;
+      }
+
+      default:
+        return `Unknown tool: ${name}`;
+    }
+  } catch (err) {
+    return `Error: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
+/**
+ * Run mini agent loop: LLM call → tool use → LLM call → ... → final text.
+ * Max MAX_TOOL_ROUNDS rounds of tool use, then force a text response.
+ */
+async function chatWithTools(
+  provider: LLMProvider,
+  systemPrompt: string,
+  initialMessages: LLMMessage[],
+  useTools: boolean,
+): Promise<{ text: string; totalUsage: { inputTokens: number; outputTokens: number } }> {
+  const messages: LLMMessage[] = [...initialMessages];
+  const totalUsage = { inputTokens: 0, outputTokens: 0 };
+  const tools = useTools ? AKB_TOOLS : undefined;
+
+  for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+    const response = await provider.chat(systemPrompt, messages, tools);
+    totalUsage.inputTokens += response.usage.inputTokens;
+    totalUsage.outputTokens += response.usage.outputTokens;
+
+    // Check if there are tool calls
+    const toolCalls = response.content.filter(c => c.type === 'tool_use');
+    const textParts = response.content.filter(c => c.type === 'text').map(c => (c as { type: 'text'; text: string }).text);
+
+    if (toolCalls.length === 0 || round === MAX_TOOL_ROUNDS) {
+      // No tool calls or max rounds reached — return text
+      return { text: textParts.join('').trim(), totalUsage };
+    }
+
+    // Execute tool calls and build tool results
+    messages.push({ role: 'assistant', content: response.content });
+
+    const toolResults: MessageContent[] = toolCalls.map(tc => {
+      const call = tc as { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> };
+      const result = executeAkbTool(call.name, call.input);
+      return { type: 'tool_result' as any, tool_use_id: call.id, content: result } as any;
+    });
+
+    messages.push({ role: 'user', content: toolResults });
+  }
+
+  return { text: '', totalUsage };
+}
+
 /**
  * Build a compact company context for chat system prompts.
- * Includes: company info, org overview, projects, knowledge highlights.
- * Kept brief to minimize Haiku token cost.
+ * Provides a seed overview — the agent can dig deeper via AKB tools.
  */
 function buildCompanyContext(): string {
   const parts: string[] = [];
@@ -316,10 +478,27 @@ ${relContext}
 
 ${roleStyle}
 
+AKB EXPLORATION (IMPORTANT):
+You have tools to search and read the company knowledge base (AKB). Use them to ground your conversation in REAL company context.
+Before responding, consider: "Is there something in our AKB that relates to this conversation?"
+- search_akb: Search for keywords across the AKB (decisions, projects, journals, waves, standups)
+- read_file: Read a specific file for details
+- list_files: Discover what files exist in a directory
+
+Useful paths to explore:
+- operations/decisions/ — CEO decisions (what was decided and why)
+- operations/waves/ — Work dispatches (what CEO asked teams to do)
+- operations/standups/ — Daily standups (what everyone reported)
+- projects/ — Active projects and their tasks
+- roles/${roleId}/journal/ — Your own work journal
+- knowledge/ — Domain knowledge
+
+You don't need to search every time. But when the conversation touches on company work, decisions, or direction, DO search to find real facts rather than making up generic discussion.
+
 CONVERSATION RULES:
 1. Stay deeply in character — your expertise, vocabulary, and concerns should be DISTINCT from other roles.
 2. Keep it to 1-3 sentences. No walls of text.
-3. Be SPECIFIC. Reference actual projects, files, tools, metrics, or decisions — never vague platitudes.
+3. Be SPECIFIC. Reference actual projects, files, tools, metrics, or decisions from the AKB — never vague platitudes.
 4. Do NOT just agree with everyone. Real teams have different perspectives:
    - If you genuinely disagree, say so (respectfully but firmly)
    - If someone oversimplifies your domain, push back with specifics
@@ -340,39 +519,40 @@ ANTI-PATTERNS (never do these):
 - Using the same emoji pattern as the previous speaker
 - Restating the consensus without adding anything new
 - Meta-commentary about the conversation itself ("wow we actually agreed")
-- Generic statements that any role could say — speak from YOUR expertise`;
+- Generic statements that any role could say — speak from YOUR expertise
+- Talking about vague "refactoring" or "metrics" without referencing actual company work`;
 
     const provider = getLLM();
-    const response = await provider.chat(
+
+    // Use tool-based agent loop (AnthropicProvider supports tools; ClaudeCliProvider falls back to no-tools)
+    const useTools = provider instanceof AnthropicProvider;
+    const { text: raw, totalUsage } = await chatWithTools(
+      provider,
       systemPrompt,
       [{ role: 'user', content: historyText }],
+      useTools,
     );
 
-    const raw = response.content
-      .filter(c => c.type === 'text')
-      .map(c => (c as { type: 'text'; text: string }).text)
-      .join('')
-      .trim()
-      .replace(/^["']|["']$/g, '');
+    const cleaned = raw.replace(/^["']|["']$/g, '');
 
     // Filter out CLI noise and [SILENT]
-    const message = (raw === '[SILENT]' || raw.startsWith('Error: Reached max turns')) ? '' : raw;
+    const message = (cleaned === '[SILENT]' || cleaned.startsWith('Error: Reached max turns') || !cleaned) ? '' : cleaned;
 
     // Record usage in token ledger (category: chat)
-    if (response.usage) {
+    if (totalUsage) {
       getLedger().record({
         ts: new Date().toISOString(),
         jobId: `chat-${channelId}`,
         roleId,
         model: process.env.SPEECH_MODEL || 'claude-haiku-4-5-20251001',
-        inputTokens: response.usage.inputTokens ?? 0,
-        outputTokens: response.usage.outputTokens ?? 0,
+        inputTokens: totalUsage.inputTokens ?? 0,
+        outputTokens: totalUsage.outputTokens ?? 0,
       });
     }
 
     res.json({
       message,
-      tokens: response.usage,
+      tokens: totalUsage,
     });
   } catch (err) {
     next(err);
