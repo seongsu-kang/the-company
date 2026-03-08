@@ -996,6 +996,40 @@ body {
 }
 .td-edit-btn__icon { font-size: 14px; line-height: 1; }
 
+/* ── Furniture palette (ISO edit mode) ── */
+.td-palette {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 2px;
+  padding: 4px 6px;
+  background: rgba(20, 25, 35, 0.9);
+  border: 2px solid rgba(139, 148, 158, 0.3);
+  image-rendering: auto;
+}
+.td-palette__item {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.td-palette__item:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(251, 191, 36, 0.5);
+}
+.td-palette__item--active {
+  background: rgba(59, 130, 246, 0.25);
+  border-color: rgba(59, 130, 246, 0.7);
+}
+
 /* ── Hire button (ISO view) ── */
 .td-hire-btn {
   position: absolute;

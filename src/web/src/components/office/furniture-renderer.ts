@@ -398,3 +398,32 @@ export function drawFurnitureHighlight(
   ctx.strokeRect(x - 0.5, y - 0.5, b.w + 1, b.h + 1);
   ctx.restore();
 }
+
+/** Draw edit-mode highlight around a desk (26×40 bounding box) */
+export function drawDeskHighlight(
+  ctx: CanvasRenderingContext2D,
+  dx: number, dy: number,
+  color: string,
+): void {
+  const w = 26, h = 40;
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.globalAlpha = 0.2;
+  ctx.fillRect(dx - 1, dy - 1, w + 2, h + 2);
+  ctx.globalAlpha = 0.9;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(dx - 0.5, dy - 0.5, w + 1, h + 1);
+  ctx.restore();
+}
+
+/** Hit-test desks at canvas coords. Returns role id or null. */
+export function hitTestDesks(
+  desks: Record<string, { dx: number; dy: number }>,
+  mx: number, my: number,
+): string | null {
+  for (const [roleId, d] of Object.entries(desks)) {
+    if (mx >= d.dx && mx <= d.dx + 26 && my >= d.dy && my <= d.dy + 40) return roleId;
+  }
+  return null;
+}

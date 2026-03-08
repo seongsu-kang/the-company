@@ -504,3 +504,49 @@ export function applyFurnitureOverrides(
     furniture: applyTo(layout.furniture),
   };
 }
+
+/** Apply desk position overrides (keyed by role id, applied after assignDesks) */
+export function applyDeskOverrides(
+  desks: Record<string, DeskDef>,
+  overrides: Record<string, { dx: number; dy: number }>,
+): void {
+  if (!overrides) return;
+  for (const [roleId, ov] of Object.entries(overrides)) {
+    if (desks[roleId]) {
+      desks[roleId] = { ...desks[roleId], dx: ov.dx, dy: ov.dy };
+    }
+  }
+}
+
+/** Remove furniture by id list */
+export function applyFurnitureRemovals(
+  layout: FloorLayout,
+  removedIds: string[],
+): FloorLayout {
+  if (!removedIds || removedIds.length === 0) return layout;
+  const removed = new Set(removedIds);
+  return {
+    ...layout,
+    wallDecorations: layout.wallDecorations.filter(d => !removed.has(d.id)),
+    furniture: layout.furniture.filter(d => !removed.has(d.id)),
+  };
+}
+
+/** Append user-added furniture to layout */
+export function applyAddedFurniture(
+  layout: FloorLayout,
+  added: FurnitureDef[],
+): FloorLayout {
+  if (!added || added.length === 0) return layout;
+  const walls: FurnitureDef[] = [];
+  const floor: FurnitureDef[] = [];
+  for (const d of added) {
+    if (d.zone === 'wall') walls.push(d);
+    else floor.push(d);
+  }
+  return {
+    ...layout,
+    wallDecorations: [...layout.wallDecorations, ...walls],
+    furniture: [...layout.furniture, ...floor],
+  };
+}

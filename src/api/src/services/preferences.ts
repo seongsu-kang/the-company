@@ -29,12 +29,31 @@ export interface FurnitureOverride {
   offsetY: number;
 }
 
+export interface DeskOverride {
+  dx: number;
+  dy: number;
+}
+
+export interface AddedFurniture {
+  id: string;
+  type: string;
+  room: string;
+  zone: 'wall' | 'floor';
+  anchorX?: 'left' | 'right';
+  offsetX: number;
+  offsetY: number;
+  accent?: string;
+}
+
 export interface Preferences {
   appearances: Record<string, CharacterAppearance>;
   theme: string;
   speech?: SpeechSettings;
   language?: string; // 'en' | 'ko' | 'ja' | 'auto'
   furnitureOverrides?: Record<string, FurnitureOverride>; // keyed by FurnitureDef.id
+  deskOverrides?: Record<string, DeskOverride>; // keyed by role id
+  removedFurniture?: string[]; // FurnitureDef.id list
+  addedFurniture?: AddedFurniture[];
 }
 
 const CONFIG_DIR = '.tycono';
@@ -57,6 +76,9 @@ export function readPreferences(companyRoot: string): Preferences {
       speech: data.speech ?? undefined,
       language: data.language ?? undefined,
       furnitureOverrides: data.furnitureOverrides ?? undefined,
+      deskOverrides: data.deskOverrides ?? undefined,
+      removedFurniture: data.removedFurniture ?? undefined,
+      addedFurniture: data.addedFurniture ?? undefined,
     };
   } catch {
     return { ...DEFAULT, appearances: {} };
@@ -85,6 +107,15 @@ export function mergePreferences(companyRoot: string, partial: Partial<Preferenc
     furnitureOverrides: partial.furnitureOverrides !== undefined
       ? { ...current.furnitureOverrides, ...partial.furnitureOverrides }
       : current.furnitureOverrides,
+    deskOverrides: partial.deskOverrides !== undefined
+      ? { ...current.deskOverrides, ...partial.deskOverrides }
+      : current.deskOverrides,
+    removedFurniture: partial.removedFurniture !== undefined
+      ? partial.removedFurniture
+      : current.removedFurniture,
+    addedFurniture: partial.addedFurniture !== undefined
+      ? partial.addedFurniture
+      : current.addedFurniture,
   };
   writePreferences(companyRoot, merged);
   return merged;
