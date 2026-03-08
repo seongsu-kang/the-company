@@ -26,6 +26,7 @@ import SaveModal from '../components/office/SaveModal';
 import { OFFICE_THEMES } from '../types/appearance';
 import type { CharacterAppearance } from '../types/appearance';
 import { computeRoleLevels, type RoleLevelData } from '../utils/role-level';
+import { computeBadges, type BadgeContext } from '../utils/badges';
 
 /* ─── Role metadata ─────────────────────── */
 
@@ -154,6 +155,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   const importStarted = useRef(false);
   const importLogEnd = useRef<HTMLDivElement>(null);
   let logId = useRef(0);
+  const prevBadgeIdsRef = useRef<Set<string>>(new Set());
 
   const addImportLog = (type: ImportLogEntry['type'], text: string, detail?: string) => {
     const entry: ImportLogEntry = { id: logId.current++, type, text, detail };
@@ -356,6 +358,26 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
     setToasts((prev) => [...prev, { id, message, color }]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
   };
+
+  /* Badge detection — notify on newly earned badges */
+  useEffect(() => {
+    const badgeCtx: BadgeContext = {
+      roles: Object.entries(roleLevels).map(([id, d]) => ({ id, level: d.level, totalTokens: d.totalTokens })),
+      totalTokens: Object.values(roleLevels).reduce((s, r) => s + r.totalTokens, 0),
+      roleCount: roles.length,
+    };
+    const earned = computeBadges(badgeCtx);
+    const prevIds = prevBadgeIdsRef.current;
+    for (const badge of earned) {
+      if (!prevIds.has(badge.id)) {
+        // Skip toast on initial load (prevIds is empty)
+        if (prevIds.size > 0) {
+          addToast(`${badge.icon} Badge earned: ${badge.name}!`, '#D4A017');
+        }
+      }
+    }
+    prevBadgeIdsRef.current = new Set(earned.map(b => b.id));
+  }, [roleLevels, roles.length]);
 
   const handleExecutionDone = () => {
     const current = jobStack[jobStack.length - 1];
@@ -909,6 +931,23 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
               Working: <strong>{activeExecs.length}</strong>
             </span>
           )}
+          {(() => {
+            const badgeCtx: BadgeContext = {
+              roles: Object.entries(roleLevels).map(([id, d]) => ({ id, level: d.level, totalTokens: d.totalTokens })),
+              totalTokens: Object.values(roleLevels).reduce((s, r) => s + r.totalTokens, 0),
+              roleCount: roles.length,
+            };
+            const earnedBadges = computeBadges(badgeCtx);
+            return earnedBadges.length > 0 ? (
+              <div className="hidden sm:flex" style={{ gap: 2, alignItems: 'center', marginLeft: 8, paddingLeft: 8, borderLeft: '1px solid rgba(255,255,255,0.1)' }}>
+                {earnedBadges.map(b => (
+                  <span key={b.id} title={`${b.name}: ${b.description}`} style={{ fontSize: 12, cursor: 'default' }}>
+                    {b.icon}
+                  </span>
+                ))}
+              </div>
+            ) : null;
+          })()}
           <button
             onClick={() => {
               if (saveHook.state === 'no-git') {
