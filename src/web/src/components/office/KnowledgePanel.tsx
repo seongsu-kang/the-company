@@ -128,27 +128,53 @@ function KnowledgeGraph({
 
     const { width, height } = dimensions;
 
+    // Scale forces based on node count so large graphs spread out properly
+    const n = nodes.length;
+    const chargeStrength = n > 100 ? -600 : n > 50 ? -500 : -400;
+    const linkDist = n > 100 ? 180 : n > 50 ? 160 : 140;
+    const collideRadius = n > 100 ? 60 : 50;
+    // Use a larger virtual canvas so nodes have room to spread
+    const simW = Math.max(width, n * 12);
+    const simH = Math.max(height, n * 10);
+
     const sim = forceSimulation<GNode>(nodes)
-      .force('link', forceLink<GNode, GLink>(links).id((d) => d.id).distance(140))
-      .force('charge', forceManyBody().strength(-400))
-      .force('center', forceCenter(width / 2, height / 2))
-      .force('collide', forceCollide(50));
+      .force('link', forceLink<GNode, GLink>(links).id((d) => d.id).distance(linkDist))
+      .force('charge', forceManyBody().strength(chargeStrength))
+      .force('center', forceCenter(simW / 2, simH / 2))
+      .force('collide', forceCollide(collideRadius));
 
     simRef.current = sim;
 
     sim.on('tick', () => {
-      for (const n of nodes) {
-        n.x = Math.max(60, Math.min(width - 60, n.x ?? width / 2));
-        n.y = Math.max(60, Math.min(height - 60, n.y ?? height / 2));
-      }
+      // No boundary clamping — zoom/pan handles overflow
       setGraphData({ nodes: [...nodes], links: [...links] });
     });
 
     // Run ticks
     sim.alpha(1).restart();
-    for (let i = 0; i < 150; i++) sim.tick();
+    const ticks = n > 100 ? 300 : 150;
+    for (let i = 0; i < ticks; i++) sim.tick();
     sim.stop();
     setGraphData({ nodes: [...nodes], links: [...links] });
+
+    // Auto-fit viewBox to actual node positions
+    if (nodes.length > 0) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const nd of nodes) {
+        const nx = nd.x ?? 0, ny = nd.y ?? 0;
+        if (nx < minX) minX = nx;
+        if (ny < minY) minY = ny;
+        if (nx > maxX) maxX = nx;
+        if (ny > maxY) maxY = ny;
+      }
+      const pad = 100;
+      setViewBox({
+        x: minX - pad,
+        y: minY - pad,
+        w: Math.max(width, maxX - minX + pad * 2),
+        h: Math.max(height, maxY - minY + pad * 2),
+      });
+    }
 
     return () => { sim.stop(); };
   }, [docs, dimensions]);
