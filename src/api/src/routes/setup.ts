@@ -89,7 +89,20 @@ setupRouter.post('/scaffold', (req, res) => {
     return;
   }
 
-  const projectRoot = process.env.COMPANY_ROOT || process.cwd();
+  const baseRoot = process.env.COMPANY_ROOT || process.cwd();
+
+  // Safety: if CWD is a dangerous path (home dir, root, or has too many entries),
+  // scaffold into a subdirectory named after the company
+  const dangerousPaths = new Set(['/', os.homedir(), os.tmpdir()]);
+  const isDangerous = dangerousPaths.has(baseRoot) || baseRoot === '/tmp';
+  let projectRoot = baseRoot;
+  if (isDangerous) {
+    const slug = companyName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'my-company';
+    projectRoot = path.join(baseRoot, slug);
+    if (!fs.existsSync(projectRoot)) {
+      fs.mkdirSync(projectRoot, { recursive: true });
+    }
+  }
 
   const config: ScaffoldConfig = {
     companyName,
