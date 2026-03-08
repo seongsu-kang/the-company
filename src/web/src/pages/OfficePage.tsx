@@ -26,6 +26,7 @@ import SaveModal from '../components/office/SaveModal';
 import { OFFICE_THEMES } from '../types/appearance';
 import type { CharacterAppearance } from '../types/appearance';
 import { computeRoleLevels, type RoleLevelData } from '../utils/role-level';
+import { computeBadges, type BadgeContext } from '../utils/badges';
 
 /* ─── Role metadata ─────────────────────── */
 
@@ -99,6 +100,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
 
   /* Role levels from token usage */
   const [roleLevels, setRoleLevels] = useState<RoleLevelData>({});
+  const prevRoleLevelsRef = useRef<RoleLevelData>({});
   const [showHireModal, setShowHireModal] = useState(false);
   const [fireTarget, setFireTarget] = useState<{ roleId: string; roleName: string } | null>(null);
 
@@ -154,6 +156,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   const importStarted = useRef(false);
   const importLogEnd = useRef<HTMLDivElement>(null);
   let logId = useRef(0);
+  const prevBadgeIdsRef = useRef<Set<string>>(new Set());
 
   const addImportLog = (type: ImportLogEntry['type'], text: string, detail?: string) => {
     const entry: ImportLogEntry = { id: logId.current++, type, text, detail };
@@ -277,7 +280,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
       api.getDecisions().then(setDecisions),
       api.getKnowledge().then(setKnowledgeDocs).catch(() => {}),
       api.getOrgTree().then((tree) => { setOrgNodes(tree.nodes); setOrgRootId(tree.root); }).catch(() => {}),
-      api.getCostSummary().then((s) => setRoleLevels(computeRoleLevels(s.byRole))).catch(() => {}),
+      api.getCostSummary().then((s) => updateRoleLevels(computeRoleLevels(s.byRole))).catch(() => {}),
     ])
       .catch((err) => setError(`Failed to load: ${err.message}`))
       .finally(() => setLoading(false));
@@ -357,6 +360,40 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
   };
 
+  /** Update role levels and detect level-ups */
+  const updateRoleLevels = (newLevels: RoleLevelData) => {
+    const prev = prevRoleLevelsRef.current;
+    for (const [roleId, data] of Object.entries(newLevels)) {
+      const prevLevel = prev[roleId]?.level ?? 0;
+      if (prevLevel > 0 && data.level > prevLevel) {
+        const roleName = roles.find(r => r.id === roleId)?.name ?? roleId.toUpperCase();
+        addToast(`${roleName} leveled up to Lv.${data.level}!`, '#7C3AED');
+      }
+    }
+    prevRoleLevelsRef.current = newLevels;
+    setRoleLevels(newLevels);
+  };
+
+  /* Badge detection — notify on newly earned badges */
+  useEffect(() => {
+    const badgeCtx: BadgeContext = {
+      roles: Object.entries(roleLevels).map(([id, d]) => ({ id, level: d.level, totalTokens: d.totalTokens })),
+      totalTokens: Object.values(roleLevels).reduce((s, r) => s + r.totalTokens, 0),
+      roleCount: roles.length,
+    };
+    const earned = computeBadges(badgeCtx);
+    const prevIds = prevBadgeIdsRef.current;
+    for (const badge of earned) {
+      if (!prevIds.has(badge.id)) {
+        // Skip toast on initial load (prevIds is empty)
+        if (prevIds.size > 0) {
+          addToast(`${badge.icon} Badge earned: ${badge.name}!`, '#D4A017');
+        }
+      }
+    }
+    prevBadgeIdsRef.current = new Set(earned.map(b => b.id));
+  }, [roleLevels, roles.length]);
+
   const handleExecutionDone = () => {
     const current = jobStack[jobStack.length - 1];
     if (current) {
@@ -371,7 +408,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
     }
     api.getStandups().then(setStandups).catch(console.error);
     api.getCompany().then((c) => setRoles(c.roles)).catch(console.error);
-    api.getCostSummary().then((s) => setRoleLevels(computeRoleLevels(s.byRole))).catch(() => {});
+    api.getCostSummary().then((s) => updateRoleLevels(computeRoleLevels(s.byRole))).catch(() => {});
   };
 
   const handleWaveDispatch = async (directive: string) => {
@@ -909,6 +946,23 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
               Working: <strong>{activeExecs.length}</strong>
             </span>
           )}
+          {(() => {
+            const badgeCtx: BadgeContext = {
+              roles: Object.entries(roleLevels).map(([id, d]) => ({ id, level: d.level, totalTokens: d.totalTokens })),
+              totalTokens: Object.values(roleLevels).reduce((s, r) => s + r.totalTokens, 0),
+              roleCount: roles.length,
+            };
+            const earnedBadges = computeBadges(badgeCtx);
+            return earnedBadges.length > 0 ? (
+              <div className="hidden sm:flex" style={{ gap: 2, alignItems: 'center', marginLeft: 8, paddingLeft: 8, borderLeft: '1px solid rgba(255,255,255,0.1)' }}>
+                {earnedBadges.map(b => (
+                  <span key={b.id} title={`${b.name}: ${b.description}`} style={{ fontSize: 12, cursor: 'default' }}>
+                    {b.icon}
+                  </span>
+                ))}
+              </div>
+            ) : null;
+          })()}
           <button
             onClick={() => {
               if (saveHook.state === 'no-git') {
@@ -1495,6 +1549,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           onSpeechSettingsChange={setSpeechSettings}
           language={language}
           onLanguageChange={setLanguage}
+          roleLevel={roleLevels[customizeTarget.id]?.level}
         />
       )}
 

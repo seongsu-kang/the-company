@@ -5,6 +5,7 @@ import {
   SKIN_PRESETS, HAIR_PRESETS, SHIRT_PRESETS, PANTS_PRESETS, SHOE_PRESETS,
 } from '../../types/appearance';
 import { getAllHairStyles, getAllOutfitStyles, getAllAccessories, extractAppearance } from './sprites/engine';
+import { getAccessoryRequiredLevel, isAccessoryUnlocked } from './sprites/engine/accessories';
 import './sprites/engine/hairstyles'; // ensure registration
 import './sprites/engine/outfits';
 import './sprites/engine/accessories';
@@ -49,13 +50,19 @@ function ColorRow({ label, presets, value, onChange }: {
   );
 }
 
-/* ─── Style Picker Row (text buttons) ────── */
+/* ─── Style Picker Row (text buttons, with optional lock support) ────── */
 
-function StyleRow({ label, items, value, onChange }: {
+interface LockInfo {
+  roleLevel: number;
+  getLockLevel: (id: string) => number;
+}
+
+function StyleRow({ label, items, value, onChange, lockInfo }: {
   label: string;
   items: { id: string; name: string }[];
   value?: string;
   onChange: (id: string | undefined) => void;
+  lockInfo?: LockInfo;
 }) {
   return (
     <div className="customize-row">
@@ -63,26 +70,75 @@ function StyleRow({ label, items, value, onChange }: {
         <span className="customize-row-label">{label}</span>
       </div>
       <div className="customize-swatches" style={{ gap: 4 }}>
-        {items.map(s => (
-          <button
-            key={s.id}
-            onClick={() => onChange(s.id === value ? undefined : s.id)}
-            className="customize-swatch"
-            style={{
-              width: 'auto',
-              height: 'auto',
-              padding: '2px 6px',
-              fontSize: 9,
-              fontFamily: 'var(--font-pixel, monospace)',
-              background: s.id === value ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.04)',
-              outline: s.id === value ? '2px solid #fff' : '2px solid transparent',
-              color: s.id === value ? '#fff' : 'rgba(255,255,255,0.5)',
-              borderRadius: 4,
-            }}
-          >
-            {s.name}
-          </button>
-        ))}
+        {items.map(s => {
+          const reqLevel = lockInfo ? lockInfo.getLockLevel(s.id) : 1;
+          const isCurrentlyEquipped = s.id === value;
+          const locked = lockInfo ? reqLevel > lockInfo.roleLevel && !isCurrentlyEquipped : false;
+          const equippedButLocked = lockInfo ? isCurrentlyEquipped && reqLevel > lockInfo.roleLevel : false;
+
+          return (
+            <button
+              key={s.id}
+              onClick={() => {
+                if (locked) return;
+                onChange(s.id === value ? undefined : s.id);
+              }}
+              className="customize-swatch"
+              style={{
+                width: 'auto',
+                height: 'auto',
+                padding: locked ? '2px 6px 10px 6px' : '2px 6px',
+                fontSize: 9,
+                fontFamily: 'var(--font-pixel, monospace)',
+                background: isCurrentlyEquipped
+                  ? 'rgba(255,255,255,0.15)'
+                  : locked
+                    ? 'rgba(255,255,255,0.02)'
+                    : 'rgba(255,255,255,0.04)',
+                outline: isCurrentlyEquipped
+                  ? equippedButLocked
+                    ? '2px solid #F59E0B'
+                    : '2px solid #fff'
+                  : '2px solid transparent',
+                color: locked
+                  ? 'rgba(255,255,255,0.25)'
+                  : isCurrentlyEquipped ? '#fff' : 'rgba(255,255,255,0.5)',
+                borderRadius: 4,
+                cursor: locked ? 'not-allowed' : 'pointer',
+                opacity: locked ? 0.35 : 1,
+                position: 'relative' as const,
+              }}
+            >
+              {s.name}
+              {locked && (
+                <span style={{
+                  position: 'absolute',
+                  bottom: 1,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  fontSize: 8,
+                  color: 'rgba(255,255,255,0.5)',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {'\uD83D\uDD12'} Lv.{reqLevel}
+                </span>
+              )}
+              {equippedButLocked && (
+                <span style={{
+                  position: 'absolute',
+                  bottom: -8,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  fontSize: 7,
+                  color: '#F59E0B',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {'\u26A0'} Lv.{reqLevel}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -120,10 +176,12 @@ export function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-export function randomAppearance(): CharacterAppearance {
+export function randomAppearance(level?: number): CharacterAppearance {
   const hairStyles = getAllHairStyles();
   const outfitStyles = getAllOutfitStyles();
-  const accessories = getAllAccessories();
+  const accessories = getAllAccessories().filter(a =>
+    !level || isAccessoryUnlocked(a.id, level)
+  );
   return {
     skinColor: pick(SKIN_PRESETS),
     hairColor: pick(HAIR_PRESETS),
@@ -143,12 +201,13 @@ interface CharacterEditorProps {
   onRandomize: () => void;
   onReset: () => void;
   label?: ReactNode;
+  roleLevel?: number;
 }
 
 type EditorTab = 'look' | 'outfit' | 'accessory';
 
 export default function CharacterEditor({
-  roleId, appearance, onChange, onRandomize, onReset, label,
+  roleId, appearance, onChange, onRandomize, onReset, label, roleLevel,
 }: CharacterEditorProps) {
   const [tab, setTab] = useState<EditorTab>('look');
 
@@ -179,6 +238,10 @@ export default function CharacterEditor({
   const hairStyles = getAllHairStyles();
   const outfitStyles = getAllOutfitStyles();
   const accessories = getAllAccessories();
+
+  const unlockedCount = roleLevel !== undefined
+    ? accessories.filter(a => isAccessoryUnlocked(a.id, roleLevel)).length
+    : accessories.length;
 
   return (
     <>
@@ -231,7 +294,30 @@ export default function CharacterEditor({
         )}
         {tab === 'accessory' && (
           <>
-            <StyleRow label="ACCESSORY" items={accessories} value={appearance.accessory} onChange={v => update('accessory', v)} />
+            {roleLevel !== undefined && (
+              <div style={{
+                padding: '4px 8px',
+                marginBottom: 4,
+                background: 'rgba(255,255,255,0.04)',
+                borderRadius: 4,
+                fontSize: 9,
+                fontFamily: 'var(--font-pixel, monospace)',
+                color: 'rgba(255,255,255,0.5)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}>
+                <span>Lv.{roleLevel}</span>
+                <span>{unlockedCount}/{accessories.length} unlocked</span>
+              </div>
+            )}
+            <StyleRow
+              label="ACCESSORY"
+              items={accessories}
+              value={appearance.accessory}
+              onChange={v => update('accessory', v)}
+              lockInfo={roleLevel !== undefined ? { roleLevel, getLockLevel: getAccessoryRequiredLevel } : undefined}
+            />
             <div style={{
               marginTop: 12,
               padding: '8px 10px',
@@ -243,7 +329,9 @@ export default function CharacterEditor({
               fontFamily: 'var(--font-pixel, monospace)',
               textAlign: 'center',
             }}>
-              More accessories coming soon
+              {roleLevel !== undefined && roleLevel < 10
+                ? `Level up to unlock more accessories`
+                : 'More accessories coming soon'}
             </div>
           </>
         )}

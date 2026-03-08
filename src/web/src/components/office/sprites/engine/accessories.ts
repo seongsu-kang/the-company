@@ -15,6 +15,7 @@ export interface AccessoryMeta {
   name: string;
   layer: CharacterLayer;            // down direction (backward compat)
   directions?: DirectionalLayers;   // all directions (when defined)
+  requiredLevel?: number;           // gamification level needed to unlock
 }
 
 const registry = new Map<string, AccessoryMeta>();
@@ -877,6 +878,31 @@ registerAccessory('dog-face', 'Dog Face', {
   },
   // right: auto-mirrored from left
 });
+
+/* ── Accessory Unlock Levels (Gamification) ──────── */
+
+export const ACCESSORY_UNLOCK_LEVELS: Record<string, number> = {
+  'none': 1,
+  'glasses': 1, 'beret': 1, 'cap': 1, 'badge': 1, 'blush': 1, 'lapels': 1,
+  'round-glasses': 2, 'headphones': 2,
+  'scarf': 3, 'tie': 3, 'bowtie': 3,
+  'sunglasses': 4, 'bandana': 4, 'eyepatch': 4,
+  'crown': 5, 'halo': 5, 'horns': 5, 'mask': 5,
+  'cat-ears': 6, 'bear-ears': 6, 'bunny-ears': 6, 'dog-nose': 6, 'fox-mask': 6,
+  'cat-face': 7, 'bear-face': 7, 'panda-face': 7,
+  'frog-face': 8, 'rabbit-face': 8, 'dog-face': 8,
+  'star-glasses': 9,
+};
+
+/** Get the required level to unlock an accessory (default 1) */
+export function getAccessoryRequiredLevel(id: string): number {
+  return ACCESSORY_UNLOCK_LEVELS[id] ?? 1;
+}
+
+/** Check if an accessory is unlocked at the given level */
+export function isAccessoryUnlocked(id: string, level: number): boolean {
+  return level >= getAccessoryRequiredLevel(id);
+}
 
 // Star Glasses — fun star-shaped shades (4-direction)
 registerAccessory('star-glasses', 'Star Glasses', {

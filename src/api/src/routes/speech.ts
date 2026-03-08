@@ -14,6 +14,7 @@ import { parseMarkdownTable, extractBoldKeyValues } from '../services/markdown-p
 import { AnthropicProvider, ClaudeCliProvider, type LLMProvider } from '../engine/llm-adapter.js';
 import { TokenLedger } from '../services/token-ledger.js';
 import { readConfig } from '../services/company-config.js';
+import { calcLevel } from '../utils/role-level.js';
 
 export const speechRouter = Router();
 
@@ -147,6 +148,29 @@ speechRouter.post('/chat', async (req: Request, res: Response, next: NextFunctio
       workContext?: { currentTask: string | null; taskProgress: string | null };
     };
 
+    // ── Compute role levels from token ledger ──
+    const tokenLedger = getLedger();
+    const allEntries = tokenLedger.query();
+
+    // Aggregate total tokens (input + output) per role
+    const tokensByRole: Record<string, number> = {};
+    for (const entry of allEntries.entries) {
+      tokensByRole[entry.roleId] = (tokensByRole[entry.roleId] ?? 0) + entry.inputTokens + entry.outputTokens;
+    }
+
+    const roleLevel = calcLevel(tokensByRole[roleId] ?? 0);
+
+    // Team stats
+    const roleIds = Object.keys(tokensByRole);
+    const levels = roleIds.map(id => ({ id, level: calcLevel(tokensByRole[id]) }));
+    const avgLevel = levels.length > 0
+      ? Math.round(levels.reduce((sum, r) => sum + r.level, 0) / levels.length)
+      : 1;
+    const topEntry = levels.reduce((best, r) => r.level > best.level ? r : best, { id: roleId, level: roleLevel });
+    const totalTokens = allEntries.totalInput + allEntries.totalOutput;
+
+    const teamStats = { avgLevel, topRole: topEntry.id, totalTokens };
+
     if (!roleId || !channelId) {
       res.status(400).json({ error: 'roleId and channelId are required' });
       return;
@@ -190,6 +214,9 @@ speechRouter.post('/chat', async (req: Request, res: Response, next: NextFunctio
       ? `\nYou are currently working on: "${workContext.currentTask}"${workContext.taskProgress ? ` (${workContext.taskProgress})` : ''}`
       : '\nYou are currently idle (no active task).';
 
+    // Build level context
+    const levelCtx = `\nYour current level is Lv.${roleLevel}. Team average is Lv.${avgLevel}. ${topEntry.id} is the highest-leveled team member.`;
+
     // Format chat history
     const historyText = history.length > 0
       ? history.map(h => {
@@ -209,6 +236,7 @@ speechRouter.post('/chat', async (req: Request, res: Response, next: NextFunctio
     const systemPrompt = `You are ${node.name}, a ${node.level} employee.
 Persona: ${persona}
 ${workCtx}
+${levelCtx}
 ${companyCtx}
 
 You are in the #${channelId} chat channel.${topicCtx}
@@ -224,6 +252,7 @@ Rules:
 - Vary your tone: sometimes enthusiastic, sometimes tired, sometimes joking
 - Use appropriate tone based on hierarchy and familiarity
 - Do NOT repeat what others already said
+- You may occasionally (not every message) reference levels, token usage, or team rankings in a natural way — like coworkers comparing experience or celebrating milestones
 - If the conversation is stale or you have nothing new to add, respond with exactly: [SILENT]
 - Do NOT use quotes around your response. Just output the raw sentence.
 - Write in English.`;
