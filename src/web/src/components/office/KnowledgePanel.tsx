@@ -92,13 +92,32 @@ function KnowledgeGraph({
       akb_type: d.akb_type,
     }));
 
+    // Helper: resolve relative href to absolute id (like path.resolve)
+    const resolveHref = (baseId: string, href: string): string => {
+      // If href is already absolute (starts with folder/), use as-is
+      if (!href.startsWith('.') && !href.startsWith('/')) {
+        return href;
+      }
+      // Get directory of current doc
+      const baseParts = baseId.split('/');
+      baseParts.pop(); // remove filename
+      const hrefParts = href.split('/');
+
+      for (const part of hrefParts) {
+        if (part === '..') {
+          baseParts.pop();
+        } else if (part !== '.' && part !== '') {
+          baseParts.push(part);
+        }
+      }
+      return baseParts.join('/');
+    };
+
     const links: GLink[] = [];
     for (const doc of docs) {
       for (const link of doc.links) {
-        const targetId = link.href
-          .replace(/^.*knowledge\//, '')
-          .replace(/^\.\.\/.*$/, '')
-          .replace(/^\.\//, '');
+        // Resolve relative paths based on current doc's location
+        const targetId = resolveHref(doc.id, link.href);
         if (idSet.has(targetId) && targetId !== doc.id) {
           if (!links.some((l) => (l.source === doc.id && l.target === targetId) || (l.source === targetId && l.target === doc.id))) {
             links.push({ source: doc.id, target: targetId, label: link.text });
