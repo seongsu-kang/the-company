@@ -15,6 +15,7 @@ import { importKnowledge } from '../services/knowledge-importer.js';
 import { AnthropicProvider, type LLMProvider } from '../engine/llm-adapter.js';
 import { jobManager } from '../services/job-manager.js';
 import { applyConfig, readConfig, writeConfig } from '../services/company-config.js';
+import { mergePreferences } from '../services/preferences.js';
 
 export const setupRouter = Router();
 
@@ -81,7 +82,7 @@ setupRouter.post('/validate-path', (req, res) => {
  * POST /api/setup/scaffold
  */
 setupRouter.post('/scaffold', (req, res) => {
-  const { companyName, description, apiKey, team, existingProjectPath, knowledgePaths, codeRoot } = req.body;
+  const { companyName, description, apiKey, team, existingProjectPath, knowledgePaths, codeRoot, language } = req.body;
 
   if (!companyName || typeof companyName !== 'string') {
     res.status(400).json({ error: 'companyName is required' });
@@ -109,6 +110,10 @@ setupRouter.post('/scaffold', (req, res) => {
     // Save codeRoot if provided
     if (codeRoot && typeof codeRoot === 'string') {
       writeConfig(projectRoot, { ...scaffoldConfig, codeRoot });
+    }
+    // Save language preference
+    if (language && typeof language === 'string') {
+      mergePreferences(projectRoot, { language });
     }
     jobManager.refreshRunner();
 

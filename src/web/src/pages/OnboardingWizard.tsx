@@ -134,6 +134,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
   // Step: Company
   const [companyName, setCompanyName] = useState('');
   const [description, setDescription] = useState('');
+  const [language, setLanguage] = useState('auto');
   const nameRef = useRef<HTMLInputElement>(null);
 
   // Step: Project (code repo)
@@ -269,6 +270,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
         team: selectedTeam as ScaffoldInput['team'],
         existingProjectPath: projectMode === 'existing' ? existingPath.trim() : undefined,
         knowledgePaths: knowledgeMode === 'import' && knowledgePaths.length > 0 ? knowledgePaths : undefined,
+        language: language !== 'auto' ? language : undefined,
       };
       if (engineChoice === 'direct-api' || apiKey) {
         input.apiKey = apiKey || undefined;
@@ -436,6 +438,15 @@ export default function OnboardingWizard({ onComplete }: Props) {
               <div>
                 <label className="text-xs font-medium block mb-1" style={{ color: 'var(--terminal-text-secondary)' }}>Description</label>
                 <textarea className={`${inputClass} resize-none`} rows={3} placeholder="What does your AI company do?" value={description} onChange={e => setDescription(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs font-medium block mb-1" style={{ color: 'var(--terminal-text-secondary)' }}>AI Response Language</label>
+                <select className={inputClass} value={language} onChange={e => setLanguage(e.target.value)}>
+                  <option value="auto">Auto</option>
+                  <option value="en">English</option>
+                  <option value="ko">한국어</option>
+                  <option value="ja">日本語</option>
+                </select>
               </div>
             </div>
           )}

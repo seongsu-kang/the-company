@@ -21,6 +21,7 @@ export interface ScaffoldConfig {
   projectRoot: string;
   existingProjectPath?: string;
   knowledgePaths?: string[];
+  language?: string;
 }
 
 interface TeamRole {

@@ -106,6 +106,7 @@ export interface CreateRoleInput {
   reports: { daily: string; weekly: string };
   skills?: string[];
   source?: RoleSource;
+  skillContent?: import('./store').SkillExport;
 }
 
 /* ─── Sync Types ────────────────────────── */
@@ -236,6 +237,7 @@ export interface ScaffoldInput {
   team: 'startup' | 'research' | 'agency' | 'custom';
   existingProjectPath?: string;
   knowledgePaths?: string[];
+  language?: string;
 }
 
 export interface ScaffoldResult {
