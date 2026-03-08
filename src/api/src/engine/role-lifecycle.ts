@@ -6,6 +6,16 @@ import { generateSkillMd } from './skill-template.js';
 
 /* ─── Types ──────────────────────────────────── */
 
+export interface SkillContentDef {
+  frontmatter: Record<string, unknown>;
+  body: string;
+}
+
+export interface SkillExportDef {
+  primary: SkillContentDef | null;
+  shared: Array<{ id: string } & SkillContentDef>;
+}
+
 export interface RoleDefinition {
   id: string;
   name: string;
@@ -14,6 +24,7 @@ export interface RoleDefinition {
   persona: string;
   skills?: string[];
   source?: RoleSource;
+  skillContent?: SkillExportDef;
   authority: {
     autonomous: string[];
     needsApproval: string[];
@@ -67,6 +78,24 @@ export class RoleLifecycleManager {
     const orgNode = this.defToOrgNode(def);
     const skillContent = generateSkillMd(orgNode);
     fs.writeFileSync(path.join(skillDir, 'SKILL.md'), skillContent);
+
+    // 4b. Store에서 온 skillContent가 있으면 덮어쓰기
+    if (def.skillContent?.primary) {
+      const content = serializeSkillMd(def.skillContent.primary);
+      fs.writeFileSync(path.join(skillDir, 'SKILL.md'), content);
+    }
+
+    // 4c. Shared skills 설치 (이미 있으면 건너뜀)
+    if (def.skillContent?.shared) {
+      for (const shared of def.skillContent.shared) {
+        const sharedDir = path.join(this.companyRoot, '.claude', 'skills', '_shared', shared.id);
+        const sharedSkillPath = path.join(sharedDir, 'SKILL.md');
+        if (!fs.existsSync(sharedSkillPath)) {
+          fs.mkdirSync(sharedDir, { recursive: true });
+          fs.writeFileSync(sharedSkillPath, serializeSkillMd(shared));
+        }
+      }
+    }
 
     // 5. Update roles.md Hub
     this.addToRolesHub(def);
@@ -350,4 +379,25 @@ ${def.authority.needsApproval.map((a) => `- ${a}`).join('\n')}
     });
     fs.writeFileSync(claudeMdPath, lines.join('\n'));
   }
+}
+
+/* ─── Helpers ──────────────────────────────── */
+
+function serializeSkillMd(skill: SkillContentDef): string {
+  const fm = skill.frontmatter;
+  const yamlLines: string[] = [];
+  if (fm.name) yamlLines.push(`name: ${fm.name}`);
+  if (fm.description) yamlLines.push(`description: ${JSON.stringify(fm.description)}`);
+  if (fm.allowedTools && Array.isArray(fm.allowedTools)) {
+    yamlLines.push(`allowedTools:\n${(fm.allowedTools as string[]).map(t => `  - ${t}`).join('\n')}`);
+  }
+  if (fm.model) yamlLines.push(`model: ${fm.model}`);
+  if (fm.tags && Array.isArray(fm.tags)) {
+    yamlLines.push(`tags:\n${(fm.tags as string[]).map(t => `  - ${t}`).join('\n')}`);
+  }
+
+  if (yamlLines.length === 0) {
+    return skill.body;
+  }
+  return `---\n${yamlLines.join('\n')}\n---\n\n${skill.body}`;
 }

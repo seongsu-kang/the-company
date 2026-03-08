@@ -1130,6 +1130,9 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
               onBulletinClick={() => setPanel({ type: 'bulletin' })}
               onDecisionsClick={() => setPanel({ type: 'decisions' })}
               onKnowledgeClick={() => setPanel({ type: 'knowledge' })}
+              onSettingsClick={() => setShowSettingsPanel(true)}
+              onThemeClick={() => setShowThemeDropup(v => !v)}
+              onStatsClick={() => setShowStatsPanel(true)}
               knowledgeDocsCount={knowledgeDocs.length}
               getRoleSpeech={ambient.getSpeech}
               getAppearance={getAppearance}

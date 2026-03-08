@@ -5,6 +5,7 @@ import useActivityStream from '../../hooks/useActivityStream';
 import OfficeMarkdown from './OfficeMarkdown';
 import TopDownCharCanvas from './TopDownCharCanvas';
 import { cloudApi } from '../../api/cloud';
+import { api } from '../../api/client';
 
 interface Props {
   role: RoleDetail | null;
@@ -648,12 +649,9 @@ function PublishToStore({ role, appearance }: { role: RoleDetail; appearance?: C
     if (!confirm) { setConfirm(true); return; }
     setStatus('publishing');
     try {
-      // Build skills from role.skills (role.yaml) or authority keys as fallback
-      const roleSkills: Array<{ id: string; name: string; category: string }> = (role.skills ?? []).map(s => ({
-        id: s.toLowerCase().replace(/\s+/g, '-'),
-        name: s,
-        category: 'general',
-      }));
+      // Fetch real SKILL.md content from local API
+      let skillExport = null;
+      try { skillExport = await api.exportSkills(role.id); } catch { /* no skills */ }
 
       const data: Record<string, unknown> = {
         roleId: role.id,
@@ -662,7 +660,7 @@ function PublishToStore({ role, appearance }: { role: RoleDetail; appearance?: C
         level: role.level,
         tagline: (role.persona ?? '').split(/[.\n]/)[0]?.trim().slice(0, 80) || role.name,
         chatStyle: 'Professional and focused',
-        skills: roleSkills,
+        skills: skillExport ?? [],
         resume: { summary: role.persona?.split('\n')[0] ?? '', strengths: [], specialties: [], experience: '' },
         author: { id: 'tycono', name: 'Tycono' },
         tags: [role.level, role.id],

@@ -77,6 +77,40 @@ skillsRouter.get('/:id', (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+/* ─── Skill Export (for Store publish) ──── */
+
+// GET /api/skills/export/:roleId — Export full SKILL.md content for publishing
+skillsRouter.get('/export/:roleId', (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const roleId = req.params.roleId as string;
+
+    // 1. Primary skill: .claude/skills/{roleId}/SKILL.md
+    let primary: { frontmatter: Record<string, unknown>; body: string } | null = null;
+    const primaryPath = path.join(COMPANY_ROOT, '.claude', 'skills', roleId, 'SKILL.md');
+    if (fs.existsSync(primaryPath)) {
+      const content = fs.readFileSync(primaryPath, 'utf-8');
+      primary = parseSkillContent(content, roleId);
+    }
+
+    // 2. Shared skills from role.yaml skills[] array
+    const sharedIds = getRoleSkills(roleId);
+    const shared: Array<{ id: string; frontmatter: Record<string, unknown>; body: string }> = [];
+
+    for (const sharedId of sharedIds) {
+      const sharedPath = path.join(COMPANY_ROOT, '.claude', 'skills', '_shared', sharedId, 'SKILL.md');
+      if (fs.existsSync(sharedPath)) {
+        const content = fs.readFileSync(sharedPath, 'utf-8');
+        const parsed = parseSkillContent(content, sharedId);
+        shared.push({ id: sharedId, ...parsed });
+      }
+    }
+
+    res.json({ primary, shared });
+  } catch (err) {
+    next(err);
+  }
+});
+
 /* ─── Role-Skill Management ─────────────── */
 
 // GET /api/roles/:id/skills — Skills equipped to a role
@@ -217,5 +251,28 @@ function extractSkillMeta(content: string, id: string): Record<string, unknown> 
     };
   } catch {
     return { id, name: id, description: '' };
+  }
+}
+
+function parseSkillContent(content: string, id: string): { frontmatter: Record<string, unknown>; body: string } {
+  const fmMatch = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)/);
+  if (!fmMatch) {
+    return { frontmatter: { name: id, description: '' }, body: content };
+  }
+
+  try {
+    const meta = YAML.parse(fmMatch[1]) as Record<string, unknown>;
+    return {
+      frontmatter: {
+        name: meta.name || id,
+        description: (meta.description as string) || '',
+        ...(meta.allowedTools ? { allowedTools: meta.allowedTools } : {}),
+        ...(meta.model ? { model: meta.model } : {}),
+        ...(meta.tags ? { tags: meta.tags } : {}),
+      },
+      body: fmMatch[2].trim(),
+    };
+  } catch {
+    return { frontmatter: { name: id, description: '' }, body: content };
   }
 }

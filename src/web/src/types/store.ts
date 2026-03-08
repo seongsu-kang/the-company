@@ -8,6 +8,22 @@ export interface SkillRef {
   category: 'core' | 'engineering' | 'operations' | 'domain';
 }
 
+export interface SkillContent {
+  frontmatter: {
+    name: string;
+    description: string;
+    allowedTools?: string[];
+    model?: string;
+    tags?: string[];
+  };
+  body: string;
+}
+
+export interface SkillExport {
+  primary: SkillContent | null;
+  shared: Array<{ id: string } & SkillContent>;
+}
+
 export interface CreatorRef {
   id: string;
   name: string;
@@ -26,8 +42,8 @@ export interface StoreCharacter {
   persona: string;
   chatStyle: string;
 
-  // Skills
-  skills: SkillRef[];
+  // Skills (SkillRef[] = legacy, SkillExport = new format with SKILL.md content)
+  skills: SkillRef[] | SkillExport;
   level: 'c-level' | 'team-lead' | 'member';
   authority: {
     autonomous: string[];

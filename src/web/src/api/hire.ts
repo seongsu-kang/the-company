@@ -1,8 +1,12 @@
 /* ─── Character Store Hire API ──────────────────── */
 
 import type { CreateRoleInput } from '../types';
-import type { StoreCharacter } from '../types/store';
+import type { StoreCharacter, SkillExport } from '../types/store';
 import { api } from './client';
+
+function isSkillExport(skills: unknown): skills is SkillExport {
+  return skills != null && typeof skills === 'object' && 'primary' in (skills as object);
+}
 
 /**
  * Convert a StoreCharacter to CreateRoleInput and hire (create) the role.
@@ -36,6 +40,7 @@ export async function hireCharacter(
       forked_at: '1.0.0',
       upstream_version: '1.0.0',
     },
+    skillContent: isSkillExport(character.skills) ? character.skills : undefined,
   };
 
   return api.createRole(input);

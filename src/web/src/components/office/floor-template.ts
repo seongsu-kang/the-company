@@ -249,10 +249,13 @@ function presetM(deskCount: number): FloorLayout {
   const wallDecorations: FurnitureDef[] = [
     // exec room walls
     { id: 'exec-window-1', type: 'window', room: 'exec', zone: 'wall', offsetX: 10, offsetY: 6, windowW: 16, windowH: 14 },
-    { id: 'exec-picture-1', type: 'picture', room: 'exec', zone: 'wall', offsetX: 34, offsetY: 8, pictureColor: '#1565C0' },
+    { id: 'exec-picture-1', type: 'picture', room: 'exec', zone: 'wall', offsetX: 34, offsetY: 8, pictureColor: '#1565C0',
+      facility: { id: 'theme', label: 'THEME', icon: '\u{1F3A8}', color: '#42A5F5', hitW: 12, hitH: 10 } },
     { id: 'exec-picture-2', type: 'picture', room: 'exec', zone: 'wall', offsetX: 48, offsetY: 8, pictureColor: '#E65100' },
-    { id: 'exec-clock', type: 'clock', room: 'exec', zone: 'wall', offsetX: 64, offsetY: 10 },
-    { id: 'exec-shelf', type: 'shelf', room: 'exec', zone: 'wall', offsetX: 78, offsetY: 18 },
+    { id: 'exec-clock', type: 'clock', room: 'exec', zone: 'wall', offsetX: 64, offsetY: 10,
+      facility: { id: 'settings', label: 'SETTINGS', icon: '\u{2699}', color: '#78909C', hitW: 10, hitH: 10 } },
+    { id: 'exec-shelf', type: 'shelf', room: 'exec', zone: 'wall', offsetX: 78, offsetY: 18,
+      facility: { id: 'stats', label: 'STATS', icon: '\u{1F4CA}', color: '#7E57C2', hitW: 16, hitH: 12 } },
     { id: 'exec-window-2', type: 'window', room: 'exec', zone: 'wall', offsetX: 104, offsetY: 6, windowW: 16, windowH: 14 },
     // work room walls
     { id: 'work-whiteboard', type: 'whiteboard', room: 'work', zone: 'wall', offsetX: 6, offsetY: 4 },
@@ -411,10 +414,13 @@ function presetL(deskCount: number): FloorLayout {
   /* ─── Wall decorations (same layout as M, same offsets) ── */
   const wallDecorations: FurnitureDef[] = [
     { id: 'exec-window-1', type: 'window', room: 'exec', zone: 'wall', offsetX: 10, offsetY: 6, windowW: 16, windowH: 14 },
-    { id: 'exec-picture-1', type: 'picture', room: 'exec', zone: 'wall', offsetX: 34, offsetY: 8, pictureColor: '#1565C0' },
+    { id: 'exec-picture-1', type: 'picture', room: 'exec', zone: 'wall', offsetX: 34, offsetY: 8, pictureColor: '#1565C0',
+      facility: { id: 'theme', label: 'THEME', icon: '\u{1F3A8}', color: '#42A5F5', hitW: 12, hitH: 10 } },
     { id: 'exec-picture-2', type: 'picture', room: 'exec', zone: 'wall', offsetX: 48, offsetY: 8, pictureColor: '#E65100' },
-    { id: 'exec-clock', type: 'clock', room: 'exec', zone: 'wall', offsetX: 64, offsetY: 10 },
-    { id: 'exec-shelf', type: 'shelf', room: 'exec', zone: 'wall', offsetX: 78, offsetY: 18 },
+    { id: 'exec-clock', type: 'clock', room: 'exec', zone: 'wall', offsetX: 64, offsetY: 10,
+      facility: { id: 'settings', label: 'SETTINGS', icon: '\u{2699}', color: '#78909C', hitW: 10, hitH: 10 } },
+    { id: 'exec-shelf', type: 'shelf', room: 'exec', zone: 'wall', offsetX: 78, offsetY: 18,
+      facility: { id: 'stats', label: 'STATS', icon: '\u{1F4CA}', color: '#7E57C2', hitW: 16, hitH: 12 } },
     { id: 'exec-window-2', type: 'window', room: 'exec', zone: 'wall', offsetX: 104, offsetY: 6, windowW: 16, windowH: 14 },
     { id: 'work-whiteboard', type: 'whiteboard', room: 'work', zone: 'wall', offsetX: 6, offsetY: 4 },
     { id: 'work-window-1', type: 'window', room: 'work', zone: 'wall', offsetX: 50, offsetY: 6, windowW: 16, windowH: 14 },

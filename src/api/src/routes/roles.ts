@@ -81,6 +81,23 @@ rolesRouter.get('/:id', (req: Request, res: Response, next: NextFunction) => {
       }
     }
 
+    // SKILL.md에서 스킬 메타 자동 추출
+    const skillMdPath = `.claude/skills/${id}/SKILL.md`;
+    if (fileExists(skillMdPath)) {
+      const skillContent = readFile(skillMdPath);
+      const fmMatch = skillContent.match(/^---\n([\s\S]*?)\n---/);
+      if (fmMatch) {
+        try {
+          const meta = YAML.parse(fmMatch[1]) as Record<string, unknown>;
+          role.skillMeta = {
+            name: meta.name || id,
+            description: meta.description || '',
+            ...(meta.allowedTools ? { allowedTools: meta.allowedTools } : {}),
+          };
+        } catch { /* ignore parse errors */ }
+      }
+    }
+
     // 오늘 저널 읽기
     const today = new Date().toISOString().slice(0, 10);
     const journalPath = `roles/${id}/journal/${today}.md`;

@@ -45,6 +45,9 @@ interface TopDownOfficeViewProps {
   onBulletinClick: () => void;
   onDecisionsClick: () => void;
   onKnowledgeClick: () => void;
+  onSettingsClick?: () => void;
+  onThemeClick?: () => void;
+  onStatsClick?: () => void;
   knowledgeDocsCount: number;
   getRoleSpeech: (roleId: string) => string;
   getAppearance?: (roleId: string) => CharacterAppearance;
@@ -678,7 +681,7 @@ function drawScene(
 
 export default function TopDownOfficeView({
   roles, projects, roleStatuses, activeExecs,
-  onRoleClick, onProjectClick, onBulletinClick, onDecisionsClick, onKnowledgeClick,
+  onRoleClick, onProjectClick, onBulletinClick, onDecisionsClick, onKnowledgeClick, onSettingsClick, onThemeClick, onStatsClick,
   getRoleSpeech, getAppearance, onHireClick,
 }: TopDownOfficeViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -851,11 +854,14 @@ export default function TopDownOfficeView({
     }
 
     // Facility labels
-    const facilityHandlers: Record<string, () => void> = {
+    const facilityHandlers: Record<string, (() => void) | undefined> = {
       meeting: () => { const p = projects[0]; if (p) onProjectClick(p.id); else onBulletinClick(); },
       bulletin: onBulletinClick,
       decisions: onDecisionsClick,
       knowledge: onKnowledgeClick,
+      settings: onSettingsClick,
+      theme: onThemeClick,
+      stats: onStatsClick,
     };
     for (const fz of _facilityZones) {
       const lbl = document.createElement('div');
@@ -869,7 +875,7 @@ export default function TopDownOfficeView({
       lbl.addEventListener('mouseleave', () => { _hoverFacility = null; });
       overlay.appendChild(lbl);
     }
-  }, [assignedRoleIds, projects, onProjectClick, onBulletinClick, onDecisionsClick, onKnowledgeClick]);
+  }, [assignedRoleIds, projects, onProjectClick, onBulletinClick, onDecisionsClick, onKnowledgeClick, onSettingsClick, onThemeClick, onStatsClick]);
 
   // Update overlay positions
   const updateOverlay = useCallback(() => {
@@ -1219,8 +1225,11 @@ export default function TopDownOfficeView({
       case 'bulletin': onBulletinClick(); break;
       case 'decisions': onDecisionsClick(); break;
       case 'knowledge': onKnowledgeClick(); break;
+      case 'settings': onSettingsClick?.(); break;
+      case 'theme': onThemeClick?.(); break;
+      case 'stats': onStatsClick?.(); break;
     }
-  }, [hitTest, onRoleClick, onProjectClick, onBulletinClick, onDecisionsClick, onKnowledgeClick]);
+  }, [hitTest, onRoleClick, onProjectClick, onBulletinClick, onDecisionsClick, onKnowledgeClick, onSettingsClick, onThemeClick, onStatsClick]);
 
   return (
     <div className={`td-scene${editMode ? ' td-scene--editing' : ''}`}>

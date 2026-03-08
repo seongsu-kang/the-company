@@ -56,6 +56,7 @@ export const api = {
 
   // Skills
   getSkills: () => get<Array<{ id: string; name: string; description: string; source: string; installed: boolean }>>('/skills'),
+  exportSkills: (roleId: string) => get<import('../types/store').SkillExport>(`/skills/export/${roleId}`),
 
   // Roles (Engine)
   createRole: (input: CreateRoleInput) =>
