@@ -48,13 +48,30 @@ function defaultsForLevel(level: CreateRoleInput['level']) {
 
 /* ─── Instance ID for voting ─── */
 
-function getInstanceId(): string {
+let _cachedInstanceId: string | null = null;
+
+/** Get persistent instance ID from server preferences. Falls back to localStorage. */
+async function getInstanceId(): Promise<string> {
+  if (_cachedInstanceId) return _cachedInstanceId;
+
+  // Try server-side preferences first (persisted in .tycono/preferences.json)
+  try {
+    const prefs = await api.getPreferences();
+    if ((prefs as { instanceId?: string }).instanceId) {
+      _cachedInstanceId = (prefs as { instanceId?: string }).instanceId!;
+      localStorage.setItem('tycono_instance_id', _cachedInstanceId);
+      return _cachedInstanceId;
+    }
+  } catch { /* server unavailable — fall through */ }
+
+  // Fallback to localStorage
   const key = 'tycono_instance_id';
   let id = localStorage.getItem(key);
   if (!id) {
     id = crypto.randomUUID();
     localStorage.setItem(key, id);
   }
+  _cachedInstanceId = id;
   return id;
 }
 
@@ -104,6 +121,7 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
   const [storeName, setStoreName] = useState('');
   const [storeRoleId, setStoreRoleId] = useState('');
   const [storeReportsTo, setStoreReportsTo] = useState('ceo');
+  const [storeToken, setStoreToken] = useState<string | null>(null); // logged-in instanceId
 
   /* ─── Single mode state ─── */
   const [step, setStep] = useState(1);
@@ -130,6 +148,8 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
 
   useEffect(() => {
     api.getSkills().then((skills) => setAvailableSkills(skills.filter(s => s.installed))).catch(() => {});
+    // Auto-login: fetch instanceId from local API (preferences.json)
+    getInstanceId().then(id => setStoreToken(id)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -151,18 +171,18 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
   const loadStoreChars = async () => {
     setStoreLoading(true);
     try {
-      const data = await cloudApi.getCharacters({ sort: storeSort, instanceId: getInstanceId() });
+      const data = await cloudApi.getCharacters({ sort: storeSort, instanceId: storeToken ?? undefined });
       setStoreChars(data.characters);
     } catch { setStoreError('Failed to load store'); }
     setStoreLoading(false);
   };
 
-  // Reload on sort change
+  // Reload on sort change or token change
   useEffect(() => {
     if (mode === 'store' && storeStep === 'browse') {
       loadStoreChars();
     }
-  }, [storeSort]);
+  }, [storeSort, storeToken]);
 
   const filteredChars = useMemo(() => {
     if (!storeSearch.trim()) return storeChars;
@@ -267,11 +287,12 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
   };
 
   const handleVote = async (charId: string, vote: 1 | -1) => {
+    if (!storeToken) return; // must be logged in
     const existing = storeChars.find(c => c.id === charId);
     if (!existing) return;
     const newVote = existing.my_vote === vote ? 0 : vote;
     try {
-      const result = await cloudApi.voteCharacter(charId, getInstanceId(), newVote as 1 | -1 | 0);
+      const result = await cloudApi.voteCharacter(charId, storeToken, newVote as 1 | -1 | 0);
       setStoreChars(prev => prev.map(c => c.id === charId ? {
         ...c,
         upvotes: result.upvotes,
@@ -315,8 +336,9 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
   };
 
   const handleStoreDelete = async (charId: string) => {
+    if (!storeToken) return;
     try {
-      await cloudApi.deleteCharacter(charId);
+      await cloudApi.deleteCharacter(charId, storeToken);
       setStoreChars(prev => prev.filter(c => c.id !== charId));
     } catch { /* ignore */ }
   };
@@ -395,6 +417,23 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
             <>
               {storeStep === 'browse' && (
                 <div className="space-y-3">
+                  {/* Auth banner */}
+                  {!storeToken ? (
+                    <StoreLoginBanner onLogin={(token) => {
+                      _cachedInstanceId = token;
+                      localStorage.setItem('tycono_instance_id', token);
+                      setStoreToken(token);
+                    }} />
+                  ) : (
+                    <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-green-900/10 border border-green-800/20 text-[10px]">
+                      <span className="text-green-400/70">Signed in · <span className="font-mono text-white/40">{storeToken.slice(0, 8)}...</span></span>
+                      <button
+                        onClick={() => { _cachedInstanceId = null; localStorage.removeItem('tycono_instance_id'); setStoreToken(null); }}
+                        className="text-white/30 hover:text-white/60 cursor-pointer"
+                      >Sign out</button>
+                    </div>
+                  )}
+
                   {/* Search + Sort bar */}
                   <div className="flex gap-2">
                     <input
@@ -439,6 +478,7 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
                           onVote={(vote) => handleVote(ch.id, vote)}
                           onDelete={() => handleStoreDelete(ch.id)}
                           fetching={storeFetching}
+                          token={storeToken}
                         />
                       ))}
                     </div>
@@ -884,17 +924,83 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
   );
 }
 
+/* ─── Store Login Banner ─── */
+
+function StoreLoginBanner({ onLogin }: { onLogin: (token: string) => void }) {
+  const [tokenInput, setTokenInput] = useState('');
+  const [showTokenField, setShowTokenField] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = () => {
+    const t = tokenInput.trim();
+    if (!t) return;
+    // Basic UUID format check
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(t)) {
+      setError('Invalid token format');
+      return;
+    }
+    onLogin(t);
+  };
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 space-y-2">
+      <div className="text-[11px] text-white/50">
+        Sign in to vote, publish, and manage your characters.
+      </div>
+      {!showTokenField ? (
+        <div className="flex gap-2">
+          <button
+            onClick={setShowTokenField.bind(null, true)}
+            className="px-3 py-1.5 text-[11px] font-semibold rounded-lg cursor-pointer text-amber-400 bg-amber-900/20 border border-amber-800/30 hover:bg-amber-900/40 transition-colors"
+          >
+            Paste Token
+          </button>
+          <span className="text-[10px] text-white/20 self-center">from Settings → Token</span>
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          <div className="flex gap-2">
+            <input
+              value={tokenInput}
+              onChange={(e) => { setTokenInput(e.target.value); setError(''); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit(); }}
+              placeholder="Paste your token here..."
+              className="flex-1 px-2 py-1.5 rounded-lg border border-white/10 bg-white/5 text-xs text-white/90 font-mono placeholder-white/20 focus:outline-none focus:border-amber-800/40"
+              autoFocus
+            />
+            <button
+              onClick={handleSubmit}
+              disabled={!tokenInput.trim()}
+              className="px-3 py-1.5 text-[11px] font-semibold rounded-lg cursor-pointer text-green-400 bg-green-900/20 border border-green-800/30 hover:bg-green-900/40 disabled:opacity-30 transition-colors"
+            >
+              Sign in
+            </button>
+          </div>
+          {error && <div className="text-[10px] text-red-400">{error}</div>}
+          <button
+            onClick={setShowTokenField.bind(null, false)}
+            className="text-[10px] text-white/30 hover:text-white/50 cursor-pointer"
+          >Cancel</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Store Character Card ─── */
 
-function StoreCharCard({ char, isHired, onSelect, onVote, onDelete, fetching }: {
+function StoreCharCard({ char, isHired, onSelect, onVote, onDelete, fetching, token }: {
   char: CloudCharacterSummary;
   isHired: boolean;
   onSelect: () => void;
   onVote: (vote: 1 | -1) => void;
   onDelete: () => void;
   fetching: boolean;
+  token: string | null;
 }) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const isOwner = token && char.publisher_id === token;
+  const canVote = !!token;
 
   return (
     <div className="flex items-center gap-3 p-3 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] transition-colors group">
@@ -902,8 +1008,9 @@ function StoreCharCard({ char, isHired, onSelect, onVote, onDelete, fetching }: 
       <div className="flex flex-col items-center gap-0.5 shrink-0 w-8">
         <button
           onClick={(e) => { e.stopPropagation(); onVote(1); }}
-          className={`text-[14px] leading-none cursor-pointer transition-colors ${char.my_vote === 1 ? 'text-green-400' : 'text-white/20 hover:text-green-400/60'}`}
-          title="Upvote"
+          disabled={!canVote}
+          className={`text-[14px] leading-none transition-colors ${canVote ? 'cursor-pointer' : 'cursor-not-allowed opacity-30'} ${char.my_vote === 1 ? 'text-green-400' : 'text-white/20 hover:text-green-400/60'}`}
+          title={canVote ? 'Upvote' : 'Sign in to vote'}
         >
           {'\u25B2'}
         </button>
@@ -912,8 +1019,9 @@ function StoreCharCard({ char, isHired, onSelect, onVote, onDelete, fetching }: 
         </span>
         <button
           onClick={(e) => { e.stopPropagation(); onVote(-1); }}
-          className={`text-[14px] leading-none cursor-pointer transition-colors ${char.my_vote === -1 ? 'text-red-400' : 'text-white/20 hover:text-red-400/60'}`}
-          title="Downvote"
+          disabled={!canVote}
+          className={`text-[14px] leading-none transition-colors ${canVote ? 'cursor-pointer' : 'cursor-not-allowed opacity-30'} ${char.my_vote === -1 ? 'text-red-400' : 'text-white/20 hover:text-red-400/60'}`}
+          title={canVote ? 'Downvote' : 'Sign in to vote'}
         >
           {'\u25BC'}
         </button>
@@ -953,7 +1061,7 @@ function StoreCharCard({ char, isHired, onSelect, onVote, onDelete, fetching }: 
         >
           Hire
         </button>
-        {showDeleteConfirm ? (
+        {isOwner && (showDeleteConfirm ? (
           <div className="flex items-center gap-1">
             <button
               onClick={(e) => { e.stopPropagation(); onDelete(); setShowDeleteConfirm(false); }}
@@ -978,7 +1086,7 @@ function StoreCharCard({ char, isHired, onSelect, onVote, onDelete, fetching }: 
               <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" />
             </svg>
           </button>
-        )}
+        ))}
       </div>
     </div>
   );

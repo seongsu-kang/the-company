@@ -4,6 +4,7 @@
  * 캐릭터 외모, 오피스 테마 등 사용자 설정을 서버 파일로 영속화한다.
  * company-config.ts의 readConfig/writeConfig 패턴을 따른다.
  */
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -46,6 +47,7 @@ export interface AddedFurniture {
 }
 
 export interface Preferences {
+  instanceId?: string; // anonymous persistent token — auto-generated on first read
   appearances: Record<string, CharacterAppearance>;
   theme: string;
   speech?: SpeechSettings;
@@ -64,25 +66,34 @@ function prefsPath(companyRoot: string): string {
   return path.join(companyRoot, CONFIG_DIR, PREFS_FILE);
 }
 
-/** Read preferences from .tycono/preferences.json. Returns defaults if missing. */
+/** Read preferences from .tycono/preferences.json. Returns defaults if missing.
+ *  Auto-generates instanceId on first access and persists it. */
 export function readPreferences(companyRoot: string): Preferences {
   const p = prefsPath(companyRoot);
-  if (!fs.existsSync(p)) return { ...DEFAULT, appearances: {} };
-  try {
-    const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
-    return {
-      appearances: data.appearances ?? {},
-      theme: data.theme ?? 'default',
-      speech: data.speech ?? undefined,
-      language: data.language ?? undefined,
-      furnitureOverrides: data.furnitureOverrides ?? undefined,
-      deskOverrides: data.deskOverrides ?? undefined,
-      removedFurniture: data.removedFurniture ?? undefined,
-      addedFurniture: data.addedFurniture ?? undefined,
-    };
-  } catch {
-    return { ...DEFAULT, appearances: {} };
+  let data: Record<string, unknown> = {};
+  if (fs.existsSync(p)) {
+    try { data = JSON.parse(fs.readFileSync(p, 'utf-8')); } catch { /* use defaults */ }
   }
+
+  const prefs: Preferences = {
+    instanceId: (data.instanceId as string) ?? undefined,
+    appearances: (data.appearances as Record<string, CharacterAppearance>) ?? {},
+    theme: (data.theme as string) ?? 'default',
+    speech: (data.speech as SpeechSettings) ?? undefined,
+    language: (data.language as string) ?? undefined,
+    furnitureOverrides: (data.furnitureOverrides as Record<string, FurnitureOverride>) ?? undefined,
+    deskOverrides: (data.deskOverrides as Record<string, DeskOverride>) ?? undefined,
+    removedFurniture: (data.removedFurniture as string[]) ?? undefined,
+    addedFurniture: (data.addedFurniture as AddedFurniture[]) ?? undefined,
+  };
+
+  // Auto-generate instanceId on first access
+  if (!prefs.instanceId) {
+    prefs.instanceId = crypto.randomUUID();
+    writePreferences(companyRoot, prefs);
+  }
+
+  return prefs;
 }
 
 /** Write preferences to .tycono/preferences.json. Creates dir if needed. */
@@ -92,10 +103,11 @@ export function writePreferences(companyRoot: string, prefs: Preferences): void 
   fs.writeFileSync(prefsPath(companyRoot), JSON.stringify(prefs, null, 2) + '\n');
 }
 
-/** Merge partial preferences into existing. */
+/** Merge partial preferences into existing. instanceId is never overwritten by client. */
 export function mergePreferences(companyRoot: string, partial: Partial<Preferences>): Preferences {
   const current = readPreferences(companyRoot);
   const merged: Preferences = {
+    instanceId: current.instanceId, // preserve — never overwrite from client
     appearances: partial.appearances !== undefined
       ? { ...current.appearances, ...partial.appearances }
       : current.appearances,

@@ -33,6 +33,7 @@ export interface CloudCharacterSummary {
   downvotes: number;
   vote_score: number;
   my_vote?: number | null;
+  publisher_id?: string | null;
 }
 
 export interface CloudCharacterDetail {
@@ -88,10 +89,12 @@ export const cloudApi = {
     cloudPost<{ character: CloudCharacterDetail; version: string }>('/api/sync/pull', { sourceId }),
 
   // Publish
-  publishCharacter: (data: { id: string; name: string; version?: string; data: Record<string, unknown> }) =>
+  publishCharacter: (data: { id: string; name: string; version?: string; data: Record<string, unknown>; publisherId?: string }) =>
     cloudPost<{ ok: boolean; id: string; version: string }>('/api/store/publish', data),
-  deleteCharacter: (id: string) =>
-    fetch(`${CLOUD_BASE}/api/store/characters/${id}`, { method: 'DELETE' }).then(r => r.json()),
+  deleteCharacter: (id: string, publisherId?: string) => {
+    const qs = publisherId ? `?publisher_id=${encodeURIComponent(publisherId)}` : '';
+    return fetch(`${CLOUD_BASE}/api/store/characters/${id}${qs}`, { method: 'DELETE' }).then(r => r.json());
+  },
 
   // Telemetry
   uploadTelemetry: (data: {

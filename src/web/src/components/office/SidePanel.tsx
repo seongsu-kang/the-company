@@ -647,12 +647,16 @@ function PublishToStore({ role, appearance }: { role: RoleDetail; appearance?: C
   const [publishedVersion, setPublishedVersion] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [publisherId, setPublisherId] = useState<string | null>(null);
 
-  // Check if already published
+  // Check if already published + get publisher token
   useEffect(() => {
     cloudApi.getCharacterVersion(role.id)
       .then(v => setPublishedVersion(v?.version ?? null))
       .catch(() => setPublishedVersion(null));
+    api.getPreferences()
+      .then(p => setPublisherId((p as { instanceId?: string }).instanceId ?? null))
+      .catch(() => {});
   }, [role.id]);
 
   const handlePublish = async () => {
@@ -692,7 +696,7 @@ function PublishToStore({ role, appearance }: { role: RoleDetail; appearance?: C
         }
       } catch { /* not published yet */ }
 
-      await cloudApi.publishCharacter({ id: role.id, name: role.name || role.id, version, data });
+      await cloudApi.publishCharacter({ id: role.id, name: role.name || role.id, version, data, publisherId: publisherId ?? undefined });
       setStatus('done');
       setMessage(`Published v${version}`);
       setPublishedVersion(version);
@@ -707,7 +711,7 @@ function PublishToStore({ role, appearance }: { role: RoleDetail; appearance?: C
   const handleDelete = async () => {
     setDeleting(true);
     try {
-      await cloudApi.deleteCharacter(role.id);
+      await cloudApi.deleteCharacter(role.id, publisherId ?? undefined);
       setPublishedVersion(null);
       setStatus('idle');
       setMessage('');

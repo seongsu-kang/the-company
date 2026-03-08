@@ -1,3 +1,5 @@
+import { useState, useEffect } from 'react';
+import { api } from '../../api/client';
 import type { SpeechSettings } from '../../types/speech';
 
 interface Props {
@@ -15,6 +17,38 @@ export default function SettingsPanel({
   onClose, speechSettings, onSpeechSettingsChange,
   language, onLanguageChange, onOpenSync, onOpenGitStatus, onOpenStats,
 }: Props) {
+  const [instanceId, setInstanceId] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [regenConfirm, setRegenConfirm] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+
+  useEffect(() => {
+    api.getPreferences()
+      .then(p => setInstanceId((p as { instanceId?: string }).instanceId ?? null))
+      .catch(() => {});
+  }, []);
+
+  const handleRegenerate = async () => {
+    setRegenerating(true);
+    try {
+      const res = await fetch('/api/preferences/regenerate-token', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        setInstanceId(data.newInstanceId);
+        setRegenConfirm(false);
+      }
+    } catch { /* ignore */ }
+    setRegenerating(false);
+  };
+
+  const handleCopy = () => {
+    if (!instanceId) return;
+    navigator.clipboard.writeText(instanceId).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
   return (
     <div className="customize-overlay" onClick={onClose}>
       <div
@@ -124,6 +158,69 @@ export default function SettingsPanel({
                 Sets language for AI responses and speech bubbles
               </div>
             </div>
+
+            {/* Instance Token */}
+            {instanceId && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 8, color: 'var(--terminal-text)' }}>
+                  STORE TOKEN
+                </div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <code style={{
+                    flex: 1, padding: '8px 10px', fontSize: 10,
+                    background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: 6, color: 'var(--terminal-text-muted)', fontFamily: 'monospace',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {instanceId}
+                  </code>
+                  <button onClick={handleCopy} style={{
+                    padding: '8px 12px', fontSize: 10, fontWeight: 600,
+                    border: '2px solid rgba(255,255,255,0.1)', background: 'transparent',
+                    color: copied ? '#4ade80' : 'var(--terminal-text-muted)',
+                    borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap',
+                  }}>
+                    {copied ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+                <div style={{ fontSize: 9, color: 'var(--terminal-text-muted)', marginTop: 4 }}>
+                  Use this token to sign in on the web Store. Keep it secret — anyone with this token can act as you.
+                </div>
+                <div style={{ marginTop: 6 }}>
+                  {!regenConfirm ? (
+                    <button onClick={() => setRegenConfirm(true)} style={{
+                      padding: '4px 10px', fontSize: 9, fontWeight: 600,
+                      border: '1px solid rgba(255,100,100,0.2)', background: 'transparent',
+                      color: 'rgba(255,100,100,0.6)', borderRadius: 4, cursor: 'pointer',
+                    }}>
+                      Regenerate Token
+                    </button>
+                  ) : (
+                    <div style={{ background: 'rgba(255,50,50,0.08)', border: '1px solid rgba(255,50,50,0.2)', borderRadius: 6, padding: '8px 10px' }}>
+                      <div style={{ fontSize: 9, color: 'rgba(255,100,100,0.8)', marginBottom: 6 }}>
+                        This will invalidate your current token. Published characters will lose ownership. No migration.
+                      </div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={handleRegenerate} disabled={regenerating} style={{
+                          padding: '4px 12px', fontSize: 9, fontWeight: 700,
+                          border: '1px solid rgba(255,50,50,0.4)', background: 'rgba(255,50,50,0.15)',
+                          color: '#ff6464', borderRadius: 4, cursor: 'pointer',
+                        }}>
+                          {regenerating ? '...' : 'Confirm Regenerate'}
+                        </button>
+                        <button onClick={() => setRegenConfirm(false)} style={{
+                          padding: '4px 12px', fontSize: 9,
+                          border: 'none', background: 'transparent',
+                          color: 'var(--terminal-text-muted)', cursor: 'pointer',
+                        }}>
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Quick Links */}
             <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 16, display: 'flex', gap: 8 }}>
