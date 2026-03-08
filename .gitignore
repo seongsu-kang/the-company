@@ -39,6 +39,9 @@ fixtures/*/operations/activity/
 fixtures/*/operations/sessions/
 fixtures/*/.tycono/preferences.json
 
+# Fixture config.json should be tracked (override .tycono/ ignore below)
+!fixtures/*/.tycono/config.json
+
 # Screenshots
 *.png
 
