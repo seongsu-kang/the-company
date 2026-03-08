@@ -50,6 +50,7 @@ function applyThemeVars(theme: OfficeTheme): void {
 
 const DEFAULT_SPEECH: SpeechSettings = { mode: 'auto', intervalSec: 18, dailyBudgetUsd: 1.0 };
 const STORAGE_KEY_SPEECH = 'tycono-speech-settings';
+const STORAGE_KEY_LANGUAGE = 'tycono-language';
 
 function loadSpeechSettings(): SpeechSettings {
   try {
@@ -62,6 +63,9 @@ export function useCustomization() {
   const [appearances, setAppearances] = useState<Record<string, CharacterAppearance>>(loadAppearances);
   const [theme, setThemeState] = useState<OfficeTheme>(loadTheme);
   const [speechSettings, setSpeechSettingsState] = useState<SpeechSettings>(loadSpeechSettings);
+  const [language, setLanguageState] = useState<string>(() => {
+    try { return localStorage.getItem(STORAGE_KEY_LANGUAGE) ?? 'auto'; } catch { return 'auto'; }
+  });
   const seeded = useRef(false);
 
   // On mount: fetch from server, seed if server has no data
@@ -74,6 +78,10 @@ export function useCustomization() {
       if (prefs.speech) {
         setSpeechSettingsState(prev => ({ ...prev, ...prefs.speech }));
         localStorage.setItem(STORAGE_KEY_SPEECH, JSON.stringify(prefs.speech));
+      }
+      if (prefs.language) {
+        setLanguageState(prefs.language);
+        localStorage.setItem(STORAGE_KEY_LANGUAGE, prefs.language);
       }
       if (serverHasData) {
         // Server is source of truth
@@ -140,5 +148,11 @@ export function useCustomization() {
     });
   }, []);
 
-  return { appearances, getAppearance, setAppearance, resetAppearance, theme, setTheme, speechSettings, setSpeechSettings };
+  const setLanguage = useCallback((lang: string) => {
+    setLanguageState(lang);
+    localStorage.setItem(STORAGE_KEY_LANGUAGE, lang);
+    api.updatePreferences({ language: lang }).catch(() => {});
+  }, []);
+
+  return { appearances, getAppearance, setAppearance, resetAppearance, theme, setTheme, speechSettings, setSpeechSettings, language, setLanguage };
 }

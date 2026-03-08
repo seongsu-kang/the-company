@@ -21,7 +21,7 @@ export interface ChatMessage {
 }
 
 export interface ChatChannel {
-  id: string;          // 'office' | 'ch-xxx'
+  id: string;          // 'general' | 'watercooler' | 'ch-xxx'
   name: string;        // '#office', '#engineering'
   members: string[];   // roleId[] — empty = all roles
   isDefault: boolean;  // #office = true, cannot delete

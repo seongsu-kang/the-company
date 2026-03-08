@@ -28,6 +28,7 @@ export interface Preferences {
   appearances: Record<string, CharacterAppearance>;
   theme: string;
   speech?: SpeechSettings;
+  language?: string; // 'en' | 'ko' | 'ja' | 'auto'
 }
 
 const CONFIG_DIR = '.tycono';
@@ -48,6 +49,7 @@ export function readPreferences(companyRoot: string): Preferences {
       appearances: data.appearances ?? {},
       theme: data.theme ?? 'default',
       speech: data.speech ?? undefined,
+      language: data.language ?? undefined,
     };
   } catch {
     return { ...DEFAULT, appearances: {} };
@@ -72,6 +74,7 @@ export function mergePreferences(companyRoot: string, partial: Partial<Preferenc
     speech: partial.speech !== undefined
       ? { ...current.speech, ...partial.speech }
       : current.speech,
+    language: partial.language !== undefined ? partial.language : current.language,
   };
   writePreferences(companyRoot, merged);
   return merged;

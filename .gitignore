@@ -31,6 +31,14 @@ tmp/
 operations/activity/
 operations/sessions/
 
+# Fixture runtime files (generated during dev testing)
+fixtures/*/roles/*/journal/*.md
+fixtures/*/operations/standup/*.md
+fixtures/*/operations/waves/*.md
+fixtures/*/operations/activity/
+fixtures/*/operations/sessions/
+fixtures/*/.tycono/preferences.json
+
 # Screenshots
 *.png
 

@@ -188,7 +188,7 @@ body {
   height: 100px;
 }
 
-/* Desk furniture inside card */
+/* Desk furniture inside card — rendered in front of character */
 .pixel-desk {
   position: absolute;
   bottom: 6px;
@@ -197,6 +197,7 @@ body {
   background: #6b5b4b;
   border: 2px solid #4b3b2b;
   border-top-color: #8b7b6b;
+  z-index: 3;
 }
 .pixel-desk::before {
   content: '';
@@ -214,6 +215,12 @@ body {
   font-size: 28px;
   z-index: 2;
   animation: pixel-bounce 1s steps(2) infinite;
+}
+/* Character canvas inside card body — behind desk */
+.pixel-card-body canvas {
+  z-index: 1;
+  position: relative;
+  margin-bottom: -4px;
 }
 /* Status dot */
 .pixel-status-dot {
@@ -863,6 +870,7 @@ body {
 /* ============================================ */
 
 .td-scene {
+  position: relative;
   width: 100%;
   height: 100%;
   display: flex;
@@ -959,6 +967,35 @@ body {
 @keyframes td-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
+}
+
+/* ── Hire button (ISO view) ── */
+.td-hire-btn {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: rgba(20, 25, 35, 0.85);
+  border: 2px dashed rgba(139, 148, 158, 0.4);
+  color: #8b949e;
+  font-family: var(--pixel-font);
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+  image-rendering: auto;
+}
+.td-hire-btn:hover {
+  border-color: rgba(88, 166, 255, 0.6);
+  color: #58a6ff;
+  background: rgba(20, 25, 35, 0.95);
+}
+.td-hire-btn__icon {
+  font-size: 14px;
+  line-height: 1;
 }
 
 /* ── View toggle button ── */

@@ -1,0 +1,28 @@
+# Source & dev files (package.json "files" field is primary filter, this is a safety net)
+src/web/src/
+src/web/node_modules/
+src/web/package.json
+src/web/tsconfig*.json
+src/web/vite.config.*
+src/web/index.html
+src/api/node_modules/
+src/api/tsconfig*.json
+
+# Tests & Fixtures
+__tests__/
+*.test.*
+*.spec.*
+fixtures/
+test-results/
+
+# CI/CD & repo config
+.github/
+.gitignore
+.eslintrc*
+.prettierrc*
+tsconfig*.json
+
+# Docs
+*.md
+LICENSE
+docs/

@@ -1,0 +1,58 @@
+import type { OrgTree } from '../org-tree.js';
+/**
+ * Execution Runner 추상화.
+ *
+ * 현재 구현:
+ *   - claude-cli: Claude Code CLI (`claude -p`) 기반 — 구독으로 비용 부담 없음
+ *   - direct-api: Anthropic API 직접 호출 — 향후 전환용
+ *
+ * EXECUTION_ENGINE 환경변수로 전환 (기본값: claude-cli)
+ */
+export type TeamStatus = Record<string, {
+    status: string;
+    task?: string;
+}>;
+export interface RunnerConfig {
+    companyRoot: string;
+    roleId: string;
+    task: string;
+    sourceRole: string;
+    orgTree: OrgTree;
+    readOnly?: boolean;
+    maxTurns?: number;
+    model?: string;
+    jobId?: string;
+    teamStatus?: TeamStatus;
+}
+export interface RunnerCallbacks {
+    onText?: (text: string) => void;
+    onThinking?: (text: string) => void;
+    onToolUse?: (tool: string, input?: Record<string, unknown>) => void;
+    onDispatch?: (roleId: string, task: string) => void;
+    onTurnComplete?: (turn: number) => void;
+    onError?: (error: string) => void;
+}
+export interface RunnerResult {
+    output: string;
+    turns: number;
+    totalTokens: {
+        input: number;
+        output: number;
+    };
+    toolCalls: Array<{
+        name: string;
+        input?: Record<string, unknown>;
+    }>;
+    dispatches: Array<{
+        roleId: string;
+        task: string;
+        result?: string;
+    }>;
+}
+export interface RunnerHandle {
+    promise: Promise<RunnerResult>;
+    abort: () => void;
+}
+export interface ExecutionRunner {
+    execute(config: RunnerConfig, callbacks: RunnerCallbacks): RunnerHandle;
+}

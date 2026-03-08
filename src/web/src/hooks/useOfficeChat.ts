@@ -16,30 +16,52 @@ function nextMsgId(): string {
   return `chat-${Date.now()}-${++_msgId}`;
 }
 
+/** Default channels created on first load */
+function makeDefaultChannels(): ChatChannel[] {
+  return [
+    {
+      id: 'general',
+      name: '#general',
+      members: [],            // empty = all roles
+      isDefault: true,
+      messages: [],
+      topic: 'Company-wide announcements and general discussion',
+    },
+    {
+      id: 'watercooler',
+      name: '#watercooler',
+      members: [],            // populated later with non-C-level roles
+      isDefault: true,
+      messages: [],
+      topic: 'No managers allowed. Vent, gossip, joke around. Talk freely about work frustrations, complain about directives you disagree with, share hot takes.',
+    },
+  ];
+}
+
 function loadChannels(): ChatChannel[] {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as ChatChannel[];
-      // Ensure #office exists
-      if (!parsed.find(c => c.id === 'office')) {
-        parsed.unshift(makeOfficeChannel());
+
+      // Migration: replace old #office with new defaults
+      if (parsed.find(c => c.id === 'office') && !parsed.find(c => c.id === 'general')) {
+        const custom = parsed.filter(c => c.id !== 'office');
+        return [...makeDefaultChannels(), ...custom];
       }
-      // Migration: filter out non-dispatch messages from #office
-      // (old sessions may have stored monologue/guilt/social types)
-      return parsed.map(ch => {
-        if (ch.id === 'office') {
-          return { ...ch, messages: ch.messages.filter(m => m.type === 'dispatch') };
+
+      // Ensure default channels exist
+      const defaults = makeDefaultChannels();
+      for (const def of defaults) {
+        if (!parsed.find(c => c.id === def.id)) {
+          parsed.unshift(def);
         }
-        return ch;
-      });
+      }
+
+      return parsed;
     }
   } catch { /* ignore */ }
-  return [makeOfficeChannel()];
-}
-
-function makeOfficeChannel(): ChatChannel {
-  return { id: 'office', name: '#office', members: [], isDefault: true, messages: [] };
+  return makeDefaultChannels();
 }
 
 function saveChannels(channels: ChatChannel[]) {
@@ -67,6 +89,8 @@ export interface UseOfficeChatReturn {
   updateTopic: (channelId: string, topic: string) => void;
   /** Channels with unread messages (set of channel ids) */
   unreadChannels: Set<string>;
+  /** Sync default channel members when roles are loaded */
+  syncDefaultMembers: (roles: Array<{ id: string; level: string }>) => void;
 }
 
 export function useOfficeChat(): UseOfficeChatReturn {
@@ -96,8 +120,8 @@ export function useOfficeChat(): UseOfficeChatReturn {
 
     setChannels(prev => {
       const updated = prev.map(ch => {
-        // #office: system logs only (dispatch events)
-        if (ch.id === 'office') {
+        // #general: dispatch events (system logs)
+        if (ch.id === 'general') {
           if (msg.type === 'dispatch') {
             return { ...ch, messages: [...ch.messages, fullMsg].slice(-MAX_MESSAGES) };
           }
@@ -150,7 +174,7 @@ export function useOfficeChat(): UseOfficeChatReturn {
 
   const deleteChannel = useCallback((id: string) => {
     setChannels(prev => prev.filter(ch => ch.id !== id || ch.isDefault));
-    setActiveChannelId(prev => prev === id ? 'office' : prev);
+    setActiveChannelId(prev => prev === id ? 'general' : prev);
   }, []);
 
   const updateMembers = useCallback((channelId: string, members: string[]) => {
@@ -165,6 +189,20 @@ export function useOfficeChat(): UseOfficeChatReturn {
     ));
   }, []);
 
+  /** Sync default channel members based on loaded roles */
+  const syncDefaultMembers = useCallback((roles: Array<{ id: string; level: string }>) => {
+    setChannels(prev => prev.map(ch => {
+      if (ch.id === 'watercooler') {
+        // Non-C-level only
+        const nonCLevel = roles.filter(r => r.level !== 'c-level').map(r => r.id);
+        if (ch.members.length !== nonCLevel.length || !nonCLevel.every(id => ch.members.includes(id))) {
+          return { ...ch, members: nonCLevel };
+        }
+      }
+      return ch;
+    }));
+  }, []);
+
   return {
     channels,
     activeChannelId,
@@ -175,5 +213,6 @@ export function useOfficeChat(): UseOfficeChatReturn {
     updateMembers,
     updateTopic,
     unreadChannels,
+    syncDefaultMembers,
   };
 }

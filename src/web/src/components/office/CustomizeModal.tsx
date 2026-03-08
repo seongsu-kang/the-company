@@ -19,12 +19,15 @@ interface CustomizeModalProps {
   initialTab?: 'character' | 'office' | 'settings';
   speechSettings?: SpeechSettings;
   onSpeechSettingsChange?: (s: Partial<SpeechSettings>) => void;
+  language?: string;
+  onLanguageChange?: (lang: string) => void;
 }
 
 export default function CustomizeModal({
   role, appearance, onSave, onReset, onClose,
   theme, onThemeChange, onUpdateName, initialTab,
   speechSettings, onSpeechSettingsChange,
+  language, onLanguageChange,
 }: CustomizeModalProps) {
   const [tab, setTab] = useState<'character' | 'office' | 'settings'>(initialTab ?? 'character');
   const [draft, setDraft] = useState<CharacterAppearance>({ ...appearance });
@@ -223,6 +226,43 @@ export default function CustomizeModal({
                   </div>
                 </div>
               )}
+
+              {/* Language */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 8, color: 'var(--terminal-text)' }}>
+                  LANGUAGE
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {([
+                    { key: 'auto', label: 'Auto' },
+                    { key: 'en', label: 'English' },
+                    { key: 'ko', label: '한국어' },
+                    { key: 'ja', label: '日本語' },
+                  ] as const).map(({ key, label }) => (
+                    <button
+                      key={key}
+                      onClick={() => onLanguageChange?.(key)}
+                      style={{
+                        flex: 1,
+                        padding: '8px 12px',
+                        fontSize: 11,
+                        border: `2px solid ${(language ?? 'auto') === key ? 'var(--accent)' : 'rgba(255,255,255,0.1)'}`,
+                        background: (language ?? 'auto') === key ? 'rgba(255,255,255,0.08)' : 'transparent',
+                        color: (language ?? 'auto') === key ? 'var(--terminal-text)' : 'var(--terminal-text-muted)',
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ fontSize: 9, color: 'var(--terminal-text-muted)', marginTop: 4 }}>
+                  Sets language for AI responses and speech bubbles
+                </div>
+              </div>
             </div>
           </div>
         )}

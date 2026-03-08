@@ -5,6 +5,7 @@ import { createRunner } from '../engine/runners/index.js';
 import type { ExecutionRunner } from '../engine/runners/types.js';
 import { setActivity, updateActivity, completeActivity } from './activity-tracker.js';
 import type { RunnerResult } from '../engine/runners/types.js';
+import { estimateCost } from './pricing.js';
 
 /* ─── Types ──────────────────────────────── */
 
@@ -197,10 +198,17 @@ class JobManager {
           completeActivity(d.roleId);
         }
 
+        const costUsd = estimateCost(
+          result.totalTokens.input,
+          result.totalTokens.output,
+          model ?? '',
+        );
+
         stream.emit('job:done', params.roleId, {
           output: result.output.slice(-1000),
           turns: result.turns,
           tokens: result.totalTokens,
+          costUsd,
           toolCalls: result.toolCalls.length,
           dispatches: result.dispatches.map((d) => ({ roleId: d.roleId, task: d.task })),
         });

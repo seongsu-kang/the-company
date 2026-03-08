@@ -54,6 +54,9 @@ export const api = {
   // Engine
   getOrgTree: () => get<OrgTreeResponse>('/engine/org'),
 
+  // Skills
+  getSkills: () => get<Array<{ id: string; name: string; description: string; source: string; installed: boolean }>>('/skills'),
+
   // Roles (Engine)
   createRole: (input: CreateRoleInput) =>
     post<{ ok: boolean; roleId: string }>('/engine/roles', input),
@@ -110,9 +113,9 @@ export const api = {
   deleteKnowledgeDoc: (id: string) => del<{ id: string; status: string }>(`/knowledge/${id}`),
 
   // Preferences
-  getPreferences: () => get<{ appearances: Record<string, unknown>; theme: string; speech?: SpeechSettings }>('/preferences'),
+  getPreferences: () => get<{ appearances: Record<string, unknown>; theme: string; speech?: SpeechSettings; language?: string }>('/preferences'),
   updatePreferences: (data: Record<string, unknown>) =>
-    patch_<{ ok: boolean; appearances: Record<string, unknown>; theme: string; speech?: SpeechSettings }>('/preferences', data),
+    patch_<{ ok: boolean; appearances: Record<string, unknown>; theme: string; speech?: SpeechSettings; language?: string }>('/preferences', data),
 
   // Chat (LLM-powered channel conversation)
   chatInChannel: (data: {

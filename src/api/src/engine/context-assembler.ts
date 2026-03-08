@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { readPreferences } from '../services/preferences.js';
 import {
   type OrgTree,
   type OrgNode,
@@ -103,6 +104,14 @@ export function assembleContext(
   // Dispatch 도구 안내 (하위 Role이 있는 경우)
   if (subordinates.length > 0) {
     sections.push(buildDispatchSection(orgTree, roleId, subordinates, options?.teamStatus));
+  }
+
+  // Language preference
+  const prefs = readPreferences(companyRoot);
+  const lang = prefs.language ?? 'auto';
+  if (lang !== 'auto') {
+    const langNames: Record<string, string> = { en: 'English', ko: 'Korean', ja: 'Japanese' };
+    sections.push(`# Language\n\nAlways respond in **${langNames[lang] ?? lang}**. All output — reports, analysis, code comments, status updates — must be in ${langNames[lang] ?? lang}.`);
   }
 
   // Execution behavior rules (prevents infinite exploration loops in -p mode)

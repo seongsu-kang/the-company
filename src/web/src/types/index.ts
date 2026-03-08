@@ -97,6 +97,7 @@ export interface CreateRoleInput {
   authority: { autonomous: string[]; needsApproval: string[] };
   knowledge: { reads: string[]; writes: string[] };
   reports: { daily: string; weekly: string };
+  skills?: string[];
 }
 
 /* ─── Org Tree Types ─────────────────────── */

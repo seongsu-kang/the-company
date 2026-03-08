@@ -118,7 +118,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   }, []);
 
   /* Customization */
-  const { getAppearance, setAppearance, resetAppearance, theme, setTheme, speechSettings, setSpeechSettings } = useCustomization();
+  const { getAppearance, setAppearance, resetAppearance, theme, setTheme, speechSettings, setSpeechSettings, language, setLanguage } = useCustomization();
   const [customizeTarget, setCustomizeTarget] = useState<Role | null>(null);
   const [customizeInitialTab, setCustomizeInitialTab] = useState<'character' | 'office' | 'settings'>('character');
 
@@ -282,18 +282,16 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
       .finally(() => setLoading(false));
   }, []);
 
-  /* Load sessions on mount — auto-clean empty sessions */
+  /* Load sessions on mount — restore existing sessions (metadata only) */
   useEffect(() => {
     api.deleteEmptySessions().catch(() => {});
     api.getSessions().then((metas) => {
       if (metas.length > 0) {
-        Promise.all(metas.map((m) => api.getSession(m.id))).then((full) => {
-          setSessions(full);
-          setActiveSessionId(full[0].id);
-          setTerminalOpen(true);
-        }).catch((err) => {
-          console.error('Failed to load session details', err);
-        });
+        const restored: Session[] = metas.map((m) => ({ ...m, messages: [] }));
+        setSessions(restored);
+        const active = restored.find((s) => s.status === 'active') ?? restored[0];
+        setActiveSessionId(active.id);
+        setTerminalOpen(true);
       }
     }).catch((err) => {
       console.error('Failed to load sessions', err);
@@ -732,7 +730,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           || trimmed.includes('(team-lead)') || trimmed.includes('(member)')
           || /^(CEO |작업 결과|생성\/수정|APPROVAL|비고|상황 보고|태스크$)/.test(trimmed)) continue;
         if (trimmed.length > 15 && trimmed.length < 120) {
-          return trimmed.slice(0, 80);
+          return trimmed;
         }
       }
     }
@@ -764,6 +762,13 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   /* ─── Ambient Speech System ─── */
   /* ─── Office Chat ─── */
   const officeChat = useOfficeChat();
+
+  // Sync default channel members when roles load/change
+  useEffect(() => {
+    if (roles.length > 0) {
+      officeChat.syncDefaultMembers(roles);
+    }
+  }, [roles]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ambient = useAmbientSpeech({
     roles,
@@ -1016,6 +1021,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
               knowledgeDocsCount={knowledgeDocs.length}
               getRoleSpeech={ambient.getSpeech}
               getAppearance={getAppearance}
+              onHireClick={() => setShowHireModal(true)}
             />
           ) : (
           <div className={`${terminalOpen ? 'max-w-full' : 'max-w-[1100px]'} mx-auto h-full p-4 flex flex-col gap-3 relative z-[1]`}>
@@ -1470,6 +1476,8 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           initialTab={customizeInitialTab}
           speechSettings={speechSettings}
           onSpeechSettingsChange={setSpeechSettings}
+          language={language}
+          onLanguageChange={setLanguage}
         />
       )}
 
