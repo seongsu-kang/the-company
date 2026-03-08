@@ -81,12 +81,18 @@ function loadAll(): void {
   }
 }
 
-// Load on startup
-loadAll();
+// Lazy load: defer until first access (avoids creating dirs in CWD before scaffold)
+let loaded = false;
+function ensureLoaded(): void {
+  if (loaded) return;
+  loaded = true;
+  loadAll();
+}
 
 /* ─── Public API ────────────────────────── */
 
 export function createSession(roleId: string, mode: 'talk' | 'do' = 'talk'): Session {
+  ensureLoaded();
   const id = `ses-${roleId}-${Date.now()}`;
   const now = new Date().toISOString();
   const session: Session = {
@@ -105,10 +111,12 @@ export function createSession(roleId: string, mode: 'talk' | 'do' = 'talk'): Ses
 }
 
 export function getSession(id: string): Session | undefined {
+  ensureLoaded();
   return cache.get(id);
 }
 
 export function listSessions(): Omit<Session, 'messages'>[] {
+  ensureLoaded();
   return Array.from(cache.values())
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .map(({ messages: _, ...meta }) => meta);

@@ -103,8 +103,11 @@ function handleImportKnowledge(req: http.IncomingMessage, res: http.ServerRespon
 }
 
 export function createHttpServer(): http.Server {
-  cleanupStaleActivities();
-  ensureClaudeMd(COMPANY_ROOT);
+  // Only cleanup/ensure if a company is already initialized (avoid creating dirs in CWD)
+  if (COMPANY_ROOT && fs.existsSync(path.join(COMPANY_ROOT, 'CLAUDE.md'))) {
+    cleanupStaleActivities();
+    ensureClaudeMd(COMPANY_ROOT);
+  }
 
   const app = createExpressApp();
 
