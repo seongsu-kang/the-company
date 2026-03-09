@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide } from 'd3-force';
 import type { SimulationNodeDatum, SimulationLinkDatum } from 'd3-force';
 import type { KnowledgeDoc, KnowledgeDocDetail } from '../../types';
@@ -418,6 +418,294 @@ function KnowledgeGraph({
           No knowledge documents found
         </div>
       )}
+    </div>
+  );
+}
+
+/* ─── Tree View ─────────────────────────────────── */
+
+interface TreeNode {
+  type: 'folder' | 'file';
+  name: string;
+  path: string;
+  doc?: KnowledgeDoc;
+  children?: TreeNode[];
+}
+
+function buildTree(docs: KnowledgeDoc[]): TreeNode[] {
+  const root: TreeNode[] = [];
+  const folderMap = new Map<string, TreeNode>();
+
+  // Sort docs by path for consistent ordering
+  const sortedDocs = [...docs].sort((a, b) => a.id.localeCompare(b.id));
+
+  sortedDocs.forEach((doc) => {
+    const parts = doc.id.split('/');
+    let currentLevel = root;
+    let currentPath = '';
+
+    // Build folder hierarchy
+    for (let i = 0; i < parts.length - 1; i++) {
+      currentPath = currentPath ? `${currentPath}/${parts[i]}` : parts[i];
+
+      if (!folderMap.has(currentPath)) {
+        const folderNode: TreeNode = {
+          type: 'folder',
+          name: parts[i],
+          path: currentPath,
+          children: [],
+        };
+        folderMap.set(currentPath, folderNode);
+        currentLevel.push(folderNode);
+        currentLevel = folderNode.children!;
+      } else {
+        currentLevel = folderMap.get(currentPath)!.children!;
+      }
+    }
+
+    // Add file node
+    currentLevel.push({
+      type: 'file',
+      name: parts[parts.length - 1],
+      path: doc.id,
+      doc,
+    });
+  });
+
+  return root;
+}
+
+function TreeView({
+  docs,
+  onDocumentClick,
+  selectedDocId,
+}: {
+  docs: KnowledgeDoc[];
+  onDocumentClick: (docId: string) => void;
+  selectedDocId: string | null;
+}) {
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['knowledge', 'projects', 'architecture', 'operations', 'company']));
+  const [viewingDocId, setViewingDocId] = useState<string | null>(null);
+  const tree = useMemo(() => buildTree(docs), [docs]);
+
+  const toggleFolder = (path: string) => {
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  };
+
+  const handleFileClick = (docId: string) => {
+    setViewingDocId(docId);
+    onDocumentClick(docId);
+  };
+
+  const handleCloseDetail = () => {
+    setViewingDocId(null);
+    onDocumentClick(null!);
+  };
+
+  const viewingDoc = viewingDocId ? docs.find((d) => d.id === viewingDocId) : null;
+
+  return (
+    <div className="flex-1 overflow-hidden flex animate-fadeIn">
+      {/* Tree Sidebar */}
+      <div
+        className="shrink-0 overflow-y-auto p-3"
+        style={{ width: 220, background: 'var(--hud-bg-alt)', borderRight: '1px solid var(--terminal-border)' }}
+      >
+        <div className="text-[10px] font-bold uppercase mb-2" style={{ color: 'var(--terminal-text-muted)' }}>
+          📂 Explorer
+        </div>
+        {tree.map((node) => (
+          <TreeNodeComponent
+            key={node.path}
+            node={node}
+            level={0}
+            expandedFolders={expandedFolders}
+            selectedDocId={selectedDocId}
+            viewingDocId={viewingDocId}
+            onToggleFolder={toggleFolder}
+            onFileClick={handleFileClick}
+          />
+        ))}
+      </div>
+
+      {/* Content Area */}
+      <div className="flex-1 overflow-y-auto">
+        {viewingDoc ? (
+          <DocDetailView doc={viewingDoc} onClose={handleCloseDetail} />
+        ) : (
+          <div className="flex items-center justify-center h-full text-xs" style={{ color: 'var(--terminal-text-muted)' }}>
+            <div className="text-center">
+              <div className="text-2xl mb-2">📄</div>
+              <div>Select a document to view</div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TreeNodeComponent({
+  node,
+  level,
+  expandedFolders,
+  selectedDocId,
+  viewingDocId,
+  onToggleFolder,
+  onFileClick,
+}: {
+  node: TreeNode;
+  level: number;
+  expandedFolders: Set<string>;
+  selectedDocId: string | null;
+  viewingDocId: string | null;
+  onToggleFolder: (path: string) => void;
+  onFileClick: (docId: string) => void;
+}) {
+  const isExpanded = expandedFolders.has(node.path);
+  const isSelected = node.type === 'file' && node.path === selectedDocId;
+  const isViewing = node.type === 'file' && node.path === viewingDocId;
+  const isHub = node.doc?.akb_type === 'hub';
+
+  if (node.type === 'folder') {
+    return (
+      <div>
+        <div
+          className="flex items-center gap-1 py-0.5 px-1 rounded cursor-pointer hover:bg-white/5"
+          style={{ paddingLeft: level * 12 + 4 }}
+          onClick={() => onToggleFolder(node.path)}
+        >
+          <span className="text-[10px]">{isExpanded ? '📂' : '📁'}</span>
+          <span className="text-[11px]" style={{ color: 'var(--terminal-text)' }}>{node.name}</span>
+        </div>
+        {isExpanded && node.children?.map((child) => (
+          <TreeNodeComponent
+            key={child.path}
+            node={child}
+            level={level + 1}
+            expandedFolders={expandedFolders}
+            selectedDocId={selectedDocId}
+            viewingDocId={viewingDocId}
+            onToggleFolder={onToggleFolder}
+            onFileClick={onFileClick}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`flex items-center gap-1 py-0.5 px-1 rounded cursor-pointer transition-colors ${
+        isViewing ? 'bg-green-500/20' : isSelected ? 'bg-white/10' : 'hover:bg-white/5'
+      }`}
+      style={{ paddingLeft: level * 12 + 4 }}
+      onClick={() => onFileClick(node.path)}
+    >
+      <span className="text-[10px]">{isHub ? '📘' : '📄'}</span>
+      <span
+        className={`text-[11px] truncate ${isHub ? 'font-semibold' : ''}`}
+        style={{ color: isHub ? '#16a34a' : 'var(--terminal-text)' }}
+      >
+        {node.name}
+      </span>
+    </div>
+  );
+}
+
+function DocDetailView({ doc, onClose }: { doc: KnowledgeDocDetail | KnowledgeDoc; onClose: () => void }) {
+  const [detailDoc, setDetailDoc] = useState<KnowledgeDocDetail | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if ('content' in doc && doc.content) {
+      setDetailDoc(doc as KnowledgeDocDetail);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    api.getKnowledgeDoc(doc.id)
+      .then(setDetailDoc)
+      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load'))
+      .finally(() => setLoading(false));
+  }, [doc]);
+
+  const color = getDomainColor(doc.category);
+  const isHub = doc.akb_type === 'hub';
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Header */}
+      <div className="shrink-0 p-4" style={{ borderBottom: '1px solid var(--terminal-border)' }}>
+        <div className="flex items-center gap-2 mb-2">
+          <button
+            onClick={onClose}
+            className="text-xs font-semibold cursor-pointer hover:opacity-70"
+            style={{ color: 'var(--active-green)' }}
+          >
+            {'\u2190'} Back
+          </button>
+        </div>
+        <div className="flex items-start gap-2 mb-2">
+          <span className="text-lg">{isHub ? '📘' : doc.format === 'html' ? '🌐' : '📄'}</span>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-bold mb-1" style={{ color: 'var(--terminal-text)' }}>{doc.title}</div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span
+                className="w-2 h-2 rounded-full"
+                style={{
+                  background: doc.status === 'active' ? '#16a34a' : doc.status === 'draft' ? '#f59e0b' : '#94a3b8',
+                }}
+                title={doc.status}
+              />
+              <span className="text-[10px]" style={{ color: 'var(--terminal-text-muted)' }}>{doc.id}</span>
+            </div>
+            {doc.tags.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2">
+                {doc.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="px-1.5 py-0.5 rounded text-[9px] font-medium"
+                    style={{ background: color.bg, color: color.text, border: `1px solid ${color.border}` }}
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        {doc.tldr && (
+          <div className="text-[11px] italic leading-relaxed p-2 rounded" style={{ background: 'var(--hud-bg)', color: 'var(--terminal-text-secondary)' }}>
+            {doc.tldr}
+          </div>
+        )}
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {loading && (
+          <div className="text-xs" style={{ color: 'var(--terminal-text-muted)' }}>Loading...</div>
+        )}
+        {error && (
+          <div className="text-xs p-2 rounded" style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171' }}>
+            {error}
+          </div>
+        )}
+        {detailDoc && (
+          <OfficeMarkdown content={detailDoc.content} />
+        )}
+      </div>
     </div>
   );
 }
@@ -1064,13 +1352,12 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
           </div>
         )}
 
-        {/* ─── TREE VIEW (Placeholder for KB-002) ─── */}
+        {/* ─── TREE VIEW ─── */}
         {view === 'tree' && (
-          <PlaceholderView
-            icon="🌲"
-            title="Tree View"
-            message="Coming soon in KB-002"
-            description="Hierarchical folder navigation with expandable/collapsible structure"
+          <TreeView
+            docs={docs}
+            onDocumentClick={(docId) => setGraphSelectedDocId(docId)}
+            selectedDocId={graphSelectedDocId}
           />
         )}
 

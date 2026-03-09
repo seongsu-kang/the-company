@@ -250,6 +250,7 @@ export interface ScaffoldInput {
   knowledgePaths?: string[];
   language?: string;
   location?: string;
+  codeRoot?: string;
 }
 
 export interface ScaffoldResult {

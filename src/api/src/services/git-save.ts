@@ -50,6 +50,22 @@ export interface RestoreResult {
   restoredFiles: string[];
 }
 
+export interface PullResult {
+  status: 'ok' | 'dirty' | 'diverged' | 'up-to-date' | 'no-remote' | 'error';
+  message: string;
+  commits?: number;
+  behind?: number;
+  ahead?: number;
+}
+
+export interface SyncStatus {
+  ahead: number;
+  behind: number;
+  branch: string;
+  remote: string;
+  hasRemote: boolean;
+}
+
 /**
  * Paths to include in save (relative to root).
  * Only AKB files — never user source code.
@@ -355,4 +371,103 @@ export function gitRestore(root: string, sha: string, paths?: string[], repo: Re
   const newSha = run('git rev-parse HEAD', repoRoot);
 
   return { commitSha: newSha, restoredFiles };
+}
+
+/**
+ * Fetch remote and return ahead/behind status
+ * @param root - AKB repository root (COMPANY_ROOT)
+ * @param repo - Repository type ('akb' or 'code'), default 'akb'
+ */
+export function gitFetchStatus(root: string, repo: RepoType = 'akb'): SyncStatus {
+  const repoRoot = resolveRepoRoot(root, repo);
+
+  if (!isGitRepo(repoRoot)) {
+    return { ahead: 0, behind: 0, branch: '', remote: '', hasRemote: false };
+  }
+
+  const branch = run('git rev-parse --abbrev-ref HEAD', repoRoot) || 'unknown';
+  const hasRemote = !!run('git remote', repoRoot);
+
+  if (!hasRemote) {
+    return { ahead: 0, behind: 0, branch, remote: '', hasRemote: false };
+  }
+
+  // Fetch from remote (timeout 15s for network)
+  try {
+    execSync('git fetch origin', { cwd: repoRoot, encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] });
+  } catch {
+    // Fetch failed (no network, etc.) — return what we know
+    return { ahead: 0, behind: 0, branch, remote: 'origin', hasRemote: true };
+  }
+
+  // Count ahead/behind
+  const revList = run(`git rev-list --left-right --count HEAD...origin/${branch}`, repoRoot);
+  let ahead = 0;
+  let behind = 0;
+  if (revList) {
+    const parts = revList.split(/\s+/);
+    ahead = parseInt(parts[0], 10) || 0;
+    behind = parseInt(parts[1], 10) || 0;
+  }
+
+  return { ahead, behind, branch, remote: 'origin', hasRemote: true };
+}
+
+/**
+ * Safe pull (fast-forward only)
+ * @param root - AKB repository root (COMPANY_ROOT)
+ * @param repo - Repository type ('akb' or 'code'), default 'akb'
+ */
+export function gitPull(root: string, repo: RepoType = 'akb'): PullResult {
+  const repoRoot = resolveRepoRoot(root, repo);
+
+  if (!isGitRepo(repoRoot)) {
+    return { status: 'error', message: 'Not a git repository' };
+  }
+
+  const branch = run('git rev-parse --abbrev-ref HEAD', repoRoot) || 'unknown';
+  const hasRemote = !!run('git remote', repoRoot);
+
+  if (!hasRemote) {
+    return { status: 'no-remote', message: 'No remote configured' };
+  }
+
+  // Fetch first
+  try {
+    execSync('git fetch origin', { cwd: repoRoot, encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] });
+  } catch {
+    return { status: 'error', message: 'Failed to fetch from remote' };
+  }
+
+  // Check for uncommitted changes
+  const porcelain = run('git status --porcelain', repoRoot);
+  if (porcelain) {
+    return { status: 'dirty', message: 'Uncommitted changes — save or stash before pulling' };
+  }
+
+  // Check ahead/behind
+  const revList = run(`git rev-list --left-right --count HEAD...origin/${branch}`, repoRoot);
+  let ahead = 0;
+  let behind = 0;
+  if (revList) {
+    const parts = revList.split(/\s+/);
+    ahead = parseInt(parts[0], 10) || 0;
+    behind = parseInt(parts[1], 10) || 0;
+  }
+
+  if (behind === 0) {
+    return { status: 'up-to-date', message: 'Already up to date', ahead, behind: 0 };
+  }
+
+  if (ahead > 0 && behind > 0) {
+    return { status: 'diverged', message: `Branches diverged (${ahead} ahead, ${behind} behind) — manual merge needed`, ahead, behind };
+  }
+
+  // Safe fast-forward pull
+  try {
+    runOrThrow(`git pull --ff-only origin ${branch}`, repoRoot);
+    return { status: 'ok', message: `Pulled ${behind} commit(s)`, commits: behind, ahead: 0, behind: 0 };
+  } catch (err) {
+    return { status: 'error', message: err instanceof Error ? err.message : 'Pull failed' };
+  }
 }

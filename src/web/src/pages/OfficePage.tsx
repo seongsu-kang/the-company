@@ -146,19 +146,22 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   const [showThemeDropup, setShowThemeDropup] = useState(false);
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
 
-  // Cmd+S / Ctrl+S → open save modal (or quick save if no modal open)
+  // Start save polling on mount
+  useEffect(() => {
+    saveHook.refresh();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cmd+S / Ctrl+S → open save modal
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
-        if (saveHook.dirtyCount > 0) {
-          setShowSaveModal(true);
-        }
+        setShowSaveModal(true);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [saveHook.dirtyCount]);
+  }, []);
 
   // Git status polling — lazy, only when git panel is open
   useEffect(() => {
@@ -1842,6 +1845,11 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
             onLoadHistory={saveHook.loadHistory}
             onRestore={saveHook.restore}
             saving={saveHook.state === 'saving'}
+            repo={saveHook.repo}
+            onRepoChange={saveHook.setRepo}
+            syncInfo={saveHook.syncInfo}
+            onPull={saveHook.pull}
+            pulling={saveHook.pulling}
             delegateRoleName={delegateRole?.name ?? delegateRole?.id}
             onDelegate={delegateRole ? async (filesSummary) => {
               setShowSaveModal(false);

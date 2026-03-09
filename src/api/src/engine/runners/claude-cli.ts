@@ -13,9 +13,10 @@ import type { ExecutionRunner, RunnerConfig, RunnerCallbacks, RunnerHandle, Runn
 const DISPATCH_SCRIPT = `#!/usr/bin/env python3
 """dispatch-bridge: CLI runner가 하위 Role에게 작업을 할당하는 브릿지 스크립트.
 
-2가지 모드:
-  dispatch <roleId> "<task>"           — Job 시작 + 결과 대기 (최대 100초)
-  dispatch --check <jobId>             — 완료된 Job 결과 조회
+3가지 모드:
+  dispatch <roleId> "<task>"           — Job 시작 (즉시 반환, 대기하지 않음)
+  dispatch --check <jobId>             — Job 상태 및 결과 조회
+  dispatch --wait <roleId> "<task>"    — Job 시작 + 완료 대기 (최대 90초)
 
 환경변수:
   DISPATCH_API_URL    — API 서버 URL (default: http://localhost:3001)
@@ -44,14 +45,64 @@ def get_result(job_id):
     except Exception as e:
         return f'ERROR: Failed to get result: {e}'
 
+def get_status(job_id):
+    info = json.loads(urllib.request.urlopen(f'{api}/api/jobs/{job_id}', timeout=5).read())
+    return info.get('status', 'unknown')
+
+def start_job(role_id, task):
+    parent_job = os.environ.get('DISPATCH_PARENT_JOB', '')
+    source_role = os.environ.get('DISPATCH_SOURCE_ROLE', 'ceo')
+    body = json.dumps({
+        'type': 'assign',
+        'roleId': role_id,
+        'task': task,
+        'sourceRole': source_role,
+        'parentJobId': parent_job if parent_job else None,
+    }).encode()
+    req = urllib.request.Request(f'{api}/api/jobs', body, {'Content-Type': 'application/json'})
+    resp = json.loads(urllib.request.urlopen(req, timeout=10).read())
+    return resp['jobId']
+
+def poll_until_done(job_id, role_id, max_wait=90):
+    waited = 0
+    while waited < max_wait:
+        try:
+            status = get_status(job_id)
+            if status == 'done':
+                log('')
+                log(f'=== {role_id.upper()} Result (done) ===')
+                log(get_result(job_id))
+                return
+            elif status == 'error':
+                log('')
+                log(f'=== {role_id.upper()} Result (error) ===')
+                log(get_result(job_id))
+                return
+            elif status == 'awaiting_input':
+                log('')
+                log(f'{role_id.upper()} is asking a question (awaiting_input).')
+                log(f'Check details: python3 "$DISPATCH_CMD" --check {job_id}')
+                return
+        except Exception:
+            pass
+        time.sleep(5)
+        waited += 5
+        if waited % 15 == 0:
+            log(f'  ... {role_id} still working ({waited}s)')
+    log('')
+    log(f'{role_id.upper()} is still working after {waited}s.')
+    log(f'Check result later: python3 "$DISPATCH_CMD" --check {job_id}')
+
 # Mode: --check <jobId>
 if len(sys.argv) >= 3 and sys.argv[1] == '--check':
     job_id = sys.argv[2]
     try:
-        info = json.loads(urllib.request.urlopen(f'{api}/api/jobs/{job_id}', timeout=10).read())
-        status = info.get('status', 'unknown')
+        status = get_status(job_id)
         if status == 'running':
             log(f'Job {job_id} is still running. Try again later.')
+        elif status == 'awaiting_input':
+            log(f'Job {job_id} is awaiting input (subordinate asked a question).')
+            log(get_result(job_id))
         else:
             log(f'=== Job {job_id}: {status} ===')
             log(get_result(job_id))
@@ -59,33 +110,29 @@ if len(sys.argv) >= 3 and sys.argv[1] == '--check':
         log(f'ERROR: {e}')
     sys.exit(0)
 
-# Mode: dispatch <roleId> "<task>"
-if len(sys.argv) < 3:
-    log('Usage: dispatch <roleId> "<task>"')
-    log('       dispatch --check <jobId>')
+# Mode: --wait <roleId> "<task>" (start + wait)
+wait_mode = False
+args = sys.argv[1:]
+if args and args[0] == '--wait':
+    wait_mode = True
+    args = args[1:]
+
+# Usage check
+if len(args) < 2:
+    log('Usage: dispatch <roleId> "<task>"          — Start job (immediate return)')
+    log('       dispatch --wait <roleId> "<task>"   — Start job + wait for result')
+    log('       dispatch --check <jobId>            — Check job status/result')
     subs = os.environ.get('DISPATCH_SUBORDINATES', '')
     if subs:
         log(f'Available subordinates: {subs}')
     sys.exit(1)
 
-role_id = sys.argv[1]
-task = ' '.join(sys.argv[2:])
-parent_job = os.environ.get('DISPATCH_PARENT_JOB', '')
-source_role = os.environ.get('DISPATCH_SOURCE_ROLE', 'ceo')
+role_id = args[0]
+task = ' '.join(args[1:])
 
 # Start job
-body = json.dumps({
-    'type': 'assign',
-    'roleId': role_id,
-    'task': task,
-    'sourceRole': source_role,
-    'parentJobId': parent_job if parent_job else None,
-}).encode()
-
 try:
-    req = urllib.request.Request(f'{api}/api/jobs', body, {'Content-Type': 'application/json'})
-    resp = json.loads(urllib.request.urlopen(req, timeout=10).read())
-    job_id = resp['jobId']
+    job_id = start_job(role_id, task)
 except Exception as e:
     log(f'ERROR: Failed to start dispatch job: {e}')
     sys.exit(1)
@@ -94,26 +141,13 @@ log(f'=== Dispatched to {role_id.upper()} ===')
 log(f'Task: {task[:120]}')
 log(f'Job ID: {job_id}')
 
-# Wait for completion (max ~100s to stay within Bash timeout)
-status = 'running'
-waited = 0
-while waited < 100:
-    try:
-        info = json.loads(urllib.request.urlopen(f'{api}/api/jobs/{job_id}', timeout=5).read())
-        status = info.get('status', 'unknown')
-        if status in ('done', 'error'):
-            break
-    except Exception:
-        pass
-    time.sleep(3)
-    waited += 3
-
-if status in ('done', 'error'):
-    log(f'\\n=== {role_id.upper()} Result ({status}) ===')
-    log(get_result(job_id))
+if wait_mode:
+    log(f'Waiting for completion...')
+    poll_until_done(job_id, role_id)
 else:
-    log(f'\\n{role_id.upper()} is still working (waited {waited}s).')
-    log(f'Check result later: python3 "$DISPATCH_CMD" --check {job_id}')
+    log('')
+    log(f'Job started. Check result with:')
+    log(f'  python3 "$DISPATCH_CMD" --check {job_id}')
 `;
 
 /* ─── Consult Bridge Script (Python3) ────── */
@@ -122,7 +156,7 @@ const CONSULT_SCRIPT = `#!/usr/bin/env python3
 """consult-bridge: CLI runner가 다른 Role에게 질문하는 브릿지 스크립트.
 
 사용법:
-  consult <roleId> "<question>"          — Job 시작 (readOnly) + 결과 대기
+  consult <roleId> "<question>"          — Job 시작 (readOnly) + 결과 대기 (최대 90초)
   consult --check <jobId>                — 완료된 Job 결과 조회
 
 환경변수:
@@ -152,14 +186,20 @@ def get_result(job_id):
     except Exception as e:
         return f'ERROR: Failed to get result: {e}'
 
+def get_status(job_id):
+    info = json.loads(urllib.request.urlopen(f'{api}/api/jobs/{job_id}', timeout=5).read())
+    return info.get('status', 'unknown')
+
 # Mode: --check <jobId>
 if len(sys.argv) >= 3 and sys.argv[1] == '--check':
     job_id = sys.argv[2]
     try:
-        info = json.loads(urllib.request.urlopen(f'{api}/api/jobs/{job_id}', timeout=10).read())
-        status = info.get('status', 'unknown')
+        status = get_status(job_id)
         if status == 'running':
             log(f'Job {job_id} is still running. Try again later.')
+        elif status == 'awaiting_input':
+            log(f'Job {job_id} is awaiting input.')
+            log(get_result(job_id))
         else:
             log(f'=== Job {job_id}: {status} ===')
             log(get_result(job_id))
@@ -200,27 +240,37 @@ except Exception as e:
 log(f'=== Consulting {role_id.upper()} ===')
 log(f'Question: {question[:120]}')
 log(f'Job ID: {job_id}')
+log(f'Waiting for answer...')
 
-# Wait for completion (max ~100s)
-status = 'running'
+# Wait for completion (max ~90s — consult is read-only, usually fast)
 waited = 0
-while waited < 100:
+while waited < 90:
     try:
-        info = json.loads(urllib.request.urlopen(f'{api}/api/jobs/{job_id}', timeout=5).read())
-        status = info.get('status', 'unknown')
-        if status in ('done', 'error'):
-            break
+        status = get_status(job_id)
+        if status == 'done':
+            log('')
+            log(f'=== {role_id.upper()} Answer ===')
+            log(get_result(job_id))
+            sys.exit(0)
+        elif status == 'error':
+            log('')
+            log(f'=== {role_id.upper()} Error ===')
+            log(get_result(job_id))
+            sys.exit(1)
+        elif status == 'awaiting_input':
+            log('')
+            log(f'{role_id.upper()} needs clarification. Check: python3 "$CONSULT_CMD" --check {job_id}')
+            sys.exit(0)
     except Exception:
         pass
-    time.sleep(3)
-    waited += 3
+    time.sleep(5)
+    waited += 5
+    if waited % 15 == 0:
+        log(f'  ... {role_id} still thinking ({waited}s)')
 
-if status in ('done', 'error'):
-    log(f'\\n=== {role_id.upper()} Answer ({status}) ===')
-    log(get_result(job_id))
-else:
-    log(f'\\n{role_id.upper()} is still thinking (waited {waited}s).')
-    log(f'Check result later: python3 "$CONSULT_CMD" --check {job_id}')
+log('')
+log(f'{role_id.upper()} is still thinking after {waited}s.')
+log(f'Check result later: python3 "$CONSULT_CMD" --check {job_id}')
 `;
 
 /* ─── Claude CLI Runner ──────────────────────── */

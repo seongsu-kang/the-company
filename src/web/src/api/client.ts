@@ -146,22 +146,52 @@ export const api = {
   }) => post<{ message: string; tokens: { input: number; output: number } }>('/speech/chat', data),
 
   // Save (Git)
-  getSaveStatus: () => get<{
+  getSaveStatus: (repo: 'akb' | 'code' = 'akb') => get<{
     dirty: boolean; modified: string[]; untracked: string[];
     lastCommit: { sha: string; message: string; date: string } | null;
     branch: string; hasRemote: boolean; synced: boolean; noGit: boolean;
-  }>('/save/status'),
-  save: (message?: string) => post<{
+  }>(`/save/status?repo=${repo}`),
+  save: (message?: string, repo: 'akb' | 'code' = 'akb') => post<{
     ok: boolean; commitSha: string; message: string;
     filesChanged: number; pushed: boolean; pushError?: string;
-  }>('/save', { message }),
-  getSaveHistory: (limit = 20) => get<Array<{
+  }>(`/save?repo=${repo}`, { message }),
+  getSaveHistory: (limit = 20, repo: 'akb' | 'code' = 'akb') => get<Array<{
     sha: string; shortSha: string; message: string; date: string;
-  }>>(`/save/history?limit=${limit}`),
-  restoreSave: (sha: string, paths?: string[]) => post<{
+  }>>(`/save/history?limit=${limit}&repo=${repo}`),
+  restoreSave: (sha: string, paths?: string[], repo: 'akb' | 'code' = 'akb') => post<{
     ok: boolean; commitSha: string; restoredFiles: string[];
-  }>('/save/restore', { sha, paths }),
+  }>(`/save/restore?repo=${repo}`, { sha, paths }),
   initGit: () => post<{ ok: boolean; message: string }>('/save/init', {}),
+
+  // Git Sync
+  getSyncStatus: (repo: 'akb' | 'code' = 'akb') => get<{
+    ahead: number; behind: number; branch: string; remote: string; hasRemote: boolean;
+  }>(`/save/sync-status?repo=${repo}`),
+  pull: async (repo: 'akb' | 'code' = 'akb') => {
+    const res = await fetch(`${BASE}/save/pull?repo=${repo}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    const data = await res.json();
+    return data as {
+      status: 'ok' | 'dirty' | 'diverged' | 'up-to-date' | 'no-remote' | 'error';
+      message: string; commits?: number; behind?: number; ahead?: number;
+    };
+  },
+
+  // Code Root
+  setCodeRoot: async (codeRoot: string) => {
+    const res = await fetch(`${BASE}/setup/code-root`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ codeRoot }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `API error: ${res.status}`);
+    return data as { ok: boolean; codeRoot: string; isGitRepo: boolean };
+  },
+  getCodeRoot: () => get<{ codeRoot: string | null }>('/setup/code-root'),
 
   // Cost
   getCostSummary: () => get<{

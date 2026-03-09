@@ -435,20 +435,37 @@ ${subInfo}
 **Use Bash to run the dispatch command:**
 
 \`\`\`bash
+# Start a job (returns immediately with job ID)
 python3 "$DISPATCH_CMD" ${exampleSubId} "Task description here"
+
+# Check job status/result later
+python3 "$DISPATCH_CMD" --check <jobId>
+
+# Start and wait for result (blocks up to 90s)
+python3 "$DISPATCH_CMD" --wait ${exampleSubId} "Task description here"
 \`\`\`
 
 **IMPORTANT**: Always use \`python3 "$DISPATCH_CMD"\` — this is the ONLY way to dispatch tasks to subordinates.
 
-The command will:
-1. Start a job for the subordinate
-2. Wait up to ~100 seconds for completion
-3. Return the subordinate's output if done, or a job ID to check later
+### Recommended Pattern: Parallel Dispatch
 
-If the subordinate takes longer than 100s, you'll get a job ID. Check the result with:
+For multiple tasks, dispatch all at once, then check results:
+
 \`\`\`bash
-python3 "$DISPATCH_CMD" --check <jobId>
-\`\`\``;
+# 1. Dispatch all tasks (each returns immediately)
+python3 "$DISPATCH_CMD" ${exampleSubId} "Task A"
+python3 "$DISPATCH_CMD" ${subordinates.length > 1 ? subordinates[1] : exampleSubId} "Task B"
+
+# 2. Check results later (use the Job IDs from step 1)
+python3 "$DISPATCH_CMD" --check <jobId-A>
+python3 "$DISPATCH_CMD" --check <jobId-B>
+\`\`\`
+
+### Status Values
+- **running** — Subordinate is working
+- **done** — Task completed, result available
+- **error** — Task failed
+- **awaiting_input** — Subordinate has a question for you`;
 
   // C-level roles get mandatory delegation rules
   if (isCLevel) {
@@ -480,18 +497,34 @@ When you receive a directive:
 
 ### The Supervision Loop (CRITICAL)
 
-After EVERY dispatch, follow this loop:
+After dispatching tasks, follow this loop:
 
 \`\`\`
-DISPATCH → WAIT → REVIEW → DECIDE
-                              ├── PASS → Knowledge Update → Task Update → Next Dispatch
-                              └── FAIL → Re-dispatch with feedback
+DISPATCH ALL → CHECK RESULTS → REVIEW → DECIDE
+                                          ├── PASS → Knowledge Update → Task Update → Next Dispatch
+                                          └── FAIL → Re-dispatch with feedback
 \`\`\`
 
+**Step 1: Dispatch all tasks** (fire-and-forget, collect job IDs)
+\`\`\`bash
+python3 "$DISPATCH_CMD" engineer "Task A"   # → job-xxx
+python3 "$DISPATCH_CMD" designer "Task B"   # → job-yyy
+\`\`\`
+
+**Step 2: Check results** (after waiting, use --check with saved job IDs)
+\`\`\`bash
+python3 "$DISPATCH_CMD" --check <job-xxx>
+python3 "$DISPATCH_CMD" --check <job-yyy>
+\`\`\`
+
+**Step 3-4: Review → Knowledge Update → Task Update → Next Dispatch**
 1. **Review**: Does the output meet acceptance criteria?
 2. **Knowledge Update**: Record decisions, findings, analysis in AKB (journals, knowledge/)
 3. **Task Update**: Update task status in tasks.md or project docs
 4. **Next Dispatch**: Identify and dispatch the next task
+
+⚠️ Do NOT use curl or other methods to create jobs — always use the dispatch command.
+⚠️ Do NOT use sleep loops to wait — use --check to poll for results.
 
 ### Dispatch Quality Requirements
 

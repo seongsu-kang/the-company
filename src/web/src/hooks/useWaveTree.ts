@@ -95,6 +95,7 @@ export default function useWaveTree(
 
   // Connect SSE for a job
   const connectStream = useCallback((jobId: string, roleId: string) => {
+    console.log(`[WaveTree] connectStream → role=${roleId} job=${jobId}`);
     // Cleanup existing stream for this jobId
     const existing = streamsRef.current.get(jobId);
     if (existing) {
@@ -167,6 +168,8 @@ export default function useWaveTree(
                       const childJobId = event.data.childJobId as string;
                       const targetRoleId = (event.data.targetRoleId as string) ?? (event.data.roleId as string);
 
+                      console.log(`[WaveTree] dispatch:start → target=${targetRoleId} childJob=${childJobId} from=${roleId}/${jobId}`);
+
                       if (targetRoleId) {
                         const childNode = next.get(targetRoleId);
                         if (childNode) {
@@ -178,20 +181,26 @@ export default function useWaveTree(
                           });
                           // Schedule child stream connection
                           setTimeout(() => connectStream(childJobId, targetRoleId), 0);
+                        } else {
+                          console.warn(`[WaveTree] dispatch:start — no node found for role "${targetRoleId}"`);
                         }
                       }
                     }
 
                     if (event.type === 'job:done') {
+                      console.log(`[WaveTree] job:done → role=${roleId} job=${jobId}`);
                       updated.status = 'done';
                       updated.streamStatus = 'done';
                     } else if (event.type === 'job:error') {
+                      console.log(`[WaveTree] job:error → role=${roleId} job=${jobId}`);
                       updated.status = 'error';
                       updated.streamStatus = 'error';
                     } else if (event.type === 'job:awaiting_input') {
+                      console.log(`[WaveTree] job:awaiting_input → role=${roleId} job=${jobId}`);
                       updated.status = 'awaiting_input';
                       updated.streamStatus = 'done';
                     } else if (event.type === 'job:reply') {
+                      console.log(`[WaveTree] job:reply → role=${roleId} job=${jobId}`);
                       // Will get a new child job via dispatch or continuation
                       updated.status = 'running';
                       updated.streamStatus = 'streaming';
@@ -202,6 +211,7 @@ export default function useWaveTree(
                   });
                 } else if (currentEvent === 'stream:end') {
                   const reason = data.reason as string;
+                  console.log(`[WaveTree] stream:end → role=${roleId} job=${jobId} reason=${reason}`);
                   // 'replied' means CEO responded — new stream will take over, don't change status
                   if (reason !== 'replied') {
                     setNodes((prev) => {

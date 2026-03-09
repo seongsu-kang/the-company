@@ -23,6 +23,12 @@ export default function SettingsPanel({
   const [copied, setCopied] = useState(false);
   const [regenConfirm, setRegenConfirm] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [codeRoot, setCodeRoot] = useState<string | null>(null);
+  const [codeRootInput, setCodeRootInput] = useState('');
+  const [codeRootEditing, setCodeRootEditing] = useState(false);
+  const [codeRootSaving, setCodeRootSaving] = useState(false);
+  const [codeRootError, setCodeRootError] = useState<string | null>(null);
+  const [codeRootSuccess, setCodeRootSuccess] = useState(false);
 
   useEffect(() => {
     api.getPreferences()
@@ -36,6 +42,14 @@ export default function SettingsPanel({
             setDisplayName(name);
           } catch { /* Cloud unavailable */ }
         }
+      })
+      .catch(() => {});
+
+    // Load current codeRoot
+    api.getCodeRoot()
+      .then(({ codeRoot: cr }) => {
+        setCodeRoot(cr);
+        if (cr) setCodeRootInput(cr);
       })
       .catch(() => {});
   }, []);
@@ -168,6 +182,101 @@ export default function SettingsPanel({
               </div>
               <div style={{ fontSize: 9, color: 'var(--terminal-text-muted)', marginTop: 4 }}>
                 Sets language for AI responses and speech bubbles
+              </div>
+            </div>
+
+            {/* Code Repository */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 8, color: 'var(--terminal-text)' }}>
+                CODE REPOSITORY
+              </div>
+              {!codeRootEditing ? (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <code style={{
+                    flex: 1, padding: '8px 10px', fontSize: 10,
+                    background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: 6, color: codeRoot ? 'var(--terminal-text)' : 'var(--terminal-text-muted)',
+                    fontFamily: 'monospace',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {codeRoot || 'Not configured'}
+                  </code>
+                  <button
+                    onClick={() => { setCodeRootEditing(true); setCodeRootError(null); setCodeRootSuccess(false); }}
+                    style={{
+                      padding: '8px 12px', fontSize: 10, fontWeight: 600,
+                      border: '2px solid rgba(255,255,255,0.1)', background: 'transparent',
+                      color: 'var(--terminal-text-muted)', borderRadius: 6, cursor: 'pointer',
+                    }}
+                  >
+                    Change
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input
+                      type="text"
+                      value={codeRootInput}
+                      onChange={e => { setCodeRootInput(e.target.value); setCodeRootError(null); }}
+                      placeholder="/path/to/code/repo"
+                      style={{
+                        flex: 1, padding: '8px 10px', fontSize: 11,
+                        background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.15)',
+                        borderRadius: 6, color: 'var(--terminal-text)', fontFamily: 'monospace',
+                        outline: 'none',
+                      }}
+                      autoFocus
+                    />
+                    <button
+                      onClick={async () => {
+                        if (!codeRootInput.trim()) return;
+                        setCodeRootSaving(true);
+                        setCodeRootError(null);
+                        try {
+                          const result = await api.setCodeRoot(codeRootInput.trim());
+                          setCodeRoot(result.codeRoot);
+                          setCodeRootInput(result.codeRoot);
+                          setCodeRootEditing(false);
+                          setCodeRootSuccess(true);
+                          setTimeout(() => setCodeRootSuccess(false), 3000);
+                        } catch (err) {
+                          setCodeRootError(err instanceof Error ? err.message : 'Failed to set code root');
+                        } finally {
+                          setCodeRootSaving(false);
+                        }
+                      }}
+                      disabled={codeRootSaving || !codeRootInput.trim()}
+                      style={{
+                        padding: '8px 12px', fontSize: 10, fontWeight: 600,
+                        background: 'var(--accent)', border: 'none',
+                        color: '#fff', borderRadius: 6, cursor: 'pointer',
+                        opacity: codeRootSaving || !codeRootInput.trim() ? 0.5 : 1,
+                      }}
+                    >
+                      {codeRootSaving ? '...' : 'Save'}
+                    </button>
+                    <button
+                      onClick={() => { setCodeRootEditing(false); setCodeRootInput(codeRoot || ''); setCodeRootError(null); }}
+                      style={{
+                        padding: '8px 10px', fontSize: 10,
+                        background: 'transparent', border: '1px solid rgba(255,255,255,0.1)',
+                        color: 'var(--terminal-text-muted)', borderRadius: 6, cursor: 'pointer',
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  {codeRootError && (
+                    <div style={{ fontSize: 9, color: '#ff6b6b', marginTop: 4 }}>{codeRootError}</div>
+                  )}
+                </div>
+              )}
+              {codeRootSuccess && (
+                <div style={{ fontSize: 9, color: '#4ade80', marginTop: 4 }}>Code repository updated!</div>
+              )}
+              <div style={{ fontSize: 9, color: 'var(--terminal-text-muted)', marginTop: 4 }}>
+                Path to your code repository (separate from AKB)
               </div>
             </div>
 

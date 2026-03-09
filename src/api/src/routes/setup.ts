@@ -279,6 +279,16 @@ setupRouter.post('/import-knowledge', (req, res) => {
 });
 
 /**
+ * GET /api/setup/code-root
+ * Get the current codeRoot config value.
+ */
+setupRouter.get('/code-root', (_req, res) => {
+  const companyRoot = process.env.COMPANY_ROOT || process.cwd();
+  const config = readConfig(companyRoot);
+  res.json({ codeRoot: config.codeRoot || null });
+});
+
+/**
  * POST /api/setup/code-root
  * Set or update the codeRoot config field.
  */
@@ -297,10 +307,24 @@ setupRouter.post('/code-root', (req, res) => {
     return;
   }
 
+  if (!fs.statSync(resolved).isDirectory()) {
+    res.status(400).json({ ok: false, error: 'Path is not a directory' });
+    return;
+  }
+
+  // Check if it's a git repository
+  let isGitRepo = false;
+  try {
+    execSync('git rev-parse --git-dir', { cwd: resolved, timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] });
+    isGitRepo = true;
+  } catch {
+    // Not a git repo — still allow, but inform
+  }
+
   const config = readConfig(companyRoot);
   writeConfig(companyRoot, { ...config, codeRoot: resolved });
 
-  res.json({ ok: true, codeRoot: resolved });
+  res.json({ ok: true, codeRoot: resolved, isGitRepo });
 });
 
 /**

@@ -147,6 +147,11 @@ export default function OnboardingWizard({ onComplete }: Props) {
   const [pathValid, setPathValid] = useState<boolean | null>(null);
   const [pathValidating, setPathValidating] = useState(false);
   const [showProjectBrowser, setShowProjectBrowser] = useState(false);
+  // codeRoot (separate code repository)
+  const [codeRootPath, setCodeRootPath] = useState('');
+  const [codeRootValid, setCodeRootValid] = useState<boolean | null>(null);
+  const [codeRootValidating, setCodeRootValidating] = useState(false);
+  const [showCodeRootBrowser, setShowCodeRootBrowser] = useState(false);
 
   // Step: Knowledge (3 modes)
   const [knowledgeMode, setKnowledgeMode] = useState<KnowledgeMode>('skip');
@@ -255,6 +260,19 @@ export default function OnboardingWizard({ onComplete }: Props) {
     }
   };
 
+  const validateCodeRoot = async () => {
+    if (!codeRootPath.trim()) return;
+    setCodeRootValidating(true);
+    try {
+      const result = await api.validatePath(codeRootPath.trim());
+      setCodeRootValid(result.valid);
+    } catch {
+      setCodeRootValid(false);
+    } finally {
+      setCodeRootValidating(false);
+    }
+  };
+
   const validateAkbPath = async () => {
     if (!akbPath.trim()) return;
     setAkbPathValidating(true);
@@ -288,6 +306,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
         knowledgePaths: knowledgeMode === 'import' && knowledgePaths.length > 0 ? knowledgePaths : undefined,
         language: language !== 'auto' ? language : undefined,
         location: location.trim() || undefined,
+        codeRoot: codeRootPath.trim() || undefined,
       };
       if (engineChoice === 'direct-api' || apiKey) {
         input.apiKey = apiKey || undefined;
@@ -548,6 +567,54 @@ export default function OnboardingWizard({ onComplete }: Props) {
                       />
                     )}
                   </div>
+                )}
+              </div>
+
+              {/* Code Repository (optional) */}
+              <div style={{ borderTop: '1px solid var(--terminal-border)', paddingTop: 16 }}>
+                <label className="text-xs font-medium block mb-1" style={{ color: 'var(--terminal-text-secondary)' }}>
+                  Code Repository (optional)
+                </label>
+                <div className="text-[10px] mb-2" style={{ color: 'var(--terminal-text-muted)' }}>
+                  Connect a separate code repo. AKB and code will be managed independently.
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    className={`${inputClass} flex-1`}
+                    placeholder="/path/to/code/repo"
+                    value={codeRootPath}
+                    onChange={e => { setCodeRootPath(e.target.value); setCodeRootValid(null); }}
+                  />
+                  <button
+                    onClick={() => setShowCodeRootBrowser(!showCodeRootBrowser)}
+                    className="px-3 py-2 rounded text-xs font-medium transition-colors"
+                    style={{ background: 'var(--hud-bg-alt)', color: 'var(--terminal-text)' }}
+                    title="Browse folders"
+                  >
+                    {'\uD83D\uDCC1'}
+                  </button>
+                  {codeRootPath.trim() && (
+                    <button
+                      onClick={validateCodeRoot}
+                      disabled={codeRootValidating}
+                      className="px-3 py-2 rounded text-xs font-medium transition-colors"
+                      style={{ background: 'var(--accent)', color: '#fff', opacity: codeRootValidating ? 0.5 : 1 }}
+                    >
+                      {codeRootValidating ? '...' : 'Verify'}
+                    </button>
+                  )}
+                </div>
+                {codeRootValid === true && (
+                  <div className="text-xs mt-2" style={{ color: 'var(--active-green)' }}>{'\u2705'} Path verified: {codeRootPath}</div>
+                )}
+                {codeRootValid === false && (
+                  <div className="text-xs mt-2" style={{ color: '#EF4444' }}>{'\u274C'} Invalid path</div>
+                )}
+                {showCodeRootBrowser && (
+                  <FolderBrowser
+                    onSelect={(p) => { setCodeRootPath(p); setCodeRootValid(true); setShowCodeRootBrowser(false); }}
+                    onClose={() => setShowCodeRootBrowser(false)}
+                  />
                 )}
               </div>
             </div>
