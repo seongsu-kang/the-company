@@ -30,12 +30,84 @@ interface GNode extends SimulationNodeDatum {
   title: string;
   category: string;
   akb_type: 'hub' | 'node';
+  tldr?: string;
+  tags?: string[];
 }
 
 interface GLink extends SimulationLinkDatum<GNode> {
   source: string | GNode;
   target: string | GNode;
   label?: string;
+}
+
+/* ─── KB-006: Semantic Zoom Types & Helpers ─────────── */
+
+type ZoomLevel = 'macro' | 'standard' | 'micro';
+
+interface DomainCluster {
+  domain: string;
+  count: number;
+  centerX: number;
+  centerY: number;
+  nodes: GNode[];
+}
+
+/**
+ * KB-006: Determine zoom level based on viewBox width
+ * - Macro (x0.5 or less): viewBox.w > 1600 — show domain clusters only
+ * - Standard (x0.5~2): viewBox.w 800~1600 — normal node view
+ * - Micro (x2 or more): viewBox.w < 800 — detailed node view with TL;DR + tags
+ */
+function getZoomLevel(viewBoxWidth: number): ZoomLevel {
+  if (viewBoxWidth > 1600) return 'macro';
+  if (viewBoxWidth < 800) return 'micro';
+  return 'standard';
+}
+
+/**
+ * KB-006: Calculate domain clusters from nodes
+ */
+function calculateDomainClusters(nodes: GNode[]): DomainCluster[] {
+  const domainMap = new Map<string, GNode[]>();
+
+  for (const node of nodes) {
+    const domain = node.category || 'general';
+    if (!domainMap.has(domain)) {
+      domainMap.set(domain, []);
+    }
+    domainMap.get(domain)!.push(node);
+  }
+
+  const clusters: DomainCluster[] = [];
+  for (const [domain, domainNodes] of domainMap) {
+    // Calculate centroid of domain nodes
+    let sumX = 0, sumY = 0;
+    for (const node of domainNodes) {
+      sumX += node.x ?? 0;
+      sumY += node.y ?? 0;
+    }
+    const count = domainNodes.length;
+    clusters.push({
+      domain,
+      count,
+      centerX: sumX / count,
+      centerY: sumY / count,
+      nodes: domainNodes,
+    });
+  }
+
+  return clusters;
+}
+
+/**
+ * KB-006: Extract first sentence from TL;DR for micro view
+ */
+function getFirstSentence(text: string | undefined, maxLen = 60): string {
+  if (!text) return '';
+  // Split on sentence endings
+  const match = text.match(/^[^.!?]+[.!?]/);
+  const sentence = match ? match[0] : text;
+  return sentence.length > maxLen ? sentence.slice(0, maxLen - 2) + '..' : sentence;
 }
 
 /* ─── Graph View (d3-force + SVG with zoom/pan/drag) ─ */
@@ -68,6 +140,13 @@ function KnowledgeGraph({
   const dragNodeRef = useRef<GNode | null>(null);
   const simRef = useRef<ReturnType<typeof forceSimulation<GNode>> | null>(null);
 
+  // KB-006: Semantic zoom state
+  const zoomLevel = useMemo(() => getZoomLevel(viewBox.w), [viewBox.w]);
+  const domainClusters = useMemo(
+    () => calculateDomainClusters(graphData.nodes),
+    [graphData.nodes]
+  );
+
   // Observe container size
   useEffect(() => {
     const el = containerRef.current;
@@ -93,6 +172,8 @@ function KnowledgeGraph({
       title: d.title,
       category: d.category,
       akb_type: d.akb_type,
+      tldr: d.tldr, // KB-006: Include for micro zoom view
+      tags: d.tags, // KB-006: Include for micro zoom view
     }));
 
     // Helper: resolve relative href to absolute id (like path.resolve)
@@ -273,128 +354,256 @@ function KnowledgeGraph({
         </defs>
         <rect x={viewBox.x - 100} y={viewBox.y - 100} width={viewBox.w + 200} height={viewBox.h + 200} fill="url(#grid)" pointerEvents="none" />
 
-        {/* Edges */}
-        {graphData.links.map((link, i) => {
-          const s = getNodePos(link.source);
-          const t = getNodePos(link.target);
-          const isEdgeHovered = hoveredEdgeIdx === i;
-          const mx = (s.x + t.x) / 2;
-          const my = (s.y + t.y) / 2;
-          return (
-            <g key={i}>
-              {/* Invisible wider hit area for hover */}
-              <line
-                x1={s.x} y1={s.y} x2={t.x} y2={t.y}
-                stroke="transparent"
-                strokeWidth={12}
-                style={{ cursor: 'default' }}
-                onMouseEnter={() => setHoveredEdgeIdx(i)}
-                onMouseLeave={() => setHoveredEdgeIdx(null)}
-              />
-              <line
-                x1={s.x} y1={s.y} x2={t.x} y2={t.y}
-                stroke={isEdgeHovered ? 'rgba(148,163,184,0.7)' : 'rgba(148,163,184,0.3)'}
-                strokeWidth={isEdgeHovered ? 2 : 1.5}
-                strokeDasharray="4 3"
-                pointerEvents="none"
-              />
-              {isEdgeHovered && link.label && (
-                <text
-                  x={mx}
-                  y={my - 6}
-                  textAnchor="middle"
-                  fill="#e2e8f0"
-                  fontSize={9}
-                  fontFamily="monospace"
-                  style={{ pointerEvents: 'none' }}
+        {/* KB-006: Conditional rendering based on zoom level */}
+
+        {/* ─── MACRO ZOOM: Domain clusters only ─── */}
+        {zoomLevel === 'macro' && (
+          <g className="macro-clusters" style={{ transition: 'opacity 0.3s ease' }}>
+            {domainClusters.map((cluster) => {
+              const color = DOMAIN_COLORS[cluster.domain] ?? DOMAIN_COLORS.general;
+              const clusterRadius = Math.max(40, Math.sqrt(cluster.count) * 25);
+              // Check if any node in cluster is matched
+              const hasMatchedNode = matchedIds === null || cluster.nodes.some((n) => matchedIds.has(n.id));
+              const clusterOpacity = hasMatchedNode ? 1 : 0.2;
+
+              return (
+                <g
+                  key={cluster.domain}
+                  transform={`translate(${cluster.centerX}, ${cluster.centerY})`}
+                  style={{ cursor: 'pointer', opacity: clusterOpacity, transition: 'opacity 0.3s ease' }}
+                  onMouseEnter={(e) => {
+                    const rect = containerRef.current?.getBoundingClientRect();
+                    if (rect) setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+                    // Set a pseudo-node for tooltip
+                    setHoveredNode({ id: `cluster-${cluster.domain}`, title: `${cluster.domain} (${cluster.count})`, category: cluster.domain, akb_type: 'hub' });
+                  }}
+                  onMouseLeave={() => setHoveredNode(null)}
                 >
-                  <tspan style={{ filter: 'drop-shadow(0 0 2px rgba(0,0,0,0.8))' }}>
-                    {link.label.length > 30 ? link.label.slice(0, 28) + '..' : link.label}
-                  </tspan>
-                </text>
-              )}
-            </g>
-          );
-        })}
+                  {/* Cluster background circle */}
+                  <circle
+                    r={clusterRadius}
+                    fill={color.bg}
+                    stroke={color.border}
+                    strokeWidth={3}
+                    opacity={0.8}
+                  />
+                  {/* Domain name */}
+                  <text
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fill={color.text}
+                    fontSize={16}
+                    fontFamily="monospace"
+                    fontWeight="bold"
+                    style={{ pointerEvents: 'none' }}
+                  >
+                    {cluster.domain}
+                  </text>
+                  {/* Count badge */}
+                  <text
+                    y={20}
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fill={color.text}
+                    fontSize={12}
+                    fontFamily="monospace"
+                    opacity={0.8}
+                    style={{ pointerEvents: 'none' }}
+                  >
+                    ({cluster.count})
+                  </text>
+                </g>
+              );
+            })}
+          </g>
+        )}
 
-        {/* Nodes */}
-        {graphData.nodes.map((node) => {
-          const color = DOMAIN_COLORS[node.category] ?? DOMAIN_COLORS.general;
-          const isHub = node.akb_type === 'hub';
-          const size = isHub ? 24 : 16;
-          const isHovered = hoveredNode?.id === node.id;
-          const isSelected = selectedDocId === node.id;
-          const scale = isHovered ? 1.2 : isSelected ? 1.15 : 1;
-          // KB-003: Fade non-matching nodes when search is active
-          const isMatched = matchedIds === null || matchedIds.has(node.id);
-          const nodeOpacity = isMatched ? 1 : 0.2;
+        {/* ─── STANDARD & MICRO ZOOM: Individual nodes with edges ─── */}
+        {zoomLevel !== 'macro' && (
+          <>
+            {/* Edges */}
+            {graphData.links.map((link, i) => {
+              const s = getNodePos(link.source);
+              const t = getNodePos(link.target);
+              const isEdgeHovered = hoveredEdgeIdx === i;
+              const mx = (s.x + t.x) / 2;
+              const my = (s.y + t.y) / 2;
+              return (
+                <g key={i}>
+                  {/* Invisible wider hit area for hover */}
+                  <line
+                    x1={s.x} y1={s.y} x2={t.x} y2={t.y}
+                    stroke="transparent"
+                    strokeWidth={12}
+                    style={{ cursor: 'default' }}
+                    onMouseEnter={() => setHoveredEdgeIdx(i)}
+                    onMouseLeave={() => setHoveredEdgeIdx(null)}
+                  />
+                  <line
+                    x1={s.x} y1={s.y} x2={t.x} y2={t.y}
+                    stroke={isEdgeHovered ? 'rgba(148,163,184,0.7)' : 'rgba(148,163,184,0.3)'}
+                    strokeWidth={isEdgeHovered ? 2 : 1.5}
+                    strokeDasharray="4 3"
+                    pointerEvents="none"
+                  />
+                  {isEdgeHovered && link.label && (
+                    <text
+                      x={mx}
+                      y={my - 6}
+                      textAnchor="middle"
+                      fill="#e2e8f0"
+                      fontSize={9}
+                      fontFamily="monospace"
+                      style={{ pointerEvents: 'none' }}
+                    >
+                      <tspan style={{ filter: 'drop-shadow(0 0 2px rgba(0,0,0,0.8))' }}>
+                        {link.label.length > 30 ? link.label.slice(0, 28) + '..' : link.label}
+                      </tspan>
+                    </text>
+                  )}
+                </g>
+              );
+            })}
 
-          return (
-            <g
-              key={node.id}
-              transform={`translate(${node.x ?? 0}, ${node.y ?? 0}) scale(${scale})`}
-              style={{ cursor: 'pointer', transition: 'transform 0.15s ease, opacity 0.2s ease', opacity: nodeOpacity }}
-              onClick={(e) => {
-                e.stopPropagation();
-                const doc = docs.find((d) => d.id === node.id);
-                if (doc) onNodeClick(doc);
-              }}
-              onMouseDown={(e) => handleNodeMouseDown(e, node)}
-              onMouseEnter={(e) => {
-                setHoveredNode(node);
-                const rect = containerRef.current?.getBoundingClientRect();
-                if (rect) setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-              }}
-              onMouseLeave={() => setHoveredNode(null)}
-            >
-              {/* Glow for selected */}
-              {isSelected && (
-                <rect
-                  x={-size / 2 - 4}
-                  y={-size / 2 - 4}
-                  width={size + 8}
-                  height={size + 8}
-                  fill="none"
-                  stroke="#22c55e"
-                  strokeWidth={2}
-                  rx={isHub ? 5 : 2}
-                  opacity={0.6}
-                />
-              )}
-              {/* Outer */}
-              <rect
-                x={-size / 2}
-                y={-size / 2}
-                width={size}
-                height={size}
-                fill={color.border}
-                rx={isHub ? 4 : 2}
-                opacity={isHovered ? 1 : 0.9}
-              />
-              {/* Inner */}
-              <rect
-                x={-size / 2 + 3}
-                y={-size / 2 + 3}
-                width={Math.max(0, size - 6)}
-                height={Math.max(0, size - 6)}
-                fill={color.bg}
-                rx={isHub ? 3 : 1}
-              />
-              {/* Label */}
-              <text
-                y={size / 2 + 14}
-                textAnchor="middle"
-                fill={isSelected ? '#e2e8f0' : '#94a3b8'}
-                fontSize={11}
-                fontFamily="monospace"
-                fontWeight={isSelected ? 'bold' : 'normal'}
-                style={{ pointerEvents: 'none' }}
-              >
-                {node.title.length > 24 ? node.title.slice(0, 22) + '..' : node.title}
-              </text>
-            </g>
-          );
-        })}
+            {/* Nodes */}
+            {graphData.nodes.map((node) => {
+              const color = DOMAIN_COLORS[node.category] ?? DOMAIN_COLORS.general;
+              const isHub = node.akb_type === 'hub';
+              // KB-006: Larger nodes in micro view for more detail
+              const baseSize = isHub ? 24 : 16;
+              const size = zoomLevel === 'micro' ? baseSize * 1.5 : baseSize;
+              const isHovered = hoveredNode?.id === node.id;
+              const isSelected = selectedDocId === node.id;
+              const scale = isHovered ? 1.1 : isSelected ? 1.05 : 1;
+              // KB-003: Fade non-matching nodes when search is active
+              const isMatched = matchedIds === null || matchedIds.has(node.id);
+              const nodeOpacity = isMatched ? 1 : 0.2;
+
+              // KB-006: Micro view extras
+              const firstSentence = zoomLevel === 'micro' ? getFirstSentence(node.tldr, 50) : '';
+              const displayTags = zoomLevel === 'micro' && node.tags ? node.tags.slice(0, 3) : [];
+
+              return (
+                <g
+                  key={node.id}
+                  transform={`translate(${node.x ?? 0}, ${node.y ?? 0}) scale(${scale})`}
+                  style={{ cursor: 'pointer', transition: 'transform 0.2s ease, opacity 0.3s ease', opacity: nodeOpacity }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const doc = docs.find((d) => d.id === node.id);
+                    if (doc) onNodeClick(doc);
+                  }}
+                  onMouseDown={(e) => handleNodeMouseDown(e, node)}
+                  onMouseEnter={(e) => {
+                    setHoveredNode(node);
+                    const rect = containerRef.current?.getBoundingClientRect();
+                    if (rect) setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+                  }}
+                  onMouseLeave={() => setHoveredNode(null)}
+                >
+                  {/* Glow for selected */}
+                  {isSelected && (
+                    <rect
+                      x={-size / 2 - 4}
+                      y={-size / 2 - 4}
+                      width={size + 8}
+                      height={size + 8}
+                      fill="none"
+                      stroke="#22c55e"
+                      strokeWidth={2}
+                      rx={isHub ? 5 : 2}
+                      opacity={0.6}
+                    />
+                  )}
+                  {/* Outer */}
+                  <rect
+                    x={-size / 2}
+                    y={-size / 2}
+                    width={size}
+                    height={size}
+                    fill={color.border}
+                    rx={isHub ? 4 : 2}
+                    opacity={isHovered ? 1 : 0.9}
+                  />
+                  {/* Inner */}
+                  <rect
+                    x={-size / 2 + 3}
+                    y={-size / 2 + 3}
+                    width={Math.max(0, size - 6)}
+                    height={Math.max(0, size - 6)}
+                    fill={color.bg}
+                    rx={isHub ? 3 : 1}
+                  />
+                  {/* Label - title */}
+                  <text
+                    y={size / 2 + 14}
+                    textAnchor="middle"
+                    fill={isSelected ? '#e2e8f0' : '#94a3b8'}
+                    fontSize={zoomLevel === 'micro' ? 10 : 11}
+                    fontFamily="monospace"
+                    fontWeight={isSelected ? 'bold' : 'normal'}
+                    style={{ pointerEvents: 'none' }}
+                  >
+                    {node.title.length > 24 ? node.title.slice(0, 22) + '..' : node.title}
+                  </text>
+
+                  {/* KB-006: Micro view - TL;DR first sentence */}
+                  {zoomLevel === 'micro' && firstSentence && (
+                    <text
+                      y={size / 2 + 28}
+                      textAnchor="middle"
+                      fill="#94a3b8"
+                      fontSize={8}
+                      fontFamily="system-ui, sans-serif"
+                      opacity={0.7}
+                      style={{ pointerEvents: 'none' }}
+                    >
+                      {firstSentence}
+                    </text>
+                  )}
+
+                  {/* KB-006: Micro view - Tags */}
+                  {zoomLevel === 'micro' && displayTags.length > 0 && (
+                    <g transform={`translate(0, ${size / 2 + (firstSentence ? 42 : 28)})`}>
+                      {displayTags.map((tag, idx) => {
+                        const tagWidth = tag.length * 5 + 8;
+                        const totalWidth = displayTags.reduce((sum, t) => sum + t.length * 5 + 10, 0);
+                        let offsetX = -totalWidth / 2;
+                        for (let i = 0; i < idx; i++) {
+                          offsetX += displayTags[i].length * 5 + 10;
+                        }
+                        return (
+                          <g key={tag} transform={`translate(${offsetX + tagWidth / 2}, 0)`}>
+                            <rect
+                              x={-tagWidth / 2}
+                              y={-6}
+                              width={tagWidth}
+                              height={12}
+                              fill={color.bg}
+                              stroke={color.border}
+                              strokeWidth={0.5}
+                              rx={3}
+                            />
+                            <text
+                              textAnchor="middle"
+                              dominantBaseline="middle"
+                              fill={color.text}
+                              fontSize={7}
+                              fontFamily="monospace"
+                              style={{ pointerEvents: 'none' }}
+                            >
+                              {tag}
+                            </text>
+                          </g>
+                        );
+                      })}
+                    </g>
+                  )}
+                </g>
+              );
+            })}
+          </>
+        )}
       </svg>
 
       {/* Tooltip */}
@@ -412,12 +621,34 @@ function KnowledgeGraph({
         >
           <div className="font-bold mb-1">{hoveredNode.title}</div>
           <div className="text-[10px] opacity-60 mb-1">{hoveredNode.akb_type.toUpperCase()} / {hoveredNode.category}</div>
-          {docs.find((d) => d.id === hoveredNode.id)?.tldr && (
-            <div className="text-[10px] opacity-80 mb-1">{docs.find((d) => d.id === hoveredNode.id)!.tldr}</div>
+          {/* Show tldr for regular nodes, show hint for clusters in macro view */}
+          {hoveredNode.id.startsWith('cluster-') ? (
+            <div className="text-[10px] text-green-400">Zoom in to see documents</div>
+          ) : (
+            <>
+              {docs.find((d) => d.id === hoveredNode.id)?.tldr && (
+                <div className="text-[10px] opacity-80 mb-1">{docs.find((d) => d.id === hoveredNode.id)!.tldr}</div>
+              )}
+              <div className="text-[10px] text-green-400">Click to open | Drag to move</div>
+            </>
           )}
-          <div className="text-[10px] text-green-400">Click to open | Drag to move</div>
         </div>
       )}
+
+      {/* KB-006: Zoom Level Indicator */}
+      <div
+        className="absolute bottom-3 left-3 px-2 py-1 rounded text-[10px] font-mono"
+        style={{
+          background: 'var(--hud-bg)',
+          border: '1px solid var(--terminal-border)',
+          color: zoomLevel === 'macro' ? '#f59e0b' : zoomLevel === 'micro' ? '#22c55e' : '#94a3b8',
+          transition: 'color 0.3s ease',
+        }}
+      >
+        {zoomLevel === 'macro' && '📍 Overview'}
+        {zoomLevel === 'standard' && '📍 Standard'}
+        {zoomLevel === 'micro' && '📍 Detail'}
+      </div>
 
       {docs.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center text-xs" style={{ color: 'var(--terminal-text-muted)' }}>
