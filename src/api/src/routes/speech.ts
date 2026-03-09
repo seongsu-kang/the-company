@@ -626,13 +626,14 @@ speechRouter.post('/chat', async (req: Request, res: Response, next: NextFunctio
     // Build level context
     const levelCtx = `\nYour current level is Lv.${roleLevel}. Team average is Lv.${avgLevel}. ${topEntry.id} is the highest-leveled team member.`;
 
-    // Format chat history
+    // Format chat history with clear instruction
+    const historyLines = history.map(h => {
+      const name = members.find(m => m.id === h.roleId)?.name ?? h.roleId;
+      return `${name}: ${h.text}`;
+    });
     const historyText = history.length > 0
-      ? history.map(h => {
-          const name = members.find(m => m.id === h.roleId)?.name ?? h.roleId;
-          return `${name}: ${h.text}`;
-        }).join('\n')
-      : '(No messages yet — you can start the conversation)';
+      ? `CHAT LOG (read carefully — do NOT repeat what others already said):\n${historyLines.join('\n')}\n\n---\nNow respond as ${node.name}. Read the chat log above. Do NOT repeat points others made. Add a NEW angle, disagree, or say [SILENT]. Max 1-3 SHORT sentences (like a tweet, not a blog post).`
+      : '(No messages yet — you can start the conversation. Keep it to 1-3 short sentences.)';
 
     // Build channel topic context
     const topicCtx = channelTopic
@@ -674,7 +675,8 @@ You have Read, Grep, Glob tools. The company AKB root is: ${COMPANY_ROOT}/
    - Architecture: ${COMPANY_ROOT}/architecture/architecture.md
    - Knowledge: ${COMPANY_ROOT}/knowledge/knowledge.md
    IMPORTANT: Do NOT just read tasks.md every time. Prioritize operations/waves/ and operations/decisions/ for fresh context.
-3. Write your 1-3 sentence response grounded in what you found
+   If other people in the chat already referenced a specific document, do NOT re-read it and repeat their point. Find a DIFFERENT angle or document.
+3. Read the CHAT LOG. Identify what's already been said. Then write 1-3 SHORT sentences with a NEW take — not the same conclusion everyone else reached.
 
 GROUNDING (CRITICAL):
 Base your response ONLY on the pre-fetched context above AND data you read via tools.
@@ -686,7 +688,7 @@ ${roleStyle}
 
 CONVERSATION RULES:
 1. Stay deeply in character — your expertise, vocabulary, and concerns should be DISTINCT from other roles.
-2. Keep it to 1-3 sentences. No walls of text. Write like a Twitter/Reddit post — punchy, opinionated, casual.
+2. HARD LIMIT: 1-3 sentences MAX. If your response is longer than a tweet (280 chars), it's TOO LONG. No paragraphs, no bullet points, no essays. One sharp take.
 3. Be SPECIFIC. Reference actual projects, tasks, decisions, or waves from the AKB by name.
 4. PRIORITIZE RECENT CONTENT. Focus on the latest CEO waves, C-level decisions, and current tasks. Don't dwell on old Phase 0 stuff.
 5. Be CRITICAL. React to recent CEO/CTO directives with your honest take — push back, question priorities, point out risks. Real teams don't just agree.
