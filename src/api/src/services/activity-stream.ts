@@ -10,7 +10,7 @@ export type ActivityEventType =
   | 'text' | 'thinking'
   | 'tool:start' | 'tool:result'
   | 'dispatch:start' | 'dispatch:done'
-  | 'turn:complete'
+  | 'turn:complete' | 'turn:warning' | 'turn:limit'
   | 'import:scan' | 'import:process' | 'import:created'
   | 'stderr';
 
