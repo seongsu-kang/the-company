@@ -41,10 +41,12 @@ interface GLink extends SimulationLinkDatum<GNode> {
 
 function KnowledgeGraph({
   docs,
+  filteredDocIds,
   onNodeClick,
   selectedDocId,
 }: {
   docs: KnowledgeDoc[];
+  filteredDocIds: Set<string>;
   onNodeClick: (doc: KnowledgeDoc) => void;
   selectedDocId?: string | null;
 }) {
@@ -322,12 +324,16 @@ function KnowledgeGraph({
           const isHovered = hoveredNode?.id === node.id;
           const isSelected = selectedDocId === node.id;
           const scale = isHovered ? 1.2 : isSelected ? 1.15 : 1;
+          // KB-003: Dim non-matching nodes when search is active
+          const isFiltered = filteredDocIds.has(node.id);
+          const hasFilter = filteredDocIds.size > 0 && filteredDocIds.size < docs.length;
+          const nodeOpacity = hasFilter && !isFiltered ? 0.2 : 1;
 
           return (
             <g
               key={node.id}
               transform={`translate(${node.x ?? 0}, ${node.y ?? 0}) scale(${scale})`}
-              style={{ cursor: 'pointer', transition: 'transform 0.15s ease' }}
+              style={{ cursor: 'pointer', transition: 'transform 0.15s ease', opacity: nodeOpacity }}
               onClick={(e) => {
                 e.stopPropagation();
                 const doc = docs.find((d) => d.id === node.id);
@@ -1278,6 +1284,41 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
           <div className="text-xs opacity-80 mt-0.5">{docs.length} documents</div>
         </div>
 
+        {/* KB-003: Quick Search */}
+        <div className="p-3" style={{ borderBottom: '1px solid var(--terminal-border)' }}>
+          <div className="relative">
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--terminal-text-muted)' }}>
+              🔍
+            </div>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search docs..."
+              className="w-full pl-9 pr-3 py-2 text-xs rounded focus:outline-none focus:ring-1"
+              style={{
+                background: 'var(--hud-bg)',
+                border: '1px solid var(--terminal-border)',
+                color: 'var(--terminal-text)',
+              }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full flex items-center justify-center text-xs hover:bg-white/10 cursor-pointer"
+                style={{ color: 'var(--terminal-text-muted)' }}
+              >
+                ×
+              </button>
+            )}
+          </div>
+          {searchQuery && (
+            <div className="mt-2 text-[10px]" style={{ color: 'var(--terminal-text-muted)' }}>
+              {filteredDocs.length} of {docs.length} documents
+            </div>
+          )}
+        </div>
+
         {/* View mode toggle */}
         <div className="flex gap-1 p-2" style={{ borderBottom: '1px solid var(--terminal-border)' }}>
           <ViewModeBtn
@@ -1306,6 +1347,7 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
             <div className="flex-1 flex overflow-hidden">
               <KnowledgeGraph
                 docs={docs}
+                filteredDocIds={new Set(filteredDocs.map((d) => d.id))}
                 onNodeClick={handleGraphNodeClick}
                 selectedDocId={graphSelectedDocId}
               />
@@ -1355,7 +1397,7 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
         {/* ─── TREE VIEW ─── */}
         {view === 'tree' && (
           <TreeView
-            docs={docs}
+            docs={filteredDocs}
             onDocumentClick={(docId) => setGraphSelectedDocId(docId)}
             selectedDocId={graphSelectedDocId}
           />
