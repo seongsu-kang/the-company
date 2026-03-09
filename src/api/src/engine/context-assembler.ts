@@ -109,8 +109,9 @@ export function assembleContext(
   // 10. Task는 별도 필드로 분리
   let subordinates = getSubordinates(orgTree, roleId);
 
-  // Filter subordinates by targetRoles (selective dispatch scope)
-  if (options?.targetRoles && options.targetRoles.length > 0) {
+  // Filter subordinates by targetRoles ONLY for CEO (wave dispatch scope)
+  // C-Level roles should always see their own subordinates regardless of targetRoles
+  if (options?.targetRoles && options.targetRoles.length > 0 && roleId === 'ceo') {
     subordinates = subordinates.filter(id => options.targetRoles!.includes(id));
   }
 
