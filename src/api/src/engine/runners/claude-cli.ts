@@ -16,7 +16,7 @@ const DISPATCH_SCRIPT = `#!/usr/bin/env python3
 3가지 모드:
   dispatch <roleId> "<task>"           — Job 시작 (즉시 반환, 대기하지 않음)
   dispatch --check <jobId>             — Job 상태 및 결과 조회
-  dispatch --wait <roleId> "<task>"    — Job 시작 + 완료 대기 (최대 90초)
+  dispatch --wait <roleId> "<task>"    — Job 시작 + 완료 대기 (최대 300초)
 
 환경변수:
   DISPATCH_API_URL    — API 서버 URL (default: http://localhost:3001)
@@ -63,7 +63,7 @@ def start_job(role_id, task):
     resp = json.loads(urllib.request.urlopen(req, timeout=10).read())
     return resp['jobId']
 
-def poll_until_done(job_id, role_id, max_wait=90):
+def poll_until_done(job_id, role_id, max_wait=300):
     waited = 0
     while waited < max_wait:
         try:

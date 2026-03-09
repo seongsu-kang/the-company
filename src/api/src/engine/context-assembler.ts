@@ -451,36 +451,58 @@ ${subInfo}
 **Use Bash to run the dispatch command:**
 
 \`\`\`bash
-# Start a job (returns immediately with job ID)
-python3 "$DISPATCH_CMD" ${exampleSubId} "Task description here"
+# DEFAULT: Start and wait for result (blocks up to 90s)
+python3 "$DISPATCH_CMD" --wait ${exampleSubId} "Task description here"
 
-# Check job status/result later
+# Check job status/result (if timed out or need to re-check)
 python3 "$DISPATCH_CMD" --check <jobId>
 
-# Start and wait for result (blocks up to 90s)
-python3 "$DISPATCH_CMD" --wait ${exampleSubId} "Task description here"
+# Fire-and-forget (NOT recommended — use --wait instead)
+python3 "$DISPATCH_CMD" ${exampleSubId} "Task description here"
 \`\`\`
 
 **IMPORTANT**: Always use \`python3 "$DISPATCH_CMD"\` — this is the ONLY way to dispatch tasks to subordinates.
 
-### Recommended Pattern: Parallel Dispatch
+### ⛔ CRITICAL: Always use --wait and check results
 
-For multiple tasks, dispatch all at once, then check results:
+You MUST use \`--wait\` for every dispatch so you can review the result before proceeding.
+After each result, decide: dispatch next task, re-dispatch with feedback, or report.
+
+**NEVER dispatch and immediately finish.** The dispatch-check-review loop must continue
+until ALL planned work is completed.
+
+### Recommended Pattern: Sequential Dispatch + Review
 
 \`\`\`bash
-# 1. Dispatch all tasks (each returns immediately)
-python3 "$DISPATCH_CMD" ${exampleSubId} "Task A"
-python3 "$DISPATCH_CMD" ${subordinates.length > 1 ? subordinates[1] : exampleSubId} "Task B"
+# 1. Dispatch first task and WAIT for result
+python3 "$DISPATCH_CMD" --wait ${exampleSubId} "Task A"
 
-# 2. Check results later (use the Job IDs from step 1)
-python3 "$DISPATCH_CMD" --check <jobId-A>
-python3 "$DISPATCH_CMD" --check <jobId-B>
+# 2. Review the result — is it satisfactory?
+# If yes → dispatch next task
+python3 "$DISPATCH_CMD" --wait ${subordinates.length > 1 ? subordinates[1] : exampleSubId} "Task B"
+
+# 3. If result timed out, check later
+python3 "$DISPATCH_CMD" --check <jobId>
+
+# 4. Continue until ALL tasks are done
+\`\`\`
+
+### Parallel Dispatch (when tasks are independent)
+
+\`\`\`bash
+# 1. Dispatch all tasks (fire-and-forget for parallel)
+python3 "$DISPATCH_CMD" ${exampleSubId} "Task A"   # → job-xxx
+python3 "$DISPATCH_CMD" ${subordinates.length > 1 ? subordinates[1] : exampleSubId} "Task B"   # → job-yyy
+
+# 2. MUST check ALL results before finishing
+python3 "$DISPATCH_CMD" --check <job-xxx>
+python3 "$DISPATCH_CMD" --check <job-yyy>
 \`\`\`
 
 ### Status Values
-- **running** — Subordinate is working
+- **running** — Subordinate is working (wait or check again)
 - **done** — Task completed, result available
-- **error** — Task failed
+- **error** — Task failed (re-dispatch or report)
 - **awaiting_input** — Subordinate has a question for you`;
 
   // C-level roles get mandatory delegation rules
@@ -511,36 +533,40 @@ When you receive a directive:
 | Update knowledge & tasks | Update their own journals |
 | Report to superior | Report to you |
 
-### The Supervision Loop (CRITICAL)
+### The Supervision Loop (CRITICAL — DO NOT SKIP)
 
-After dispatching tasks, follow this loop:
+⛔ **You MUST keep running until ALL planned tasks are dispatched, reviewed, and completed.**
+⛔ **NEVER dispatch once and stop. That leaves work half-done.**
 
+The loop:
 \`\`\`
-DISPATCH ALL → CHECK RESULTS → REVIEW → DECIDE
-                                          ├── PASS → Knowledge Update → Task Update → Next Dispatch
-                                          └── FAIL → Re-dispatch with feedback
+PLAN TASKS → DISPATCH (--wait) → REVIEW RESULT → DECIDE
+                                                   ├── PASS → Next Task (loop back to DISPATCH)
+                                                   └── FAIL → Re-dispatch with feedback (loop back)
+                                                   └── ALL DONE → Update knowledge → Report
 \`\`\`
 
-**Step 1: Dispatch all tasks** (fire-and-forget, collect job IDs)
+**Example: Full supervision session**
 \`\`\`bash
-python3 "$DISPATCH_CMD" engineer "Task A"   # → job-xxx
-python3 "$DISPATCH_CMD" designer "Task B"   # → job-yyy
+# Task 1: Dispatch to engineer and WAIT for result
+python3 "$DISPATCH_CMD" --wait engineer "Implement feature X. Read tasks.md first."
+
+# Review result... looks good. Task 2:
+python3 "$DISPATCH_CMD" --wait qa "Test feature X that engineer just implemented."
+
+# Review QA result... found bugs. Re-dispatch:
+python3 "$DISPATCH_CMD" --wait engineer "Fix bugs found by QA: [specific issues]"
+
+# Review fix... all good. Update knowledge and report.
 \`\`\`
 
-**Step 2: Check results** (after waiting, use --check with saved job IDs)
-\`\`\`bash
-python3 "$DISPATCH_CMD" --check <job-xxx>
-python3 "$DISPATCH_CMD" --check <job-yyy>
-\`\`\`
-
-**Step 3-4: Review → Knowledge Update → Task Update → Next Dispatch**
-1. **Review**: Does the output meet acceptance criteria?
-2. **Knowledge Update**: Record decisions, findings, analysis in AKB (journals, knowledge/)
-3. **Task Update**: Update task status in tasks.md or project docs
-4. **Next Dispatch**: Identify and dispatch the next task
+**Key rules:**
+- Always use \`--wait\` to get results inline
+- If \`--wait\` times out (90s), use \`--check\` to poll until done
+- After EVERY result, decide the NEXT action — don't just stop
+- Continue dispatching until the CEO's directive is FULLY addressed
 
 ⚠️ Do NOT use curl or other methods to create jobs — always use the dispatch command.
-⚠️ Do NOT use sleep loops to wait — use --check to poll for results.
 
 ### Dispatch Quality Requirements
 
@@ -552,8 +578,10 @@ Every dispatch MUST include:
 
 ### Anti-Patterns (NEVER do these)
 
+- ❌ **Dispatching once and stopping** — you MUST keep working until directive is complete
 - ❌ Writing code yourself instead of dispatching to engineer
 - ❌ Dispatching without acceptance criteria
+- ❌ Not using --wait (fire-and-forget without checking results)
 - ❌ Accepting output without reviewing it
 - ❌ Forgetting to update knowledge/tasks after work completes
 - ❌ Doing only 1 dispatch when you should chain multiple (Engineer → QA)
