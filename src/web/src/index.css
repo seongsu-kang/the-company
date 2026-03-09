@@ -103,6 +103,15 @@ body {
   transition: transform 0.3s ease, right 0.3s ease, width 0.2s ease;
 }
 
+/* Fade in animation for view mode transitions */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
 /* Dimmer */
 .dimmer {
   opacity: 0;

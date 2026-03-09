@@ -423,8 +423,9 @@ function KnowledgeGraph({
 }
 
 /* ─── Knowledge Card ─────────────────────────────── */
-
-function KnowledgeCard({
+/* TODO KB-002: Re-enable for Tree/List views */
+// @ts-ignore - Will be used in KB-002
+function _KnowledgeCard({
   doc,
   allDocs,
   onOpen,
@@ -540,8 +541,9 @@ function KnowledgeCard({
 }
 
 /* ─── Doc Detail View (view + edit) ─────────────── */
-
-function DocDetail({
+/* TODO KB-002: Re-enable for Tree/List views */
+// @ts-ignore - Will be used in KB-002
+function _DocDetail({
   docId,
   onBack,
   onDocUpdated,
@@ -776,8 +778,9 @@ function DocDetail({
 }
 
 /* ─── New Doc Form ──────────────────────────────── */
-
-function NewDocForm({
+/* TODO KB-002: Re-enable for Tree/List views */
+// @ts-ignore - Will be used in KB-002
+function _NewDocForm({
   onCreated,
   onCancel,
 }: {
@@ -937,43 +940,20 @@ interface Props {
   initialDocId?: string;
 }
 
-export default function KnowledgePanel({ docs, onClose, onRefresh, terminalWidth = 0, initialDocId }: Props) {
-  const [view, setView] = useState<'list' | 'graph'>('list');
-  const [category, setCategory] = useState<string>('all');
-  const [openDocId, setOpenDocId] = useState<string | null>(initialDocId ?? null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showNewForm, setShowNewForm] = useState(false);
+export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, terminalWidth = 0, initialDocId: _initialDocId }: Props) {
+  // Load view mode from localStorage, default to 'graph'
+  const [view, setView] = useState<'graph' | 'tree' | 'list'>(() => {
+    const saved = localStorage.getItem('kb-view-mode');
+    return (saved === 'graph' || saved === 'tree' || saved === 'list') ? saved : 'graph';
+  });
   const [graphSelectedDocId, setGraphSelectedDocId] = useState<string | null>(null);
 
+  // Save view mode to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('kb-view-mode', view);
+  }, [view]);
+
   const { panelRight, panelWidth, isResizing, handleResizeStart } = usePanelResize(terminalWidth);
-
-  // Gather unique categories
-  const categories = ['all', ...Array.from(new Set(docs.map((d) => d.category))).sort()];
-
-  // Filter by category and search
-  const filtered = docs.filter((d) => {
-    if (category !== 'all' && d.category !== category) return false;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      return (
-        d.title.toLowerCase().includes(q) ||
-        (d.tldr ?? '').toLowerCase().includes(q) ||
-        d.tags.some((t) => t.toLowerCase().includes(q))
-      );
-    }
-    return true;
-  });
-
-  const handleDocCreated = (id: string) => {
-    setShowNewForm(false);
-    onRefresh();
-    setOpenDocId(id);
-  };
-
-  const handleDocDeleted = (_docId: string) => {
-    setOpenDocId(null);
-    onRefresh();
-  };
 
   const handleGraphNodeClick = (doc: KnowledgeDoc) => {
     setGraphSelectedDocId(doc.id);
@@ -1010,95 +990,31 @@ export default function KnowledgePanel({ docs, onClose, onRefresh, terminalWidth
           <div className="text-xs opacity-80 mt-0.5">{docs.length} documents</div>
         </div>
 
-        {/* View toggle */}
-        <div className="flex" style={{ borderBottom: '1px solid var(--terminal-border)' }}>
-          <TabBtn label="List" active={view === 'list'} onClick={() => { setView('list'); setGraphSelectedDocId(null); }} />
-          <TabBtn label="Graph" active={view === 'graph'} onClick={() => setView('graph')} />
+        {/* View mode toggle */}
+        <div className="flex gap-1 p-2" style={{ borderBottom: '1px solid var(--terminal-border)' }}>
+          <ViewModeBtn
+            icon="🕸️"
+            label="Graph"
+            active={view === 'graph'}
+            onClick={() => setView('graph')}
+          />
+          <ViewModeBtn
+            icon="🌲"
+            label="Tree"
+            active={view === 'tree'}
+            onClick={() => { setView('tree'); setGraphSelectedDocId(null); }}
+          />
+          <ViewModeBtn
+            icon="📋"
+            label="List"
+            active={view === 'list'}
+            onClick={() => { setView('list'); setGraphSelectedDocId(null); }}
+          />
         </div>
-
-        {/* ─── LIST VIEW ─── */}
-        {view === 'list' && !openDocId && !showNewForm && (
-          <>
-            {/* Search + New button */}
-            <div className="flex items-center gap-2 px-4 py-2 shrink-0" style={{ borderBottom: '1px solid var(--terminal-border)' }}>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search docs..."
-                className="flex-1 px-2.5 py-1.5 text-[11px] rounded focus:outline-none"
-                style={{ background: 'var(--hud-bg)', border: '1px solid var(--terminal-border)', color: 'var(--terminal-text)' }}
-              />
-              <button
-                onClick={() => setShowNewForm(true)}
-                className="px-2.5 py-1.5 text-[10px] font-semibold rounded cursor-pointer text-white shrink-0"
-                style={{ background: '#16a34a' }}
-              >
-                + New
-              </button>
-            </div>
-
-            {/* Category tabs */}
-            <div className="flex overflow-x-auto shrink-0" style={{ borderBottom: '1px solid var(--terminal-border)', scrollbarWidth: 'none' }}>
-              {categories.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setCategory(cat)}
-                  className="px-3 py-1.5 text-[10px] font-medium cursor-pointer whitespace-nowrap"
-                  style={{
-                    color: category === cat ? '#4ade80' : 'var(--terminal-text-muted)',
-                    borderBottom: category === cat ? '2px solid #4ade80' : '2px solid transparent',
-                  }}
-                >
-                  {cat === 'all' ? `All (${docs.length})` : `${cat} (${docs.filter((d) => d.category === cat).length})`}
-                </button>
-              ))}
-            </div>
-
-            {/* List */}
-            <div className="flex-1 overflow-y-auto p-4">
-              {filtered.length === 0 ? (
-                <div className="text-center text-xs py-8" style={{ color: 'var(--terminal-text-muted)' }}>
-                  {searchQuery ? 'No matching documents' : 'No documents in this category'}
-                </div>
-              ) : (
-                filtered.map((doc) => (
-                  <KnowledgeCard
-                    key={doc.id}
-                    doc={doc}
-                    allDocs={docs}
-                    onOpen={(d) => setOpenDocId(d.id)}
-                    onNavigateDoc={(id) => setOpenDocId(id)}
-                  />
-                ))
-              )}
-            </div>
-          </>
-        )}
-
-        {/* ─── DOC DETAIL VIEW ─── */}
-        {view === 'list' && openDocId && !showNewForm && (
-          <DocDetail
-            docId={openDocId}
-            onBack={() => setOpenDocId(null)}
-            onDocUpdated={onRefresh}
-            onDelete={handleDocDeleted}
-            onNavigateDoc={(id) => setOpenDocId(id)}
-            allDocs={docs}
-          />
-        )}
-
-        {/* ─── NEW DOC FORM ─── */}
-        {view === 'list' && showNewForm && (
-          <NewDocForm
-            onCreated={handleDocCreated}
-            onCancel={() => setShowNewForm(false)}
-          />
-        )}
 
         {/* ─── GRAPH VIEW ─── */}
         {view === 'graph' && (
-          <div className="flex-1 overflow-hidden flex flex-col">
+          <div className="flex-1 overflow-hidden flex flex-col animate-fadeIn">
             <div className="flex-1 flex overflow-hidden">
               <KnowledgeGraph
                 docs={docs}
@@ -1130,13 +1046,7 @@ export default function KnowledgePanel({ docs, onClose, onRefresh, terminalWidth
                       ))}
                     </div>
                   )}
-                  <button
-                    className="w-full py-1.5 text-[10px] font-semibold rounded cursor-pointer text-white"
-                    style={{ background: '#16a34a' }}
-                    onClick={() => { setView('list'); setOpenDocId(selectedGraphDoc.id); setGraphSelectedDocId(null); }}
-                  >
-                    Open Document
-                  </button>
+                  {/* TODO KB-002: Add "Open Document" button when doc detail view is implemented */}
                 </div>
               )}
             </div>
@@ -1153,23 +1063,89 @@ export default function KnowledgePanel({ docs, onClose, onRefresh, terminalWidth
             </div>
           </div>
         )}
+
+        {/* ─── TREE VIEW (Placeholder for KB-002) ─── */}
+        {view === 'tree' && (
+          <PlaceholderView
+            icon="🌲"
+            title="Tree View"
+            message="Coming soon in KB-002"
+            description="Hierarchical folder navigation with expandable/collapsible structure"
+          />
+        )}
+
+        {/* ─── LIST VIEW (Placeholder for KB-002) ─── */}
+        {view === 'list' && (
+          <PlaceholderView
+            icon="📋"
+            title="List View"
+            message="Coming soon in KB-002"
+            description="Table format with sortable columns and quick scanning"
+          />
+        )}
+
       </div>
     </>
   );
 }
 
-function TabBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+/* ─── View Mode Button ─────────────────────────────── */
+
+function ViewModeBtn({
+  icon,
+  label,
+  active,
+  onClick,
+}: {
+  icon: string;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
   return (
     <button
       onClick={onClick}
-      className="px-4 py-2.5 text-sm font-medium cursor-pointer"
+      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded cursor-pointer transition-all"
       style={{
+        background: active ? 'rgba(22,163,106,0.2)' : 'transparent',
         color: active ? '#4ade80' : 'var(--terminal-text-muted)',
-        borderBottom: active ? '2px solid #4ade80' : '2px solid transparent',
+        border: active ? '1px solid rgba(22,163,106,0.4)' : '1px solid transparent',
       }}
     >
-      {label}
+      <span className="text-sm">{icon}</span>
+      <span>{label}</span>
     </button>
+  );
+}
+
+/* ─── Placeholder View ─────────────────────────────── */
+
+function PlaceholderView({
+  icon,
+  title,
+  message,
+  description,
+}: {
+  icon: string;
+  title: string;
+  message: string;
+  description: string;
+}) {
+  return (
+    <div className="flex-1 flex items-center justify-center p-8 animate-fadeIn">
+      <div className="text-center max-w-md">
+        <div className="text-6xl mb-4">{icon}</div>
+        <div className="text-lg font-bold mb-2" style={{ color: 'var(--terminal-text)' }}>
+          {title}
+        </div>
+        <div className="text-sm mb-3" style={{ color: '#4ade80' }}>
+          {message}
+        </div>
+        <div className="text-xs leading-relaxed" style={{ color: 'var(--terminal-text-muted)' }}>
+          {description}
+        </div>
+      </div>
+    </div>
   );
 }
 
