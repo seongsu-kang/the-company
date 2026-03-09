@@ -4,6 +4,7 @@ import type { SimulationNodeDatum, SimulationLinkDatum } from 'd3-force';
 import type { KnowledgeDoc, KnowledgeDocDetail } from '../../types';
 import { api } from '../../api/client';
 import OfficeMarkdown from './OfficeMarkdown';
+import Fuse from 'fuse.js';
 
 /* ─── Domain color mapping ─────────────────────────── */
 
@@ -43,10 +44,12 @@ function KnowledgeGraph({
   docs,
   onNodeClick,
   selectedDocId,
+  matchedIds,
 }: {
   docs: KnowledgeDoc[];
   onNodeClick: (doc: KnowledgeDoc) => void;
   selectedDocId?: string | null;
+  matchedIds: Set<string> | null; // null = show all, Set = fade non-matching
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -322,12 +325,15 @@ function KnowledgeGraph({
           const isHovered = hoveredNode?.id === node.id;
           const isSelected = selectedDocId === node.id;
           const scale = isHovered ? 1.2 : isSelected ? 1.15 : 1;
+          // KB-003: Fade non-matching nodes when search is active
+          const isMatched = matchedIds === null || matchedIds.has(node.id);
+          const nodeOpacity = isMatched ? 1 : 0.2;
 
           return (
             <g
               key={node.id}
               transform={`translate(${node.x ?? 0}, ${node.y ?? 0}) scale(${scale})`}
-              style={{ cursor: 'pointer', transition: 'transform 0.15s ease' }}
+              style={{ cursor: 'pointer', transition: 'transform 0.15s ease, opacity 0.2s ease', opacity: nodeOpacity }}
               onClick={(e) => {
                 e.stopPropagation();
                 const doc = docs.find((d) => d.id === node.id);
@@ -479,10 +485,12 @@ function TreeView({
   docs,
   onDocumentClick,
   selectedDocId,
+  matchedIds,
 }: {
   docs: KnowledgeDoc[];
   onDocumentClick: (docId: string) => void;
   selectedDocId: string | null;
+  matchedIds: Set<string> | null; // null = show all, Set = fade non-matching
 }) {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['knowledge', 'projects', 'architecture', 'operations', 'company']));
   const [viewingDocId, setViewingDocId] = useState<string | null>(null);
@@ -532,6 +540,7 @@ function TreeView({
             viewingDocId={viewingDocId}
             onToggleFolder={toggleFolder}
             onFileClick={handleFileClick}
+            matchedIds={matchedIds}
           />
         ))}
       </div>
@@ -561,6 +570,7 @@ function TreeNodeComponent({
   viewingDocId,
   onToggleFolder,
   onFileClick,
+  matchedIds,
 }: {
   node: TreeNode;
   level: number;
@@ -569,15 +579,29 @@ function TreeNodeComponent({
   viewingDocId: string | null;
   onToggleFolder: (path: string) => void;
   onFileClick: (docId: string) => void;
+  matchedIds: Set<string> | null;
 }) {
   const isExpanded = expandedFolders.has(node.path);
   const isSelected = node.type === 'file' && node.path === selectedDocId;
   const isViewing = node.type === 'file' && node.path === viewingDocId;
   const isHub = node.doc?.akb_type === 'hub';
+  // KB-003: Check if this node matches the search
+  const isMatched = node.type === 'folder' || matchedIds === null || matchedIds.has(node.path);
 
   if (node.type === 'folder') {
+    // KB-003: Check if any child matches to determine folder opacity
+    const hasMatchingChild = matchedIds === null || (node.children?.some((child) => {
+      if (child.type === 'file') return matchedIds.has(child.path);
+      // Recursively check folder children
+      const checkFolder = (n: TreeNode): boolean => {
+        if (n.type === 'file') return matchedIds.has(n.path);
+        return n.children?.some(checkFolder) ?? false;
+      };
+      return checkFolder(child);
+    }) ?? false);
+
     return (
-      <div>
+      <div style={{ opacity: hasMatchingChild ? 1 : 0.3, transition: 'opacity 0.2s ease' }}>
         <div
           className="flex items-center gap-1 py-0.5 px-1 rounded cursor-pointer hover:bg-white/5"
           style={{ paddingLeft: level * 12 + 4 }}
@@ -596,6 +620,7 @@ function TreeNodeComponent({
             viewingDocId={viewingDocId}
             onToggleFolder={onToggleFolder}
             onFileClick={onFileClick}
+            matchedIds={matchedIds}
           />
         ))}
       </div>
@@ -607,7 +632,7 @@ function TreeNodeComponent({
       className={`flex items-center gap-1 py-0.5 px-1 rounded cursor-pointer transition-colors ${
         isViewing ? 'bg-green-500/20' : isSelected ? 'bg-white/10' : 'hover:bg-white/5'
       }`}
-      style={{ paddingLeft: level * 12 + 4 }}
+      style={{ paddingLeft: level * 12 + 4, opacity: isMatched ? 1 : 0.2, transition: 'opacity 0.2s ease' }}
       onClick={() => onFileClick(node.path)}
     >
       <span className="text-[10px]">{isHub ? '📘' : '📄'}</span>
@@ -621,10 +646,50 @@ function TreeNodeComponent({
   );
 }
 
+/* ─── KB-005: TOC Parser ─────────────────────────── */
+
+interface TocItem {
+  id: string;
+  text: string;
+  level: number;
+}
+
+function parseToc(markdown: string): TocItem[] {
+  const lines = markdown.split('\n');
+  const toc: TocItem[] = [];
+  const idCounts = new Map<string, number>();
+
+  for (const line of lines) {
+    const match = line.match(/^(#{2,3})\s+(.+)$/);
+    if (!match) continue;
+
+    const level = match[1].length;
+    const text = match[2].trim();
+
+    // Generate slug-like ID
+    let baseId = text
+      .toLowerCase()
+      .replace(/[^a-z0-9가-힣\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .slice(0, 50);
+
+    // Handle duplicates
+    const count = idCounts.get(baseId) || 0;
+    idCounts.set(baseId, count + 1);
+    const id = count > 0 ? `${baseId}-${count}` : baseId;
+
+    toc.push({ id, text, level });
+  }
+
+  return toc;
+}
+
 function DocDetailView({ doc, onClose }: { doc: KnowledgeDocDetail | KnowledgeDoc; onClose: () => void }) {
   const [detailDoc, setDetailDoc] = useState<KnowledgeDocDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [activeTocId, setActiveTocId] = useState<string | null>(null);
 
   useEffect(() => {
     if ('content' in doc && doc.content) {
@@ -640,8 +705,37 @@ function DocDetailView({ doc, onClose }: { doc: KnowledgeDocDetail | KnowledgeDo
       .finally(() => setLoading(false));
   }, [doc]);
 
+  // KB-005: Parse TOC from markdown content
+  const toc = useMemo(() => {
+    if (!detailDoc || doc.format === 'html') return [];
+    return parseToc(detailDoc.content);
+  }, [detailDoc, doc.format]);
+
+  // KB-005: Scroll to TOC section
+  const scrollToSection = (tocId: string) => {
+    if (!contentRef.current) return;
+
+    // Find the heading element by matching text content
+    const headings = contentRef.current.querySelectorAll('h2, h3');
+    for (const heading of headings) {
+      const headingText = heading.textContent || '';
+      const slugText = headingText
+        .toLowerCase()
+        .replace(/[^a-z0-9가-힣\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .slice(0, 50);
+
+      if (tocId.startsWith(slugText)) {
+        heading.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        setActiveTocId(tocId);
+        break;
+      }
+    }
+  };
+
   const color = getDomainColor(doc.category);
   const isHub = doc.akb_type === 'hub';
+  const showToc = toc.length > 0 && !loading && !error;
 
   return (
     <div className="h-full flex flex-col">
@@ -692,18 +786,49 @@ function DocDetailView({ doc, onClose }: { doc: KnowledgeDocDetail | KnowledgeDo
         )}
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4">
-        {loading && (
-          <div className="text-xs" style={{ color: 'var(--terminal-text-muted)' }}>Loading...</div>
-        )}
-        {error && (
-          <div className="text-xs p-2 rounded" style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171' }}>
-            {error}
+      {/* Content + TOC */}
+      <div className="flex-1 overflow-hidden flex">
+        {/* Main Content */}
+        <div ref={contentRef} className="flex-1 overflow-y-auto p-4">
+          {loading && (
+            <div className="text-xs" style={{ color: 'var(--terminal-text-muted)' }}>Loading...</div>
+          )}
+          {error && (
+            <div className="text-xs p-2 rounded" style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171' }}>
+              {error}
+            </div>
+          )}
+          {detailDoc && (
+            <OfficeMarkdown content={detailDoc.content} />
+          )}
+        </div>
+
+        {/* KB-005: TOC Sidebar */}
+        {showToc && (
+          <div
+            className="shrink-0 overflow-y-auto p-3"
+            style={{ width: 180, background: 'var(--hud-bg-alt)', borderLeft: '1px solid var(--terminal-border)' }}
+          >
+            <div className="text-[10px] font-bold uppercase mb-2" style={{ color: 'var(--terminal-text-muted)' }}>
+              Contents
+            </div>
+            <div className="space-y-1">
+              {toc.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => scrollToSection(item.id)}
+                  className="block w-full text-left text-[10px] py-1 px-2 rounded cursor-pointer hover:bg-white/5 transition-colors"
+                  style={{
+                    paddingLeft: (item.level - 2) * 8 + 8,
+                    color: activeTocId === item.id ? '#4ade80' : 'var(--terminal-text-secondary)',
+                    fontWeight: activeTocId === item.id ? 'bold' : 'normal',
+                  }}
+                >
+                  {item.text.length > 30 ? item.text.slice(0, 28) + '..' : item.text}
+                </button>
+              ))}
+            </div>
           </div>
-        )}
-        {detailDoc && (
-          <OfficeMarkdown content={detailDoc.content} />
         )}
       </div>
     </div>
@@ -1236,10 +1361,66 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
   });
   const [graphSelectedDocId, setGraphSelectedDocId] = useState<string | null>(null);
 
+  // KB-003: Search state
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // KB-004: Domain filter state (Set of enabled domains)
+  const [enabledDomains, setEnabledDomains] = useState<Set<string>>(
+    () => new Set(Object.keys(DOMAIN_COLORS))
+  );
+
   // Save view mode to localStorage when it changes
   useEffect(() => {
     localStorage.setItem('kb-view-mode', view);
   }, [view]);
+
+  // KB-003: Fuse.js fuzzy search
+  const fuse = useMemo(() => {
+    return new Fuse(docs, {
+      keys: ['title', 'tldr', 'tags'],
+      threshold: 0.3, // 0 = exact match, 1 = match anything
+      includeScore: true,
+    });
+  }, [docs]);
+
+  // KB-003 + KB-004: Matched IDs for Graph View (fade non-matching)
+  const matchedIds = useMemo<Set<string> | null>(() => {
+    let matched = new Set<string>(docs.map((d) => d.id));
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const searchResults = fuse.search(searchQuery);
+      matched = new Set(searchResults.map((r) => r.item.id));
+    }
+
+    // Apply domain filter
+    matched = new Set(Array.from(matched).filter((id) => {
+      const doc = docs.find((d) => d.id === id);
+      return doc && enabledDomains.has(doc.category);
+    }));
+
+    // If all docs are matched, return null (show all)
+    return matched.size === docs.length ? null : matched;
+  }, [docs, searchQuery, fuse, enabledDomains]);
+
+  // KB-003 + KB-004: Filtered docs for Tree View (hard filter)
+  const filteredDocs = useMemo(() => {
+    if (matchedIds === null) return docs;
+    return docs.filter((d) => matchedIds.has(d.id));
+  }, [docs, matchedIds]);
+
+  // Toggle domain filter
+  const toggleDomain = (domain: string) => {
+    setEnabledDomains((prev) => {
+      const next = new Set(prev);
+      if (next.has(domain)) {
+        next.delete(domain);
+      } else {
+        next.add(domain);
+      }
+      return next;
+    });
+  };
 
   const { panelRight, panelWidth, isResizing, handleResizeStart } = usePanelResize(terminalWidth);
 
@@ -1300,6 +1481,64 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
           />
         </div>
 
+        {/* KB-003: Search Bar + KB-004: Domain Filter Chips */}
+        <div className="p-3 space-y-2" style={{ borderBottom: '1px solid var(--terminal-border)', background: 'var(--hud-bg-alt)' }}>
+          {/* Search input */}
+          <div className="relative">
+            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm">🔍</span>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search docs..."
+              className="w-full pl-8 pr-3 py-1.5 text-xs rounded focus:outline-none transition-colors"
+              style={{
+                background: 'var(--hud-bg)',
+                border: '1px solid var(--terminal-border)',
+                color: 'var(--terminal-text)',
+              }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs hover:opacity-70"
+                style={{ color: 'var(--terminal-text-muted)' }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {/* Domain filter chips */}
+          <div className="flex flex-wrap gap-1.5">
+            {Object.entries(DOMAIN_COLORS).map(([domain, color]) => {
+              const isEnabled = enabledDomains.has(domain);
+              return (
+                <button
+                  key={domain}
+                  onClick={() => toggleDomain(domain)}
+                  className="px-2 py-1 text-[10px] font-medium rounded cursor-pointer transition-all"
+                  style={{
+                    background: isEnabled ? color.bg : 'transparent',
+                    color: isEnabled ? color.text : 'var(--terminal-text-muted)',
+                    border: `1px solid ${isEnabled ? color.border : 'var(--terminal-border)'}`,
+                    opacity: isEnabled ? 1 : 0.5,
+                  }}
+                >
+                  {domain}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Results count */}
+          <div className="text-[10px]" style={{ color: 'var(--terminal-text-muted)' }}>
+            {filteredDocs.length === docs.length
+              ? `${docs.length} documents`
+              : `${filteredDocs.length} of ${docs.length} documents`}
+          </div>
+        </div>
+
         {/* ─── GRAPH VIEW ─── */}
         {view === 'graph' && (
           <div className="flex-1 overflow-hidden flex flex-col animate-fadeIn">
@@ -1308,6 +1547,7 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
                 docs={docs}
                 onNodeClick={handleGraphNodeClick}
                 selectedDocId={graphSelectedDocId}
+                matchedIds={matchedIds}
               />
               {/* Graph detail sidebar */}
               {selectedGraphDoc && (
@@ -1358,6 +1598,7 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
             docs={docs}
             onDocumentClick={(docId) => setGraphSelectedDocId(docId)}
             selectedDocId={graphSelectedDocId}
+            matchedIds={matchedIds}
           />
         )}
 
