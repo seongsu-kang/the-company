@@ -38,6 +38,24 @@ interface GLink extends SimulationLinkDatum<GNode> {
   label?: string;
 }
 
+/* ─── KB-006: Semantic Zoom Types ─────────────────── */
+
+type ZoomLevel = 'macro' | 'standard' | 'micro';
+
+function getZoomLevel(scale: number): ZoomLevel {
+  if (scale < 0.5) return 'macro';
+  if (scale >= 2) return 'micro';
+  return 'standard';
+}
+
+interface DomainCluster {
+  domain: string;
+  count: number;
+  x: number;
+  y: number;
+  color: { bg: string; border: string; text: string };
+}
+
 /* ─── Graph View (d3-force + SVG with zoom/pan/drag) ─ */
 
 function KnowledgeGraph({
@@ -58,9 +76,41 @@ function KnowledgeGraph({
   const [hoveredNode, setHoveredNode] = useState<GNode | null>(null);
   const [hoveredEdgeIdx, setHoveredEdgeIdx] = useState<number | null>(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const [hoveredCluster, setHoveredCluster] = useState<string | null>(null);
 
   // Zoom/pan state
   const [viewBox, setViewBox] = useState({ x: 0, y: 0, w: 600, h: 400 });
+
+  // KB-006: Calculate current zoom level
+  const scale = dimensions.width / viewBox.w;
+  const zoomLevel = getZoomLevel(scale);
+
+  // KB-006: Compute domain clusters (for macro view)
+  const domainClusters = useMemo<DomainCluster[]>(() => {
+    const clusterMap = new Map<string, { nodes: GNode[]; color: { bg: string; border: string; text: string } }>();
+
+    for (const node of graphData.nodes) {
+      const domain = node.category;
+      if (!clusterMap.has(domain)) {
+        clusterMap.set(domain, { nodes: [], color: getDomainColor(domain) });
+      }
+      clusterMap.get(domain)!.nodes.push(node);
+    }
+
+    return Array.from(clusterMap.entries()).map(([domain, data]) => {
+      // Calculate centroid of all nodes in this domain
+      const sumX = data.nodes.reduce((acc, n) => acc + (n.x ?? 0), 0);
+      const sumY = data.nodes.reduce((acc, n) => acc + (n.y ?? 0), 0);
+      const count = data.nodes.length;
+      return {
+        domain,
+        count,
+        x: count > 0 ? sumX / count : 0,
+        y: count > 0 ? sumY / count : 0,
+        color: data.color,
+      };
+    });
+  }, [graphData.nodes]);
   const isPanningRef = useRef(false);
   const panStartRef = useRef({ x: 0, y: 0, vx: 0, vy: 0 });
 
@@ -273,8 +323,77 @@ function KnowledgeGraph({
         </defs>
         <rect x={viewBox.x - 100} y={viewBox.y - 100} width={viewBox.w + 200} height={viewBox.h + 200} fill="url(#grid)" pointerEvents="none" />
 
-        {/* Edges */}
-        {graphData.links.map((link, i) => {
+        {/* KB-006: MACRO VIEW — Domain clusters only */}
+        {zoomLevel === 'macro' && domainClusters.map((cluster) => {
+          const isHovered = hoveredCluster === cluster.domain;
+          const clusterSize = Math.max(50, Math.min(100, cluster.count * 10 + 30));
+
+          return (
+            <g
+              key={cluster.domain}
+              transform={`translate(${cluster.x}, ${cluster.y})`}
+              style={{ cursor: 'pointer', transition: 'transform 0.2s ease' }}
+              onMouseEnter={() => setHoveredCluster(cluster.domain)}
+              onMouseLeave={() => setHoveredCluster(null)}
+              onClick={() => {
+                // Zoom into this cluster
+                const pad = 100;
+                const clusterNodes = graphData.nodes.filter((n) => n.category === cluster.domain);
+                if (clusterNodes.length === 0) return;
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                for (const n of clusterNodes) {
+                  const nx = n.x ?? 0, ny = n.y ?? 0;
+                  if (nx < minX) minX = nx;
+                  if (ny < minY) minY = ny;
+                  if (nx > maxX) maxX = nx;
+                  if (ny > maxY) maxY = ny;
+                }
+                setViewBox({
+                  x: minX - pad,
+                  y: minY - pad,
+                  w: Math.max(200, maxX - minX + pad * 2),
+                  h: Math.max(150, maxY - minY + pad * 2),
+                });
+              }}
+            >
+              {/* Cluster background */}
+              <circle
+                r={clusterSize}
+                fill={cluster.color.bg}
+                stroke={cluster.color.border}
+                strokeWidth={isHovered ? 4 : 2}
+                opacity={isHovered ? 1 : 0.8}
+              />
+              {/* Domain name */}
+              <text
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fill={cluster.color.text}
+                fontSize={clusterSize / 3}
+                fontFamily="monospace"
+                fontWeight="bold"
+                style={{ pointerEvents: 'none' }}
+              >
+                {cluster.domain}
+              </text>
+              {/* Count badge */}
+              <text
+                y={clusterSize / 3 + 8}
+                textAnchor="middle"
+                fill={cluster.color.text}
+                fontSize={clusterSize / 4}
+                fontFamily="monospace"
+                opacity={0.8}
+                style={{ pointerEvents: 'none' }}
+              >
+                ({cluster.count})
+              </text>
+            </g>
+          );
+        })}
+
+        {/* KB-006: STANDARD/MICRO VIEW — Edges */}
+        {zoomLevel !== 'macro' && graphData.links.map((link, i) => {
           const s = getNodePos(link.source);
           const t = getNodePos(link.target);
           const isEdgeHovered = hoveredEdgeIdx === i;
@@ -317,14 +436,14 @@ function KnowledgeGraph({
           );
         })}
 
-        {/* Nodes */}
-        {graphData.nodes.map((node) => {
+        {/* KB-006: STANDARD VIEW — Nodes with title */}
+        {zoomLevel === 'standard' && graphData.nodes.map((node) => {
           const color = DOMAIN_COLORS[node.category] ?? DOMAIN_COLORS.general;
           const isHub = node.akb_type === 'hub';
           const size = isHub ? 24 : 16;
           const isHovered = hoveredNode?.id === node.id;
           const isSelected = selectedDocId === node.id;
-          const scale = isHovered ? 1.2 : isSelected ? 1.15 : 1;
+          const nodeScale = isHovered ? 1.2 : isSelected ? 1.15 : 1;
           // KB-003: Fade non-matching nodes when search is active
           const isMatched = matchedIds === null || matchedIds.has(node.id);
           const nodeOpacity = isMatched ? 1 : 0.2;
@@ -332,7 +451,7 @@ function KnowledgeGraph({
           return (
             <g
               key={node.id}
-              transform={`translate(${node.x ?? 0}, ${node.y ?? 0}) scale(${scale})`}
+              transform={`translate(${node.x ?? 0}, ${node.y ?? 0}) scale(${nodeScale})`}
               style={{ cursor: 'pointer', transition: 'transform 0.15s ease, opacity 0.2s ease', opacity: nodeOpacity }}
               onClick={(e) => {
                 e.stopPropagation();
@@ -395,10 +514,152 @@ function KnowledgeGraph({
             </g>
           );
         })}
+
+        {/* KB-006: MICRO VIEW — Expanded node cards with TL;DR and tags */}
+        {zoomLevel === 'micro' && graphData.nodes.map((node) => {
+          const color = DOMAIN_COLORS[node.category] ?? DOMAIN_COLORS.general;
+          const isHub = node.akb_type === 'hub';
+          const cardWidth = 140;
+          const cardHeight = 70;
+          const isHovered = hoveredNode?.id === node.id;
+          const isSelected = selectedDocId === node.id;
+          const nodeScale = isHovered ? 1.05 : isSelected ? 1.03 : 1;
+          const isMatched = matchedIds === null || matchedIds.has(node.id);
+          const nodeOpacity = isMatched ? 1 : 0.2;
+
+          const docData = docs.find((d) => d.id === node.id);
+          const tldr = docData?.tldr || '';
+          const tags = docData?.tags || [];
+
+          return (
+            <g
+              key={node.id}
+              transform={`translate(${node.x ?? 0}, ${node.y ?? 0}) scale(${nodeScale})`}
+              style={{ cursor: 'pointer', transition: 'transform 0.15s ease, opacity 0.2s ease', opacity: nodeOpacity }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (docData) onNodeClick(docData);
+              }}
+              onMouseDown={(e) => handleNodeMouseDown(e, node)}
+              onMouseEnter={(e) => {
+                setHoveredNode(node);
+                const rect = containerRef.current?.getBoundingClientRect();
+                if (rect) setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+              }}
+              onMouseLeave={() => setHoveredNode(null)}
+            >
+              {/* Card background */}
+              <rect
+                x={-cardWidth / 2}
+                y={-cardHeight / 2}
+                width={cardWidth}
+                height={cardHeight}
+                fill={isHovered || isSelected ? color.bg : 'rgba(30,30,46,0.95)'}
+                stroke={isSelected ? '#22c55e' : color.border}
+                strokeWidth={isSelected ? 2 : 1}
+                rx={6}
+              />
+              {/* Hub indicator bar */}
+              {isHub && (
+                <rect
+                  x={-cardWidth / 2}
+                  y={-cardHeight / 2}
+                  width={4}
+                  height={cardHeight}
+                  fill={color.border}
+                  rx={2}
+                />
+              )}
+              {/* Title */}
+              <text
+                x={isHub ? -cardWidth / 2 + 10 : -cardWidth / 2 + 6}
+                y={-cardHeight / 2 + 14}
+                fill={color.text}
+                fontSize={9}
+                fontFamily="monospace"
+                fontWeight="bold"
+                style={{ pointerEvents: 'none' }}
+              >
+                {node.title.length > 18 ? node.title.slice(0, 16) + '..' : node.title}
+              </text>
+              {/* TL;DR (truncated) */}
+              <text
+                x={-cardWidth / 2 + 6}
+                y={-cardHeight / 2 + 28}
+                fill="#94a3b8"
+                fontSize={7}
+                fontFamily="system-ui, sans-serif"
+                style={{ pointerEvents: 'none' }}
+              >
+                {tldr.length > 40 ? tldr.slice(0, 38) + '..' : tldr}
+              </text>
+              {/* Tags */}
+              {tags.slice(0, 2).map((tag, i) => (
+                <g key={tag} transform={`translate(${-cardWidth / 2 + 6 + i * 40}, ${cardHeight / 2 - 14})`}>
+                  <rect
+                    width={36}
+                    height={10}
+                    fill={color.bg}
+                    stroke={color.border}
+                    strokeWidth={0.5}
+                    rx={2}
+                  />
+                  <text
+                    x={18}
+                    y={7}
+                    textAnchor="middle"
+                    fill={color.text}
+                    fontSize={6}
+                    fontFamily="monospace"
+                    style={{ pointerEvents: 'none' }}
+                  >
+                    {tag.length > 6 ? tag.slice(0, 5) + '..' : tag}
+                  </text>
+                </g>
+              ))}
+            </g>
+          );
+        })}
       </svg>
 
-      {/* Tooltip */}
-      {hoveredNode && !dragNodeRef.current && (
+      {/* KB-006: Zoom Level Indicator */}
+      <div
+        className="absolute top-2 left-2 px-2 py-1 rounded text-[10px] font-mono"
+        style={{
+          background: 'var(--hud-bg)',
+          border: '1px solid var(--terminal-border)',
+          color: 'var(--terminal-text-muted)',
+        }}
+      >
+        {zoomLevel === 'macro' && '🔭 Macro'}
+        {zoomLevel === 'standard' && '👁️ Standard'}
+        {zoomLevel === 'micro' && '🔬 Micro'}
+        <span className="ml-2 opacity-60">{Math.round(scale * 100)}%</span>
+      </div>
+
+      {/* KB-006: Macro view cluster tooltip */}
+      {zoomLevel === 'macro' && hoveredCluster && (
+        <div
+          className="absolute z-10 pointer-events-none p-2.5 rounded text-xs"
+          style={{
+            left: Math.min(mousePos.x + 16, dimensions.width - 180),
+            top: Math.max(mousePos.y - 30, 8),
+            background: 'var(--hud-bg)',
+            border: '1px solid var(--terminal-border)',
+            color: 'var(--terminal-text)',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+          }}
+        >
+          <div className="font-bold mb-1">{hoveredCluster}</div>
+          <div className="text-[10px] opacity-60 mb-1">
+            {domainClusters.find((c) => c.domain === hoveredCluster)?.count ?? 0} documents
+          </div>
+          <div className="text-[10px] text-green-400">Click to zoom in</div>
+        </div>
+      )}
+
+      {/* Standard/Micro Tooltip */}
+      {zoomLevel !== 'macro' && hoveredNode && !dragNodeRef.current && (
         <div
           className="absolute z-10 pointer-events-none p-2.5 rounded text-xs max-w-[240px]"
           style={{
