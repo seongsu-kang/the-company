@@ -360,7 +360,7 @@ export default function SaveModal({
                   >
                     {saving ? 'SAVING...' : (status?.hasRemote ? 'SAVE & PUSH' : 'SAVE')}
                   </button>
-                  {onDelegate && repo === 'akb' && (
+                  {onDelegate && (
                     <button
                       onClick={() => {
                         const summary = allFiles.map(f => `${f.status} ${f.file}`).join('\n');
