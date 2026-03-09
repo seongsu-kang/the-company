@@ -738,7 +738,17 @@ function PublishToStore({ role, appearance }: { role: RoleDetail; appearance?: C
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             {status === 'done' ? (
-              <span className="text-[10px] font-semibold" style={{ color: 'var(--active-green)' }}>{message}</span>
+              <>
+                <a
+                  href="https://tycono.ai/store.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] hover:underline"
+                  style={{ color: 'var(--terminal-text-muted)' }}
+                  onClick={e => e.stopPropagation()}
+                >View on Store ↗</a>
+                <span className="text-[10px] font-semibold" style={{ color: 'var(--active-green)' }}>{message}</span>
+              </>
             ) : status === 'error' ? (
               <span className="text-[10px] font-semibold" style={{ color: '#ef4444' }}>{message}</span>
             ) : (

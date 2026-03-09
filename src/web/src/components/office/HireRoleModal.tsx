@@ -392,8 +392,17 @@ export default function HireRoleModal({ existingRoles, onClose, onHire }: Props)
               </button>
             </div>
           </div>
-          <div className="text-sm opacity-80 mt-0.5">
-            {mode === 'single' ? `Step ${step} of ${TOTAL_STEPS}` : mode === 'bulk' ? (bulkStep === 'input' ? 'Enter roles, one per line' : `Review ${bulkEntries.length} roles`) : (storeStep === 'browse' ? `${storeChars.length} characters available` : 'Review & customize')}
+          <div className="text-sm opacity-80 mt-0.5 flex items-center gap-2">
+            <span>{mode === 'single' ? `Step ${step} of ${TOTAL_STEPS}` : mode === 'bulk' ? (bulkStep === 'input' ? 'Enter roles, one per line' : `Review ${bulkEntries.length} roles`) : (storeStep === 'browse' ? `${storeChars.length} characters available` : 'Review & customize')}</span>
+            {mode === 'store' && storeStep === 'browse' && (
+              <a
+                href="https://tycono.ai/store.html"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[10px] opacity-60 hover:opacity-100 transition-opacity"
+                onClick={e => e.stopPropagation()}
+              >Open in browser ↗</a>
+            )}
           </div>
         </div>
 

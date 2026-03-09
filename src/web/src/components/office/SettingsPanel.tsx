@@ -242,6 +242,10 @@ export default function SettingsPanel({
                   📊 COMPANY STATS
                 </button>
               )}
+              <button onClick={() => window.open('https://tycono.ai/store.html', '_blank')}
+                className="theme-btn" style={{ flex: 1, padding: '8px 12px', fontSize: 10 }}>
+                🌐 WEB STORE
+              </button>
             </div>
           </div>
         </div>
