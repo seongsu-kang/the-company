@@ -351,6 +351,7 @@ export class ClaudeCliRunner implements ExecutionRunner {
       '--max-turns', String(maxTurns),
       '--mcp-config', mcpConfig,
       '--strict-mcp-config',
+      '--disallowedTools', 'Agent,Task',
       taskPrompt,
     ];
 

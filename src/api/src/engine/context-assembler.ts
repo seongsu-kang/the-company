@@ -459,6 +459,7 @@ python3 "$DISPATCH_CMD" --check <jobId>
 \`\`\`
 
 **IMPORTANT**: Always use \`python3 "$DISPATCH_CMD" --wait\` — this is the ONLY way to dispatch tasks.
+⛔ **NEVER use the Agent tool or Task tool to spawn sub-agents.** Those bypass the job tracking system. Use ONLY the dispatch command.
 
 ### ⛔ CRITICAL: --wait is MANDATORY
 
