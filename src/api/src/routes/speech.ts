@@ -295,12 +295,24 @@ function buildCompanyContext(): string {
 
 /**
  * Build role-specific AKB context by pre-fetching relevant knowledge server-side.
- * Works with ANY engine (including claude-cli which doesn't support tool_use).
+ * This is the PRIMARY source of grounding for chat — must be rich enough that
+ * agents don't need to use tools (Haiku won't proactively search).
  */
 function buildRoleContext(roleId: string): string {
   const parts: string[] = [];
 
-  // 1. Role's own journal (most recent 2 entries)
+  // 0. Role profile — gives the agent its identity and work context
+  try {
+    const profilePath = path.join(COMPANY_ROOT, 'roles', roleId, 'profile.md');
+    if (fs.existsSync(profilePath)) {
+      const content = fs.readFileSync(profilePath, 'utf-8').trim();
+      if (content.length > 20) {
+        parts.push(`[Your Profile]\n${content.slice(0, 600)}`);
+      }
+    }
+  } catch { /* no profile */ }
+
+  // 1. Role's journal — latest entry with meaningful content (headers as summary)
   try {
     const journalDir = path.join(COMPANY_ROOT, 'roles', roleId, 'journal');
     if (fs.existsSync(journalDir)) {
@@ -310,49 +322,81 @@ function buildRoleContext(roleId: string): string {
         .slice(-2);
       for (const file of files) {
         const content = fs.readFileSync(path.join(journalDir, file), 'utf-8');
-        // Extract title + first meaningful section (truncated)
+        // Extract all ### headers as work summary + first paragraph of each
+        const sections = content.match(/###\s+.+/g) ?? [];
         const title = content.match(/^#\s+(.+)/m)?.[1] ?? file;
-        const body = content.split('\n').slice(1).join('\n').trim().slice(0, 400);
-        parts.push(`[Your Journal: ${file}] ${title}\n${body}`);
+        const summary = sections.length > 0
+          ? sections.map(s => `  ${s.replace(/^###\s+/, '- ')}`).join('\n')
+          : content.split('\n').slice(1).join('\n').trim().slice(0, 300);
+        parts.push(`[Your Work Log: ${file}] ${title}\n${summary}`);
       }
     }
   } catch { /* no journal */ }
 
-  // 2. Recent waves mentioning this role (last 3)
+  // 2. Current tasks assigned to this role (from all project tasks.md files)
+  try {
+    const projectsDir = path.join(COMPANY_ROOT, 'projects');
+    if (fs.existsSync(projectsDir)) {
+      const taskFiles = glob.sync('**/tasks.md', { cwd: projectsDir, absolute: false });
+      const roleTasks: string[] = [];
+      for (const tf of taskFiles.slice(0, 3)) {
+        const content = fs.readFileSync(path.join(projectsDir, tf), 'utf-8');
+        const rows = parseMarkdownTable(content);
+        const myTasks = rows.filter(r => {
+          const role = (r.role ?? r.Role ?? '').toLowerCase();
+          return role.includes(roleId);
+        });
+        for (const t of myTasks.slice(0, 5)) {
+          const id = t.id ?? t.ID ?? '';
+          const task = t.task ?? t.Task ?? t.title ?? '';
+          const status = t.status ?? t.Status ?? '';
+          if (task) roleTasks.push(`- ${id}: ${task} [${status}]`);
+        }
+      }
+      if (roleTasks.length > 0) {
+        parts.push(`[Your Assigned Tasks]\n${roleTasks.join('\n')}`);
+      }
+    }
+  } catch { /* no tasks */ }
+
+  // 3. Recent waves (broadened matching: roleId, role name, level keywords)
   try {
     const wavesDir = path.join(COMPANY_ROOT, 'operations', 'waves');
     if (fs.existsSync(wavesDir)) {
+      // Also get role name for matching
+      const tree = buildOrgTree(COMPANY_ROOT);
+      const node = tree.nodes.get(roleId);
+      const roleName = node?.name?.toLowerCase() ?? '';
+      const roleLevel = node?.level?.toLowerCase() ?? '';
+
       const waveFiles = fs.readdirSync(wavesDir)
         .filter(f => f.endsWith('.md'))
         .sort()
-        .slice(-10); // scan last 10, pick up to 3 relevant
+        .slice(-10);
       const relevant: string[] = [];
       for (const file of waveFiles.reverse()) {
-        if (relevant.length >= 3) break;
+        if (relevant.length >= 2) break;
         const content = fs.readFileSync(path.join(wavesDir, file), 'utf-8');
         const lower = content.toLowerCase();
-        if (lower.includes(roleId) || lower.includes('all roles') || lower.includes('전체')) {
+        if (lower.includes(roleId) || lower.includes('all roles') || lower.includes('전체')
+            || (roleName && lower.includes(roleName))
+            || (roleLevel && lower.includes(roleLevel))) {
           const title = content.match(/^#\s+(.+)/m)?.[1] ?? file;
-          const tldr = content.match(/TL;DR[\s\S]*?\n\n/)?.[0]?.trim() ?? '';
-          const snippet = tldr || content.split('\n').slice(1, 6).join('\n').trim();
-          relevant.push(`[Wave: ${file}] ${title}\n${snippet.slice(0, 300)}`);
+          const snippet = content.split('\n').slice(1, 8).join('\n').trim();
+          relevant.push(`[CEO Wave: ${file}] ${title}\n${snippet.slice(0, 400)}`);
         }
       }
       if (relevant.length > 0) parts.push(...relevant);
     }
   } catch { /* no waves */ }
 
-  // 3. Recent standup (latest, only this role's section)
+  // 4. Recent standup (latest, this role's section)
   try {
     const standupDir = path.join(COMPANY_ROOT, 'operations', 'standup');
     if (fs.existsSync(standupDir)) {
-      const standupFiles = fs.readdirSync(standupDir)
-        .filter(f => f.endsWith('.md'))
-        .sort()
-        .slice(-1);
-      for (const file of standupFiles) {
+      const files = fs.readdirSync(standupDir).filter(f => f.endsWith('.md')).sort().slice(-1);
+      for (const file of files) {
         const content = fs.readFileSync(path.join(standupDir, file), 'utf-8');
-        // Try to extract this role's section from standup
         const rolePattern = new RegExp(`(## .*${roleId}.*|### .*${roleId}.*)([\\s\\S]*?)(?=\\n## |\\n### |$)`, 'i');
         const match = content.match(rolePattern);
         if (match) {
@@ -362,7 +406,7 @@ function buildRoleContext(roleId: string): string {
     }
   } catch { /* no standups */ }
 
-  // 4. Recent decisions (last 2 approved — brief titles only, full list is in company context)
+  // 5. Recent decisions (last 3)
   try {
     const decisionsDir = path.join(COMPANY_ROOT, 'operations', 'decisions');
     if (fs.existsSync(decisionsDir)) {
@@ -374,8 +418,7 @@ function buildRoleContext(roleId: string): string {
       for (const file of files) {
         const content = fs.readFileSync(path.join(decisionsDir, file), 'utf-8');
         const title = content.match(/^#\s+(.+)/m)?.[1] ?? file;
-        const summary = content.match(/## (?:Summary|TL;DR|요약)[\s\S]*?\n\n/)?.[0]?.trim() ?? '';
-        decisions.push(`- ${title}${summary ? ': ' + summary.split('\n').slice(1).join(' ').trim().slice(0, 150) : ''}`);
+        decisions.push(`- ${title}`);
       }
       if (decisions.length > 0) {
         parts.push(`[Recent Decisions]\n${decisions.join('\n')}`);
@@ -383,28 +426,25 @@ function buildRoleContext(roleId: string): string {
     }
   } catch { /* no decisions */ }
 
-  // 5. If sparse context, add architecture/tech-debt highlights as fallback
-  if (parts.length < 2) {
-    try {
-      const techDebtPath = path.join(COMPANY_ROOT, 'architecture', 'tech-debt.md');
-      if (fs.existsSync(techDebtPath)) {
-        const tdContent = fs.readFileSync(techDebtPath, 'utf-8');
-        // Extract active (non-fixed) items
-        const rows = parseMarkdownTable(tdContent);
-        const active = rows
-          .filter(r => !(r.status ?? '').toLowerCase().includes('fixed') && !(r.status ?? '').toLowerCase().includes('done'))
-          .slice(0, 3)
-          .map(r => `- ${r.id ?? ''}: ${r.title ?? r.issue ?? ''} (${r.status ?? ''})`)
-          .filter(s => s.length > 10);
-        if (active.length > 0) {
-          parts.push(`[Active Tech Debt]\n${active.join('\n')}`);
-        }
+  // 6. Architecture highlights (always include — not just fallback)
+  try {
+    const techDebtPath = path.join(COMPANY_ROOT, 'architecture', 'tech-debt.md');
+    if (fs.existsSync(techDebtPath)) {
+      const tdContent = fs.readFileSync(techDebtPath, 'utf-8');
+      const rows = parseMarkdownTable(tdContent);
+      const active = rows
+        .filter(r => !(r.status ?? '').toLowerCase().includes('fixed') && !(r.status ?? '').toLowerCase().includes('done'))
+        .slice(0, 3)
+        .map(r => `- ${r.id ?? ''}: ${r.title ?? r.issue ?? ''} (${r.status ?? ''})`)
+        .filter(s => s.length > 10);
+      if (active.length > 0) {
+        parts.push(`[Active Tech Issues]\n${active.join('\n')}`);
       }
-    } catch { /* no tech-debt */ }
-  }
+    }
+  } catch { /* no tech-debt */ }
 
   return parts.length > 0
-    ? `\n\nYOUR KNOWLEDGE (real AKB context — reference this in conversation):\n${parts.join('\n\n')}`
+    ? `\n\nYOUR KNOWLEDGE (real AKB context — you MUST reference this in conversation):\n${parts.join('\n\n')}`
     : '';
 }
 
@@ -618,21 +658,25 @@ speechRouter.post('/chat', async (req: Request, res: Response, next: NextFunctio
 Persona: ${persona}
 ${workCtx}
 ${levelCtx}
-${companyCtx}
-${roleCtx}
 
 You are in the #${channelId} chat channel.${topicCtx}
 Members: ${memberList}
 ${relContext}
 
-${roleStyle}
+═══ COMPANY & ROLE CONTEXT (READ THIS CAREFULLY) ═══
+${companyCtx}
+${roleCtx}
+═══ END CONTEXT ═══
 
-GROUNDING (CRITICAL):
-You have been given real company knowledge above under "COMPANY CONTEXT" and "YOUR KNOWLEDGE". This is from AKB files, journal, CEO waves, standups, and decisions.
-You MUST reference this real context in your conversations — mention specific projects, decisions, tasks, or events by name.
-Do NOT generate generic workplace chatter. Every message should show you're aware of what's actually happening in the company.
-If your knowledge section mentions a specific decision or wave, reference it naturally (e.g. "after the test minimization decision..." or "CEO's wave about side panel...").
-NEVER invent or assume technologies, tools, migrations, or projects NOT mentioned in the context above. If the Tech Stack says "TypeScript + React + Node.js", do NOT talk about Python, tc.py, or any language migration. Only discuss what is explicitly in your provided context.
+GROUNDING (CRITICAL — READ BEFORE RESPONDING):
+Everything above between ═══ markers is REAL data from your company's knowledge base.
+You MUST base your conversation on this context. Mention specific projects, tasks, decisions, or work items BY NAME.
+NEVER invent technologies, tools, migrations, file names, or projects that are NOT in the context above.
+If the Tech Stack says "TypeScript + React + Node.js", do NOT mention Python, tc.py, or any language migration.
+If you have assigned tasks listed, reference them. If you have journal entries, reference your recent work.
+If you cannot find something specific to say from the context, say [SILENT] instead of making things up.
+
+${roleStyle}
 
 CONVERSATION RULES:
 1. Stay deeply in character — your expertise, vocabulary, and concerns should be DISTINCT from other roles.
