@@ -351,9 +351,11 @@ export class ClaudeCliRunner implements ExecutionRunner {
       '--max-turns', String(maxTurns),
       '--mcp-config', mcpConfig,
       '--strict-mcp-config',
-      '--disallowedTools', 'Agent,Task',
       taskPrompt,
     ];
+
+    // Disallow Agent and Task tools to force use of dispatch bridge
+    args.push('--disallowed-tools', 'Agent', 'Task');
 
     // 7. 프로세스 생성 — 중첩 세션 방지를 위해 CLAUDECODE 환경변수 제거
     const cleanEnv = { ...process.env };
