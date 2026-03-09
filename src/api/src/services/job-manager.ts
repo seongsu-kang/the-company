@@ -6,6 +6,7 @@ import type { ExecutionRunner } from '../engine/runners/types.js';
 import { setActivity, updateActivity, completeActivity } from './activity-tracker.js';
 import type { RunnerResult } from '../engine/runners/types.js';
 import { estimateCost } from './pricing.js';
+import { readConfig, getConversationLimits } from './company-config.js';
 
 /* ─── Types ──────────────────────────────── */
 
@@ -143,6 +144,12 @@ class JobManager {
 
     const model = params.model ?? orgTree.nodes.get(params.roleId)?.model;
 
+    // ─── Harness-level conversation limits ───
+    const config = readConfig(COMPANY_ROOT);
+    const limits = getConversationLimits(config);
+    let harnessTurnCount = 0;
+    let softLimitWarned = false;
+
     // Build team status snapshot: which roles are currently busy
     const teamStatus: Record<string, { status: string; task?: string }> = {};
     for (const [, j] of this.jobs) {
@@ -159,6 +166,7 @@ class JobManager {
         sourceRole: params.sourceRole ?? 'ceo',
         orgTree,
         readOnly: params.readOnly,
+        maxTurns: limits.hardLimit,  // Runner backup safety net = Harness hardLimit
         model,
         jobId,
         teamStatus,
@@ -189,7 +197,38 @@ class JobManager {
           });
         },
         onTurnComplete: (turn) => {
-          stream.emit('turn:complete', params.roleId, { turn });
+          // ─── Harness-level turn policy ───
+          // Runner reports its internal turn count; Harness tracks independently.
+          harnessTurnCount++;
+          stream.emit('turn:complete', params.roleId, {
+            turn: harnessTurnCount,
+            runnerTurn: turn,
+          });
+
+          // softLimit: 경고 이벤트 (향후 "계속?" UX)
+          if (!softLimitWarned && harnessTurnCount >= limits.softLimit) {
+            softLimitWarned = true;
+            console.warn(
+              `[Harness] Job ${jobId} (${params.roleId}): turn ${harnessTurnCount} reached softLimit (${limits.softLimit})`,
+            );
+            stream.emit('turn:warning', params.roleId, {
+              turn: harnessTurnCount,
+              softLimit: limits.softLimit,
+              hardLimit: limits.hardLimit,
+            });
+          }
+
+          // hardLimit: 강제 종료
+          if (harnessTurnCount >= limits.hardLimit) {
+            console.error(
+              `[Harness] Job ${jobId} (${params.roleId}): turn ${harnessTurnCount} reached hardLimit (${limits.hardLimit}). Aborting.`,
+            );
+            stream.emit('turn:limit', params.roleId, {
+              turn: harnessTurnCount,
+              hardLimit: limits.hardLimit,
+            });
+            handle.abort();
+          }
         },
         onError: (error) => {
           stream.emit('stderr', params.roleId, { message: error });
