@@ -110,6 +110,88 @@ function getFirstSentence(text: string | undefined, maxLen = 60): string {
   return sentence.length > maxLen ? sentence.slice(0, maxLen - 2) + '..' : sentence;
 }
 
+/* ─── KB-007: Smart Clustering ─────────────────────── */
+
+/**
+ * KB-007: Calculate domain center positions in a circular layout
+ * Places each domain's target center around a circle for visual grouping
+ */
+function calculateDomainCenters(
+  width: number,
+  height: number,
+  nodes: GNode[]
+): Map<string, { x: number; y: number }> {
+  // Extract unique domains from nodes
+  const domains = [...new Set(nodes.map((n) => n.category || 'general'))];
+  const centers = new Map<string, { x: number; y: number }>();
+
+  const cx = width / 2;
+  const cy = height / 2;
+  const radius = Math.min(width, height) * 0.3;
+
+  domains.forEach((domain, i) => {
+    // Distribute domains in a circle, starting from top
+    const angle = (2 * Math.PI * i) / domains.length - Math.PI / 2;
+    centers.set(domain, {
+      x: cx + radius * Math.cos(angle),
+      y: cy + radius * Math.sin(angle),
+    });
+  });
+
+  return centers;
+}
+
+/**
+ * KB-007: Custom D3 force to cluster nodes by domain
+ * Applies gentle attraction toward domain center points
+ */
+function forceCluster(
+  centers: Map<string, { x: number; y: number }>,
+  strength = 0.12
+) {
+  let nodes: GNode[];
+
+  function force(alpha: number) {
+    for (const node of nodes) {
+      const center = centers.get(node.category) || centers.get('general');
+      if (center && node.x !== undefined && node.y !== undefined) {
+        // Apply force toward cluster center
+        node.vx = (node.vx || 0) + (center.x - node.x) * alpha * strength;
+        node.vy = (node.vy || 0) + (center.y - node.y) * alpha * strength;
+      }
+    }
+  }
+
+  force.initialize = function (_nodes: GNode[]) {
+    nodes = _nodes;
+  };
+
+  return force;
+}
+
+/**
+ * KB-007: Calculate bounding radius for each domain cluster
+ * Returns clusters with radius information for visualization
+ */
+function calculateClusterBounds(clusters: DomainCluster[]): (DomainCluster & { radius: number })[] {
+  return clusters.map((cluster) => {
+    // Calculate radius as max distance from center to any node, plus padding
+    let maxDist = 0;
+    for (const node of cluster.nodes) {
+      const dx = (node.x ?? 0) - cluster.centerX;
+      const dy = (node.y ?? 0) - cluster.centerY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > maxDist) maxDist = dist;
+    }
+    // Add padding based on node count
+    const padding = Math.max(40, cluster.count * 8);
+    return {
+      ...cluster,
+      radius: maxDist + padding,
+    };
+  });
+}
+
 /* ─── Graph View (d3-force + SVG with zoom/pan/drag) ─ */
 
 function KnowledgeGraph({
@@ -145,6 +227,12 @@ function KnowledgeGraph({
   const domainClusters = useMemo(
     () => calculateDomainClusters(graphData.nodes),
     [graphData.nodes]
+  );
+
+  // KB-007: Cluster bounds for visualization
+  const clusterBounds = useMemo(
+    () => calculateClusterBounds(domainClusters),
+    [domainClusters]
   );
 
   // Observe container size
@@ -221,11 +309,15 @@ function KnowledgeGraph({
     const simW = Math.max(width, n * 12);
     const simH = Math.max(height, n * 10);
 
+    // KB-007: Calculate domain centers for clustering
+    const domainCenters = calculateDomainCenters(simW, simH, nodes);
+
     const sim = forceSimulation<GNode>(nodes)
       .force('link', forceLink<GNode, GLink>(links).id((d) => d.id).distance(linkDist))
       .force('charge', forceManyBody().strength(chargeStrength))
       .force('center', forceCenter(simW / 2, simH / 2))
-      .force('collide', forceCollide(collideRadius));
+      .force('collide', forceCollide(collideRadius))
+      .force('cluster', forceCluster(domainCenters, 0.15)); // KB-007: Add clustering force
 
     simRef.current = sim;
 
@@ -421,6 +513,48 @@ function KnowledgeGraph({
         {/* ─── STANDARD & MICRO ZOOM: Individual nodes with edges ─── */}
         {zoomLevel !== 'macro' && (
           <>
+            {/* KB-007: Cluster background circles (standard zoom only) */}
+            {zoomLevel === 'standard' && clusterBounds.map((cluster) => {
+              const color = DOMAIN_COLORS[cluster.domain] ?? DOMAIN_COLORS.general;
+              // Only show if cluster has multiple nodes
+              if (cluster.count < 2) return null;
+              // Check if any node in cluster is matched
+              const hasMatchedNode = matchedIds === null || cluster.nodes.some((n) => matchedIds.has(n.id));
+              const bgOpacity = hasMatchedNode ? 0.08 : 0.02;
+
+              return (
+                <g key={`cluster-bg-${cluster.domain}`}>
+                  {/* Subtle gradient background for cluster */}
+                  <circle
+                    cx={cluster.centerX}
+                    cy={cluster.centerY}
+                    r={cluster.radius}
+                    fill={color.bg}
+                    stroke={color.border}
+                    strokeWidth={1}
+                    strokeDasharray="6 4"
+                    opacity={bgOpacity}
+                    style={{ transition: 'opacity 0.3s ease' }}
+                    pointerEvents="none"
+                  />
+                  {/* Cluster label */}
+                  <text
+                    x={cluster.centerX}
+                    y={cluster.centerY - cluster.radius - 8}
+                    textAnchor="middle"
+                    fill={color.text}
+                    fontSize={10}
+                    fontFamily="monospace"
+                    fontWeight="600"
+                    opacity={hasMatchedNode ? 0.6 : 0.2}
+                    style={{ pointerEvents: 'none', transition: 'opacity 0.3s ease' }}
+                  >
+                    {cluster.domain} ({cluster.count})
+                  </text>
+                </g>
+              );
+            })}
+
             {/* Edges */}
             {graphData.links.map((link, i) => {
               const s = getNodePos(link.source);
