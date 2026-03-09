@@ -26,7 +26,7 @@ export const speechRouter = Router();
  * AKB Tools — Let chat roles explore company knowledge
  * ══════════════════════════════════════════════════ */
 
-const MAX_TOOL_ROUNDS = 2;
+const MAX_TOOL_ROUNDS = 50;
 const MAX_FILE_CHARS = 1500; // truncate large files
 
 const AKB_TOOLS: ToolDefinition[] = [
@@ -663,18 +663,23 @@ You are in the #${channelId} chat channel.${topicCtx}
 Members: ${memberList}
 ${relContext}
 
-═══ COMPANY & ROLE CONTEXT (READ THIS CAREFULLY) ═══
+═══ COMPANY & ROLE CONTEXT (pre-fetched from AKB) ═══
 ${companyCtx}
 ${roleCtx}
 ═══ END CONTEXT ═══
 
-GROUNDING (CRITICAL — READ BEFORE RESPONDING):
-Everything above between ═══ markers is REAL data from your company's knowledge base.
-You MUST base your conversation on this context. Mention specific projects, tasks, decisions, or work items BY NAME.
-NEVER invent technologies, tools, migrations, file names, or projects that are NOT in the context above.
-If the Tech Stack says "TypeScript + React + Node.js", do NOT mention Python, tc.py, or any language migration.
-If you have assigned tasks listed, reference them. If you have journal entries, reference your recent work.
-If you cannot find something specific to say from the context, say [SILENT] instead of making things up.
+AKB ACCESS (USE BEFORE RESPONDING):
+You have Read, Grep, Glob tools. The company AKB root is: ${COMPANY_ROOT}/
+⛔ BEFORE writing your chat message:
+1. Read ${COMPANY_ROOT}/CLAUDE.md (check Task Routing table for your role's paths)
+2. Follow Hub-First Principle: read the relevant Hub, then explore journals, tasks, decisions as needed
+3. Write your 1-3 sentence response grounded in what you found
+
+GROUNDING (CRITICAL):
+Base your response ONLY on the pre-fetched context above AND data you read via tools.
+Reference specific projects, tasks, decisions, journal entries BY NAME.
+NEVER invent technologies, tools, file names, or projects not found in AKB files.
+If you cannot find anything specific to say, respond with [SILENT].
 
 ${roleStyle}
 

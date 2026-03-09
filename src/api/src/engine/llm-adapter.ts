@@ -247,7 +247,7 @@ export class ClaudeCliProvider implements LLMProvider {
         '-p',
         '--system-prompt', systemPrompt,
         '--model', this.model,
-        '--max-turns', useTools ? '3' : '1',
+        '--max-turns', useTools ? '50' : '1',
         '--output-format', 'text',
         ...(useTools ? [
           '--tools', 'Read,Grep,Glob',
