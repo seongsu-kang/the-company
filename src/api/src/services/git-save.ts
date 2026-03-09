@@ -151,6 +151,16 @@ function runOrThrow(cmd: string, cwd: string): string {
   return execSync(cmd, { cwd, encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 }
 
+/** Check if git binary is available */
+function isGitAvailable(): boolean {
+  try {
+    execSync('git --version', { timeout: 3000, stdio: ['pipe', 'pipe', 'pipe'] });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Check if directory is a git repository */
 function isGitRepo(root: string): boolean {
   return run('git rev-parse --is-inside-work-tree', root) === 'true';
@@ -161,7 +171,11 @@ function isGitRepo(root: string): boolean {
  * @param root - AKB repository root (COMPANY_ROOT)
  * @param repo - Repository type ('akb' or 'code'), default 'akb'
  */
-export function gitInit(root: string, repo: RepoType = 'akb'): { ok: boolean; message: string } {
+export function gitInit(root: string, repo: RepoType = 'akb'): { ok: boolean; message: string; noGitBinary?: boolean } {
+  if (!isGitAvailable()) {
+    return { ok: false, message: 'git is not installed', noGitBinary: true };
+  }
+
   const repoRoot = resolveRepoRoot(root, repo);
 
   if (isGitRepo(repoRoot)) {

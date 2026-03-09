@@ -12,6 +12,7 @@ import os from 'node:os';
 import { scaffold, getAvailableTeams, loadTeam } from '../services/scaffold.js';
 import type { ScaffoldConfig } from '../services/scaffold.js';
 import { importKnowledge } from '../services/knowledge-importer.js';
+import { gitInit } from '../services/git-save.js';
 import { AnthropicProvider, type LLMProvider } from '../engine/llm-adapter.js';
 import { jobManager } from '../services/job-manager.js';
 import { applyConfig, readConfig, writeConfig } from '../services/company-config.js';
@@ -136,7 +137,10 @@ setupRouter.post('/scaffold', (req, res) => {
     }
     jobManager.refreshRunner();
 
-    res.json({ ok: true, companyName, projectRoot, created });
+    // Auto git init (graceful — skip if git not installed)
+    const gitResult = gitInit(projectRoot);
+
+    res.json({ ok: true, companyName, projectRoot, created, git: gitResult });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Scaffold failed';
     res.status(500).json({ error: message });
