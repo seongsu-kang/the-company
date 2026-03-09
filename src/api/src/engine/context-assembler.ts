@@ -451,27 +451,26 @@ ${subInfo}
 **Use Bash to run the dispatch command:**
 
 \`\`\`bash
-# DEFAULT: Start and wait for result (blocks up to 90s)
+# ⛔ ALWAYS use --wait. This is the ONLY correct dispatch pattern.
 python3 "$DISPATCH_CMD" --wait ${exampleSubId} "Task description here"
 
-# Check job status/result (if timed out or need to re-check)
+# Check job status/result (if --wait timed out after 300s)
 python3 "$DISPATCH_CMD" --check <jobId>
-
-# Fire-and-forget (NOT recommended — use --wait instead)
-python3 "$DISPATCH_CMD" ${exampleSubId} "Task description here"
 \`\`\`
 
-**IMPORTANT**: Always use \`python3 "$DISPATCH_CMD"\` — this is the ONLY way to dispatch tasks to subordinates.
+**IMPORTANT**: Always use \`python3 "$DISPATCH_CMD" --wait\` — this is the ONLY way to dispatch tasks.
 
-### ⛔ CRITICAL: Always use --wait and check results
+### ⛔ CRITICAL: --wait is MANDATORY
 
-You MUST use \`--wait\` for every dispatch so you can review the result before proceeding.
+You MUST use \`--wait\` for EVERY dispatch. Never omit --wait.
+\`--wait\` blocks up to 300 seconds. If the subordinate finishes sooner, you get the result immediately.
 After each result, decide: dispatch next task, re-dispatch with feedback, or report.
 
+**NEVER dispatch without --wait.** Dispatch without --wait is a BROKEN pattern that loses results.
 **NEVER dispatch and immediately finish.** The dispatch-check-review loop must continue
 until ALL planned work is completed.
 
-### Recommended Pattern: Sequential Dispatch + Review
+### The ONLY Pattern: Dispatch + Wait + Review + Next
 
 \`\`\`bash
 # 1. Dispatch first task and WAIT for result
@@ -481,26 +480,15 @@ python3 "$DISPATCH_CMD" --wait ${exampleSubId} "Task A"
 # If yes → dispatch next task
 python3 "$DISPATCH_CMD" --wait ${subordinates.length > 1 ? subordinates[1] : exampleSubId} "Task B"
 
-# 3. If result timed out, check later
+# 3. If --wait timed out (300s), check status
 python3 "$DISPATCH_CMD" --check <jobId>
+# If still running, check again after a moment
 
 # 4. Continue until ALL tasks are done
 \`\`\`
 
-### Parallel Dispatch (when tasks are independent)
-
-\`\`\`bash
-# 1. Dispatch all tasks (fire-and-forget for parallel)
-python3 "$DISPATCH_CMD" ${exampleSubId} "Task A"   # → job-xxx
-python3 "$DISPATCH_CMD" ${subordinates.length > 1 ? subordinates[1] : exampleSubId} "Task B"   # → job-yyy
-
-# 2. MUST check ALL results before finishing
-python3 "$DISPATCH_CMD" --check <job-xxx>
-python3 "$DISPATCH_CMD" --check <job-yyy>
-\`\`\`
-
 ### Status Values
-- **running** — Subordinate is working (wait or check again)
+- **running** — Subordinate is working (use --check again)
 - **done** — Task completed, result available
 - **error** — Task failed (re-dispatch or report)
 - **awaiting_input** — Subordinate has a question for you`;
@@ -561,8 +549,8 @@ python3 "$DISPATCH_CMD" --wait engineer "Fix bugs found by QA: [specific issues]
 \`\`\`
 
 **Key rules:**
-- Always use \`--wait\` to get results inline
-- If \`--wait\` times out (90s), use \`--check\` to poll until done
+- ⛔ ALWAYS use \`--wait\` — NEVER dispatch without it
+- \`--wait\` blocks up to 300 seconds — if it times out, use \`--check\` to poll
 - After EVERY result, decide the NEXT action — don't just stop
 - Continue dispatching until the CEO's directive is FULLY addressed
 
@@ -579,9 +567,9 @@ Every dispatch MUST include:
 ### Anti-Patterns (NEVER do these)
 
 - ❌ **Dispatching once and stopping** — you MUST keep working until directive is complete
+- ❌ **Dispatching without --wait** — ALWAYS use --wait, fire-and-forget is FORBIDDEN
 - ❌ Writing code yourself instead of dispatching to engineer
 - ❌ Dispatching without acceptance criteria
-- ❌ Not using --wait (fire-and-forget without checking results)
 - ❌ Accepting output without reviewing it
 - ❌ Forgetting to update knowledge/tasks after work completes
 - ❌ Doing only 1 dispatch when you should chain multiple (Engineer → QA)
