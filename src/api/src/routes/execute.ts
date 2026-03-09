@@ -14,6 +14,7 @@ import {
 } from '../services/session-store.js';
 import { jobManager, type Job } from '../services/job-manager.js';
 import { ActivityStream, type ActivityEvent, type ActivitySubscriber } from '../services/activity-stream.js';
+import { readConfig } from '../services/company-config.js';
 
 /* ─── Runner — lazy, re-created when engine changes ── */
 
@@ -866,8 +867,11 @@ function handleSessionMessage(
     }
   }
 
+  const companyConfig = readConfig(COMPANY_ROOT);
+  const maxTurns = companyConfig.maxTurns ?? 50;
+
   const handle = getRunner().execute(
-    { companyRoot: COMPANY_ROOT, roleId, task: fullTask, sourceRole: 'ceo', orgTree, readOnly, model: orgTree.nodes.get(roleId)?.model, attachments, teamStatus },
+    { companyRoot: COMPANY_ROOT, roleId, task: fullTask, sourceRole: 'ceo', orgTree, readOnly, model: orgTree.nodes.get(roleId)?.model, attachments, teamStatus, maxTurns },
     {
       onText: (text) => {
         roleMsg.content += text;

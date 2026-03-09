@@ -6,6 +6,7 @@ import type { ExecutionRunner } from '../engine/runners/types.js';
 import { setActivity, updateActivity, completeActivity } from './activity-tracker.js';
 import type { RunnerResult } from '../engine/runners/types.js';
 import { estimateCost } from './pricing.js';
+import { readConfig } from './company-config.js';
 
 /* ─── Types ──────────────────────────────── */
 
@@ -151,6 +152,9 @@ class JobManager {
       }
     }
 
+    const companyConfig = readConfig(COMPANY_ROOT);
+    const maxTurns = companyConfig.maxTurns ?? 50;
+
     const handle = this.runner.execute(
       {
         companyRoot: COMPANY_ROOT,
@@ -162,6 +166,7 @@ class JobManager {
         model,
         jobId,
         teamStatus,
+        maxTurns,
       },
       {
         onText: (text) => {

@@ -116,7 +116,7 @@ export function createHttpServer(): http.Server {
     const method = req.method ?? '';
 
     // SSE 엔드포인트: Express 우회하여 raw HTTP로 처리
-    if ((url.startsWith('/api/exec/') || url.startsWith('/api/jobs') || url === '/api/setup/import-knowledge') && method === 'POST') {
+    if ((url.startsWith('/api/exec/') || url.startsWith('/api/jobs') || url.startsWith('/api/waves/') || url === '/api/setup/import-knowledge') && method === 'POST') {
       setExecCors(req, res);
       if (url === '/api/setup/import-knowledge') {
         handleImportKnowledge(req, res);

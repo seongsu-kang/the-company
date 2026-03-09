@@ -179,7 +179,7 @@ export class ClaudeCliRunner implements ExecutionRunner {
     });
 
     // 6. CLI args 구성
-    const maxTurns = config.maxTurns ?? 25;
+    const maxTurns = config.maxTurns ?? 50;
     const args = [
       '-p',
       '--system-prompt', fs.readFileSync(promptFile, 'utf-8'),
