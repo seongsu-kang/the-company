@@ -43,6 +43,7 @@ export default function useWaveTree(
   const streamsRef = useRef<Map<string, StreamState>>(new Map());
   const nodesRef = useRef<Map<string, WaveNode>>(nodes);
   nodesRef.current = nodes;
+  const injectedRef = useRef(false);
 
   // Build org tree helper
   const buildOrgTree = useCallback(() => {
@@ -86,6 +87,16 @@ export default function useWaveTree(
 
   // Build initial tree from org nodes
   useEffect(() => {
+    // Skip rebuild if static nodes were injected (replay mode)
+    // Clear flag when active wave starts (rootJobs non-empty)
+    if (injectedRef.current) {
+      if (rootJobs.length > 0) {
+        injectedRef.current = false;
+      } else {
+        return;
+      }
+    }
+
     const result = buildOrgTree();
     if (!result) return;
     const { initial, allRoles } = result;
@@ -112,10 +123,10 @@ export default function useWaveTree(
       return prev;
     });
 
-    if (rootJobs.length > 0 && !selectedRoleId) {
-      setSelectedRoleId(rootJobs[0].roleId);
+    if (rootJobs.length > 0) {
+      setSelectedRoleId(prev => prev ?? rootJobs[0].roleId);
     }
-  }, [rootJobs, orgNodes, rootRoleId, buildOrgTree, selectedRoleId]);
+  }, [rootJobs, orgNodes, rootRoleId, buildOrgTree]);
 
   const toggleCheck = useCallback((roleId: string) => {
     setCheckedRoles(prev => {
@@ -133,6 +144,7 @@ export default function useWaveTree(
       stream.controller.abort();
     }
     streamsRef.current.clear();
+    injectedRef.current = true;
     setNodes(staticNodes);
     // Select first non-CEO role that has events
     for (const [id, node] of staticNodes) {

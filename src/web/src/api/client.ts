@@ -29,6 +29,16 @@ async function patch_<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
+async function put<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
 async function del<T>(path: string, body?: unknown): Promise<T> {
   const opts: RequestInit = { method: 'DELETE' };
   if (body !== undefined) {
@@ -52,6 +62,8 @@ export const api = {
   getWaveDetail: (id: string) => get<{ id: string; timestamp: string; replay: import('../types').WaveReplay }>(`/operations/waves/${id}`),
   patchWave: (id: string, data: { commitSha: string; commitMessage: string }) => patch_<{ ok: boolean }>(`/operations/waves/${id}`, data),
   getDecisions: () => get<Decision[]>('/operations/decisions'),
+  updateDecision: (id: string, content: string) => put<Decision>(`/operations/decisions/${id}`, { content }),
+  deleteDecision: (id: string) => del<{ ok: boolean }>(`/operations/decisions/${id}`),
 
   // Engine
   getOrgTree: () => get<OrgTreeResponse>('/engine/org'),

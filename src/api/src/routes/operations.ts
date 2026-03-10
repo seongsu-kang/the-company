@@ -131,3 +131,43 @@ operationsRouter.get('/decisions', (_req: Request, res: Response, next: NextFunc
     next(err);
   }
 });
+
+operationsRouter.put('/decisions/:id', (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { content } = req.body ?? {};
+    if (typeof content !== 'string') {
+      res.status(400).json({ error: 'content (string) is required' });
+      return;
+    }
+    const filePath = `operations/decisions/${id}.md`;
+    const absPath = path.resolve(COMPANY_ROOT, filePath);
+    // Ensure parent directory exists
+    fs.mkdirSync(path.dirname(absPath), { recursive: true });
+    fs.writeFileSync(absPath, content, 'utf-8');
+    // Re-parse for response
+    const firstLine = content.split('\n').find(l => l.startsWith('# '));
+    const title = firstLine ? firstLine.replace(/^#\s+/, '') : id;
+    const kv = extractBoldKeyValues(content);
+    const date = kv['날짜'] ?? kv['date'] ?? '';
+    res.json({ id, title, date, content });
+  } catch (err) {
+    next(err);
+  }
+});
+
+operationsRouter.delete('/decisions/:id', (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const filePath = `operations/decisions/${id}.md`;
+    const absPath = path.resolve(COMPANY_ROOT, filePath);
+    if (!fs.existsSync(absPath)) {
+      res.status(404).json({ error: `Decision not found: ${id}` });
+      return;
+    }
+    fs.unlinkSync(absPath);
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});

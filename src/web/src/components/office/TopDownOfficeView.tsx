@@ -1087,7 +1087,7 @@ export default function TopDownOfficeView({
   onRoleClick, onProjectClick, onBulletinClick, onDecisionsClick, onKnowledgeClick, onSettingsClick, onThemeClick, onStatsClick,
   getRoleSpeech, getAppearance, onHireClick, onMascotClick, roleLevels,
   coinBalance = 0, onCoinsSpent, onFurniturePlaced,
-  purchasedPreset, onExpansionPurchased,
+  purchasedPreset, onExpansionPurchased: _onExpansionPurchased,
 }: TopDownOfficeViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -1097,7 +1097,7 @@ export default function TopDownOfficeView({
   const frameRef = useRef(0);
   const zoomRef = useRef(DEFAULT_ZOOM);
   const [editMode, setEditMode] = useState(false);
-  const [editTab, setEditTab] = useState<'furniture' | 'expand'>('furniture');
+  const [_editTab, _setEditTab] = useState<'furniture' | 'expand'>('furniture');
   const [placingType, setPlacingType] = useState<FurnitureType | null>(null);
   const [placingZone, setPlacingZone] = useState<'wall' | 'floor' | null>(null);
   const overridesRef = useRef<Record<string, { offsetX: number; offsetY: number }>>({});
@@ -1798,6 +1798,7 @@ export default function TopDownOfficeView({
     }
   }, [hitTest, onRoleClick, onProjectClick, onBulletinClick, onDecisionsClick, onKnowledgeClick, onSettingsClick, onThemeClick, onStatsClick]);
 
+/* TODO: Enable when expansion feature is ready
   const handleExpansionPurchase = useCallback(async () => {
     if ((coinBalance ?? 0) < 15000) return;
     const confirmed = window.confirm('Upgrade to Large Office for 15,000 coins?');
@@ -1808,8 +1809,9 @@ export default function TopDownOfficeView({
         onCoinsSpent?.(r.balance);
         onExpansionPurchased?.('L');
       }
-    } catch { /* ignore */ }
+    } catch { /* ignore *\/ }
   }, [coinBalance, onCoinsSpent, onExpansionPurchased]);
+  */
 
   return (
     <div className={`td-scene${editMode ? ' td-scene--editing' : ''}`}>

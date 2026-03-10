@@ -75,9 +75,11 @@ interface Props {
   /** Checked roles for dispatch targeting */
   checkedRoles?: Set<string>;
   onToggleCheck?: (roleId: string) => void;
+  /** Roles eligible for checkbox interaction (subtree of selected node) */
+  eligibleRoles?: Set<string>;
 }
 
-export default function OrgTreeLive({ nodes, rootId, selectedRoleId, onSelectNode, checkedRoles, onToggleCheck }: Props) {
+export default function OrgTreeLive({ nodes, rootId, selectedRoleId, onSelectNode, checkedRoles, onToggleCheck, eligibleRoles }: Props) {
   const { layout, width, height } = buildLayout(nodes, rootId);
   const showCheckboxes = !!onToggleCheck;
 
@@ -162,14 +164,14 @@ export default function OrgTreeLive({ nodes, rootId, selectedRoleId, onSelectNod
         const isSelected = selectedRoleId === item.roleId;
         const isCeo = item.roleId === rootId;
         const isChecked = checkedRoles?.has(item.roleId) ?? false;
-        const opacity = isCeo ? 0.4 : node.status === 'not-dispatched' && !isChecked ? 0.35 : 1;
+        const opacity = isCeo ? (isSelected ? 0.7 : 0.5) : node.status === 'not-dispatched' && !isChecked ? 0.35 : 1;
 
         return (
           <g
             key={item.roleId}
             transform={`translate(${item.x}, ${item.y})`}
-            style={{ cursor: isCeo ? 'default' : 'pointer', opacity }}
-            onClick={() => !isCeo && onSelectNode(item.roleId)}
+            style={{ cursor: 'pointer', opacity }}
+            onClick={() => onSelectNode(item.roleId)}
           >
             {/* Node rect */}
             <rect
@@ -229,30 +231,33 @@ export default function OrgTreeLive({ nodes, rootId, selectedRoleId, onSelectNod
             )}
 
             {/* Checkbox for dispatch targeting */}
-            {showCheckboxes && !isCeo && (
-              <g
-                onClick={(e) => { e.stopPropagation(); onToggleCheck?.(item.roleId); }}
-                style={{ cursor: 'pointer' }}
-              >
-                {/* Hit area */}
-                <rect x={NODE_W - 24} y={NODE_H / 2 - 10} width={20} height={20} fill="transparent" />
-                {/* Checkbox */}
-                <rect
-                  x={NODE_W - 20} y={NODE_H / 2 - 6}
-                  width={12} height={12}
-                  rx={2} ry={2}
-                  fill={isChecked ? '#EF5350' : 'transparent'}
-                  stroke={isChecked ? '#EF5350' : '#666'}
-                  strokeWidth={1.5}
-                />
-                {isChecked && (
-                  <text
-                    x={NODE_W - 18} y={NODE_H / 2 + 4}
-                    fontSize={10} fontWeight={700} fill="#fff"
-                  >&#x2713;</text>
-                )}
-              </g>
-            )}
+            {showCheckboxes && !isCeo && (() => {
+              const isEligible = !eligibleRoles || eligibleRoles.has(item.roleId);
+              return (
+                <g
+                  onClick={(e) => { e.stopPropagation(); if (isEligible) onToggleCheck?.(item.roleId); }}
+                  style={{ cursor: isEligible ? 'pointer' : 'default', opacity: isEligible ? 1 : 0.2 }}
+                >
+                  {/* Hit area */}
+                  <rect x={NODE_W - 24} y={NODE_H / 2 - 10} width={20} height={20} fill="transparent" />
+                  {/* Checkbox */}
+                  <rect
+                    x={NODE_W - 20} y={NODE_H / 2 - 6}
+                    width={12} height={12}
+                    rx={2} ry={2}
+                    fill={isChecked ? '#EF5350' : 'transparent'}
+                    stroke={isChecked ? '#EF5350' : '#666'}
+                    strokeWidth={1.5}
+                  />
+                  {isChecked && (
+                    <text
+                      x={NODE_W - 18} y={NODE_H / 2 + 4}
+                      fontSize={10} fontWeight={700} fill="#fff"
+                    >&#x2713;</text>
+                  )}
+                </g>
+              );
+            })()}
           </g>
         );
       })}

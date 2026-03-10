@@ -76,7 +76,7 @@ export default function ProView({
   const channelRole = channel.type === 'role' ? roles.find(r => r.id === channel.roleId) : null;
 
   const channelTitle = channel.type === 'dashboard' ? 'Dashboard'
-    : channel.type === 'terminal' ? 'Terminal'
+    : channel.type === 'terminal' ? 'Chats'
     : channel.type === 'wave' ? 'Wave Center'
     : channel.type === 'knowledge' ? 'Knowledge Base'
     : channel.type === 'operations' ? 'Operations'
@@ -147,21 +147,28 @@ export default function ProView({
           </button>
         )}
 
-        {/* Channels */}
-        <div className="mt-4">
-          <div className="px-4 py-1 text-[9px] font-bold tracking-widest" style={{ color: 'var(--terminal-text-muted)' }}>
-            CHANNELS
-          </div>
-          <ChannelItem icon="#" label="general" active={channel.type === 'terminal'}
-            badge={activeSessions > 0 ? activeSessions : undefined}
-            onClick={() => onChannelChange({ type: 'terminal' })} />
-          <ChannelItem icon={'\u26A1'} label="wave-log" active={channel.type === 'wave'}
-            live={runningWaves.length > 0}
-            onClick={() => onChannelChange({ type: 'wave' })} />
-          <ChannelItem icon="#" label="decisions" active={channel.type === 'operations'}
-            onClick={() => onChannelChange({ type: 'operations' })} />
-          <ChannelItem icon={'\u{1F4DA}'} label="knowledge" active={channel.type === 'knowledge'}
-            onClick={() => onChannelChange({ type: 'knowledge' })} />
+        {/* Main Features */}
+        <div className="mx-3 mt-3 grid grid-cols-2 gap-1.5">
+          <NavTile
+            icon={'\u{1F4AC}'} label="Chats" badge={activeSessions || undefined}
+            active={channel.type === 'terminal'}
+            onClick={() => onChannelChange({ type: 'terminal' })}
+          />
+          <NavTile
+            icon={'\u26A1'} label="Waves" live={runningWaves.length > 0}
+            active={channel.type === 'wave'}
+            onClick={() => onChannelChange({ type: 'wave' })}
+          />
+          <NavTile
+            icon={'\u{1F4CB}'} label="Decisions"
+            active={channel.type === 'operations'}
+            onClick={() => onChannelChange({ type: 'operations' })}
+          />
+          <NavTile
+            icon={'\u{1F4DA}'} label="Knowledge" badge={knowledgeDocs.length || undefined}
+            active={channel.type === 'knowledge'}
+            onClick={() => onChannelChange({ type: 'knowledge' })}
+          />
         </div>
 
         {/* Team */}
@@ -215,6 +222,7 @@ export default function ProView({
             );
           })}
         </div>
+
 
         {/* Spacer */}
         <div className="flex-1" />
@@ -385,32 +393,32 @@ export function ProRoleChatEmpty({ role, onSend, getAppearance, onOpenProfile }:
 
 /* ─── Sidebar Components ─── */
 
-function ChannelItem({ icon, label, active, badge, live, onClick }: {
+function NavTile({ icon, label, active, badge, live, onClick }: {
   icon: string; label: string; active?: boolean; badge?: number; live?: boolean; onClick: () => void;
 }) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-2.5 w-full px-4 py-1.5 text-left hover:opacity-80 transition-all"
-      style={{ background: active ? 'var(--terminal-border, #2E261F)' : 'transparent' }}
+      className="flex flex-col items-center gap-1 py-3 rounded-lg transition-all hover:opacity-90"
+      style={{
+        background: active ? 'var(--desk-wood, #5C3D2E)' : 'var(--terminal-border, #2E261F)',
+        border: active ? '1px solid var(--desk-wood, #5C3D2E)' : '1px solid transparent',
+      }}
     >
-      <span className="text-[11px] w-4 text-center" style={{
-        color: active ? 'var(--terminal-text)' : 'var(--terminal-text-muted)',
-      }}>{icon}</span>
-      <span className="text-[11px] flex-1" style={{
-        color: active ? 'var(--terminal-text, #fff5eb)' : 'var(--terminal-text-muted, #887766)',
-        fontWeight: active ? 600 : 400,
+      <div className="relative">
+        <span className="text-[16px]">{icon}</span>
+        {live && (
+          <span className="absolute -top-1 -right-2 w-2 h-2 rounded-full animate-pulse" style={{ background: '#EF4444' }} />
+        )}
+        {badge !== undefined && badge > 0 && !live && (
+          <span className="absolute -top-1.5 -right-3 text-[7px] px-1 py-0.5 rounded-full font-bold leading-none" style={{
+            background: 'var(--desk-wood, #5C3D2E)', color: '#fff', minWidth: 14, textAlign: 'center',
+          }}>{badge}</span>
+        )}
+      </div>
+      <span className="text-[10px] font-semibold" style={{
+        color: active ? '#fff' : 'var(--terminal-text, #fff5eb)',
       }}>{label}</span>
-      {live && (
-        <span className="text-[7px] px-1 py-0.5 rounded font-bold" style={{
-          background: '#EF444420', color: '#EF4444',
-        }}>live</span>
-      )}
-      {badge !== undefined && badge > 0 && !live && (
-        <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{
-          background: 'var(--terminal-border)', color: 'var(--terminal-text-muted)',
-        }}>{badge}</span>
-      )}
     </button>
   );
 }

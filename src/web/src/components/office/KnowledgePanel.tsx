@@ -519,7 +519,7 @@ function KnowledgeGraph({
               const clusterRadius = Math.max(40, Math.sqrt(cluster.count) * 25);
               // Check if any node in cluster is matched
               const hasMatchedNode = matchedIds === null || cluster.nodes.some((n) => matchedIds.has(n.id));
-              const clusterOpacity = hasMatchedNode ? 1 : 0.2;
+              const clusterOpacity = hasMatchedNode ? 1 : 0.4;
 
               return (
                 <g
@@ -583,7 +583,7 @@ function KnowledgeGraph({
               if (cluster.count < 2) return null;
               // Check if any node in cluster is matched
               const hasMatchedNode = matchedIds === null || cluster.nodes.some((n) => matchedIds.has(n.id));
-              const bgOpacity = hasMatchedNode ? 0.08 : 0.02;
+              const bgOpacity = hasMatchedNode ? 0.08 : 0.04;
 
               return (
                 <g key={`cluster-bg-${cluster.domain}`}>
@@ -631,7 +631,7 @@ function KnowledgeGraph({
               const targetId = typeof link.target === 'string' ? link.target : link.target.id;
               const isEdgeInLocalView = localNodesInView === null ||
                 (localNodesInView.has(sourceId) && localNodesInView.has(targetId));
-              const edgeOpacity = isEdgeInLocalView ? 1 : 0.1;
+              const edgeOpacity = isEdgeInLocalView ? 1 : 0.25;
 
               return (
                 <g key={i} style={{ opacity: edgeOpacity, transition: 'opacity 0.3s ease' }}>
@@ -684,7 +684,7 @@ function KnowledgeGraph({
               const isMatched = matchedIds === null || matchedIds.has(node.id);
               // KB-008: Fade nodes outside local graph range
               const isInLocalView = localNodesInView === null || localNodesInView.has(node.id);
-              const nodeOpacity = (isMatched && isInLocalView) ? 1 : 0.15;
+              const nodeOpacity = (isMatched && isInLocalView) ? 1 : 0.35;
 
               // KB-006: Micro view extras
               const firstSentence = zoomLevel === 'micro' ? getFirstSentence(node.tldr, 50) : '';
@@ -1071,7 +1071,7 @@ function TreeNodeComponent({
     }) ?? false);
 
     return (
-      <div style={{ opacity: hasMatchingChild ? 1 : 0.3, transition: 'opacity 0.2s ease' }}>
+      <div style={{ opacity: hasMatchingChild ? 1 : 0.5, transition: 'opacity 0.2s ease' }}>
         <div
           className="flex items-center gap-1 py-0.5 px-1 rounded cursor-pointer hover:bg-white/5"
           style={{ paddingLeft: level * 12 + 4 }}
@@ -1102,7 +1102,7 @@ function TreeNodeComponent({
       className={`flex items-center gap-1 py-0.5 px-1 rounded cursor-pointer transition-colors ${
         isViewing ? 'bg-green-500/20' : isSelected ? 'bg-white/10' : 'hover:bg-white/5'
       }`}
-      style={{ paddingLeft: level * 12 + 4, opacity: isMatched ? 1 : 0.2, transition: 'opacity 0.2s ease' }}
+      style={{ paddingLeft: level * 12 + 4, opacity: isMatched ? 1 : 0.45, transition: 'opacity 0.2s ease' }}
       onClick={() => onFileClick(node.path)}
     >
       <span className="text-[10px]">{isHub ? '📘' : '📄'}</span>

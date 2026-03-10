@@ -19,8 +19,6 @@ import { useSave } from '../hooks/useSave';
 import { useAmbientSpeech } from '../hooks/useAmbientSpeech';
 import { useOfficeChat } from '../hooks/useOfficeChat';
 import { useChatScheduler } from '../hooks/useChatScheduler';
-import TopDownCharCanvas from '../components/office/TopDownCharCanvas';
-import FacilityCanvas from '../components/office/FacilityCanvas';
 import TopDownOfficeView from '../components/office/TopDownOfficeView';
 import KnowledgePanel from '../components/office/KnowledgePanel';
 import CustomizeModal from '../components/office/CustomizeModal';
@@ -41,30 +39,11 @@ import type { QuestProgress, QuestTrigger } from '../utils/quests';
 
 /* ─── Role metadata ─────────────────────── */
 
-const ROLE_ICONS: Record<string, string> = {
-  cto: '\u{1F3D7}\u{FE0F}', cbo: '\u{1F4CA}', pm: '\u{1F4CB}',
-  engineer: '\u{2699}\u{FE0F}', designer: '\u{1F3A8}', qa: '\u{1F50D}',
-  'data-analyst': '\u{1F4CA}',
-};
 const ROLE_COLORS: Record<string, string> = {
   cto: '#1565C0', cbo: '#E65100', pm: '#2E7D32',
   engineer: '#4A148C', designer: '#AD1457', qa: '#00695C',
   'data-analyst': '#0277BD',
 };
-const DESK_ACTIVITY: Record<string, string> = {
-  cto: '\uC544\uD0A4\uD14D\uCC98', cbo: '\uC2DC\uC7A5 \uBD84\uC11D',
-  pm: 'PRD \uC791\uC131', engineer: '\uCF54\uB529', designer: '\uC2DC\uC548 \uC81C\uC791',
-  qa: '\uD488\uC9C8 \uAC80\uC99D',
-};
-
-/* ─── Helpers ─────────────────────────────── */
-
-function hashColor(id: string): string {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = id.charCodeAt(i) + ((h << 5) - h);
-  const hue = ((h % 360) + 360) % 360;
-  return `hsl(${hue}, 50%, 40%)`;
-}
 
 /* ─── Types ──────────────────────────────── */
 
@@ -313,9 +292,9 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
     // No cleanup abort — import runs in background on server
   }, [importJob]);
 
-  /* View mode: card grid vs topdown vs pro */
-  const [viewMode, setViewMode] = useState<'card' | 'iso' | 'pro'>('iso');
-  const prevViewModeRef = useRef<'card' | 'iso'>('iso');
+  /* View mode: office (topdown) vs pro */
+  const [viewMode, setViewMode] = useState<'iso' | 'pro'>('iso');
+  const prevViewModeRef = useRef<'iso'>('iso');
   const [proChannel, setProChannel] = useState<ProChannel>({ type: 'dashboard' });
 
   /* Window width for mobile responsive */
@@ -440,6 +419,15 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   }, [panel]);
 
   const closePanel = () => setPanel({ type: 'none' });
+
+  const handleUpdateDecision = async (id: string, content: string) => {
+    const updated = await api.updateDecision(id, content);
+    setDecisions(prev => prev.map(d => d.id === id ? updated : d));
+  };
+  const handleDeleteDecision = async (id: string) => {
+    await api.deleteDecision(id);
+    setDecisions(prev => prev.filter(d => d.id !== id));
+  };
 
   // Mutual exclusion: right-side area is shared by Terminal, SidePanel, and WaveCenter
   const openPanel = (p: PanelState) => {
@@ -1373,8 +1361,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
         <div className="flex-1 overflow-y-auto relative floor-grid" style={{
           background: `var(--floor-light)`,
         }}>
-          {viewMode === 'iso' ? (
-            <TopDownOfficeView
+          <TopDownOfficeView
               roles={roles}
               projects={projects}
               waves={waves}
@@ -1402,131 +1389,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
                 fireQuestTrigger({ type: 'furniture_placed' });
                 if (price > 0) fireQuestTrigger({ type: 'furniture_purchased' });
               }}
-              /* purchasedPreset / onExpansionPurchased — disabled until 6-room preset + multi-floor ready */
             />
-          ) : (
-          <div className={`${terminalOpen ? 'max-w-full' : 'max-w-[1100px]'} mx-auto h-full p-4 flex flex-col gap-3 relative z-[1]`}>
-            {/* ── Section: LEADERSHIP ── */}
-            {(() => {
-              const cLevel = roles.filter(r => r.level === 'c-level');
-              const members = roles.filter(r => r.level !== 'c-level');
-              return (<>
-                {cLevel.length > 0 && (<>
-                  <div className="pixel-section-label">LEADERSHIP</div>
-                  <div className={`grid gap-2 ${cLevel.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                    {cLevel.map((role) => (
-                      <PixelCard
-                        key={role.id}
-                        role={role}
-                        speech={ambient.getSpeech(role.id)}
-                        onClick={() => openPanel({ type: 'role', roleId: role.id })}
-                        liveStatus={effectiveRoleStatuses[role.id]}
-                        activeTask={activeExecsByRole[role.id]?.task}
-                        featured
-                        appearance={getAppearance(role.id)}
-                        xpLevel={roleLevels[role.id]?.level}
-                      />
-                    ))}
-                  </div>
-                </>)}
-
-                {/* ── Section: TEAM ── */}
-                <div className="pixel-section-label">TEAM</div>
-                <div className={`grid gap-2 ${terminalOpen ? 'grid-cols-3' : 'grid-cols-4'}`}>
-                  {members.map((role) => (
-                    <PixelCard
-                      key={role.id}
-                      role={role}
-                      speech={ambient.getSpeech(role.id)}
-                      onClick={() => openPanel({ type: 'role', roleId: role.id })}
-                      liveStatus={effectiveRoleStatuses[role.id]}
-                      activeTask={activeExecsByRole[role.id]?.task}
-                      appearance={getAppearance(role.id)}
-                      xpLevel={roleLevels[role.id]?.level}
-                    />
-                  ))}
-                  {/* + HIRE card */}
-                  <div
-                    className="pixel-card pixel-card--hire"
-                    onClick={() => setShowHireModal(true)}
-                  >
-                    <div className="pixel-card--hire-inner">
-                      <span className="pixel-card--hire-icon">+</span>
-                      <span className="pixel-card--hire-label">HIRE NEW ROLE</span>
-                    </div>
-                  </div>
-                </div>
-              </>);
-            })()}
-
-            {/* ── Section: OFFICE ── */}
-            <div className="pixel-section-label mt-1">OFFICE</div>
-            <div className="grid grid-cols-4 gap-2">
-              {/* Meeting Room — Project Hub */}
-              <div
-                className="facility-card-compact"
-                onClick={mainProject ? () => openPanel({ type: 'project', projectId: mainProject.id }) : undefined}
-                style={mainProject ? undefined : { borderStyle: 'dashed', opacity: 0.5 }}
-              >
-                <div className="fcc-hdr" style={{ background: '#3B82F6' }}>{'\u{1F3E2}'} MEETING ROOM</div>
-                <div className="fcc-canvas"><FacilityCanvas type="meeting" /></div>
-                <div className="fcc-body">
-                  <div className="fcc-desc">Projects, PRDs, and task boards</div>
-                  {mainProject ? (<>
-                    <div className="fcc-title">"{mainProject.name}"</div>
-                    <div className="fcc-meta">Status: <strong style={{ color: 'var(--active-green)' }}>{mainProject.status}</strong></div>
-                  </>) : (
-                    <div className="fcc-meta" style={{ fontStyle: 'italic' }}>No active projects</div>
-                  )}
-                </div>
-              </div>
-
-              {/* Bulletin Board — Operations Log */}
-              <div className="facility-card-compact" onClick={() => openPanel({ type: 'bulletin' })}>
-                <div className="fcc-hdr" style={{ background: '#64748b' }}>{'\u{1F4CB}'} BULLETIN</div>
-                <div className="fcc-canvas"><FacilityCanvas type="bulletin" /></div>
-                <div className="fcc-body">
-                  <div className="fcc-desc">Waves and daily standups</div>
-                  {waves.slice(0, 1).map((w) => (
-                    <div key={w.id} className="fcc-item">Wave {w.id}</div>
-                  ))}
-                  {standups.slice(0, 1).map((s) => (
-                    <div key={s.date} className="fcc-item">Standup {s.date}</div>
-                  ))}
-                  {waves.length === 0 && standups.length === 0 && (
-                    <div className="fcc-meta" style={{ fontStyle: 'italic' }}>No entries yet</div>
-                  )}
-                </div>
-              </div>
-
-              {/* Decision Log — Strategic Decisions */}
-              <div className="facility-card-compact" onClick={() => openPanel({ type: 'decisions' })}>
-                <div className="fcc-hdr" style={{ background: '#EF4444' }}>{'\u{1F4DC}'} DECISIONS</div>
-                <div className="fcc-canvas"><FacilityCanvas type="decision" /></div>
-                <div className="fcc-body">
-                  <div className="fcc-desc">CEO strategic decision log</div>
-                  <div className="fcc-title">{decisions.length} decisions</div>
-                  {decisions.slice(0, 2).map((d) => (
-                    <div key={d.id} className="fcc-item">#{d.id} {d.title}</div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Knowledge Base — Research & Docs */}
-              <div className="facility-card-compact" onClick={() => openPanel({ type: 'knowledge' })}>
-                <div className="fcc-hdr" style={{ background: '#0D9488' }}>{'\u{1F4DA}'} KNOWLEDGE</div>
-                <div className="fcc-canvas"><FacilityCanvas type="knowledge" /></div>
-                <div className="fcc-body">
-                  <div className="fcc-desc">Research, analysis, and references</div>
-                  <div className="fcc-title">{knowledgeDocs.length} docs</div>
-                  {knowledgeDocs.slice(0, 2).map((d) => (
-                    <div key={d.id} className="fcc-item">{d.title}</div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-          )}
         </div>
 
         {/* ─── Terminal Panel (non-Pro modes only; Pro renders it inline) ─── */}
@@ -1547,7 +1410,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
               onSendMessage={handleSendMessage}
               onModeChange={handleModeChange}
               onCloseTerminal={() => setTerminalOpen(false)}
-              onMaximize={() => { prevViewModeRef.current = viewMode === 'pro' ? 'iso' : viewMode as 'card' | 'iso'; setProChannel({ type: 'terminal' }); setViewMode('pro'); }}
+              onMaximize={() => { prevViewModeRef.current = 'iso'; setProChannel({ type: 'terminal' }); setViewMode('pro'); }}
               chatChannels={officeChat.channels}
               activeChatChannelId={officeChat.activeChannelId}
               onSwitchChatChannel={officeChat.setActiveChannelId}
@@ -1569,19 +1432,13 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
       >
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setViewMode('card')}
-            className={`view-toggle-btn ${viewMode === 'card' ? 'active' : ''}`}
-          >
-            CARD
-          </button>
-          <button
             onClick={() => setViewMode('iso')}
             className={`view-toggle-btn ${viewMode === 'iso' ? 'active' : ''}`}
           >
             OFFICE
           </button>
           <button
-            onClick={() => { prevViewModeRef.current = viewMode === 'pro' ? 'iso' : viewMode as 'card' | 'iso'; setViewMode('pro'); }}
+            onClick={() => { prevViewModeRef.current = 'iso'; setViewMode('pro'); }}
             className={`view-toggle-btn ${viewMode === 'pro' ? 'active' : ''}`}
           >
             PRO
@@ -1767,7 +1624,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           appearance={getAppearance(selectedRole.id)}
           relationships={ambient.relationships}
           roleLevel={roleLevels[selectedRole.id]?.level}
-          onMaximize={() => { prevViewModeRef.current = viewMode as 'card' | 'iso'; setProChannel({ type: 'role', roleId: selectedRole.id }); setViewMode('pro'); }}
+          onMaximize={() => { prevViewModeRef.current = 'iso'; setProChannel({ type: 'role', roleId: selectedRole.id }); setViewMode('pro'); }}
         />
         );
       })()}
@@ -1782,8 +1639,10 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           mode={panel.type === 'bulletin' ? 'bulletin' : 'decisions'}
           onClose={closePanel}
           onOpenWaveCenter={() => openWaveCenter()}
+          onUpdateDecision={handleUpdateDecision}
+          onDeleteDecision={handleDeleteDecision}
           terminalWidth={terminalOpen ? terminalWidth : 0}
-          onMaximize={() => { prevViewModeRef.current = viewMode as 'card' | 'iso'; setProChannel({ type: 'operations' }); setViewMode('pro'); }}
+          onMaximize={() => { prevViewModeRef.current = 'iso'; setProChannel({ type: 'operations' }); setViewMode('pro'); }}
         />
       )}
       {viewMode !== 'pro' && panel.type === 'quest' && (
@@ -1805,7 +1664,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           onRefresh={() => api.getKnowledge().then(setKnowledgeDocs).catch(() => {})}
           terminalWidth={terminalOpen ? terminalWidth : 0}
           initialDocId={panel.docId}
-          onMaximize={() => { prevViewModeRef.current = viewMode as 'card' | 'iso'; setProChannel({ type: 'knowledge' }); setViewMode('pro'); }}
+          onMaximize={() => { prevViewModeRef.current = 'iso'; setProChannel({ type: 'knowledge' }); setViewMode('pro'); }}
         />
       )}
 
@@ -1960,6 +1819,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
               }}
               onRefreshWaves={() => api.getWaves().then(setWaves).catch(() => {})}
               terminalWidth={0}
+              inline
             />
           )}
 
@@ -1982,6 +1842,8 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
               mode="bulletin"
               onClose={() => setProChannel({ type: 'dashboard' })}
               onOpenWaveCenter={() => setProChannel({ type: 'wave' })}
+              onUpdateDecision={handleUpdateDecision}
+              onDeleteDecision={handleDeleteDecision}
               terminalWidth={0}
             />
           )}
@@ -2009,13 +1871,15 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
               <ProRoleChatEmpty
                 role={role}
                 getAppearance={getAppearance}
-                onSend={(content, mode) => {
-                  handleCreateSessionSilent(roleId);
-                  // Message will be sent after session is created via effect
-                  setTimeout(() => {
-                    const newSession = sessions.find(s => s.roleId === roleId);
-                    if (newSession) handleSendMessage(newSession.id, content, mode);
-                  }, 100);
+                onSend={async (content, mode) => {
+                  try {
+                    const session = await api.createSession(roleId, 'talk');
+                    setSessions((prev) => [session, ...prev]);
+                    setActiveSessionId(session.id);
+                    handleSendMessage(session.id, content, mode);
+                  } catch (err) {
+                    addToast(`Failed to create session: ${err instanceof Error ? err.message : 'API unreachable'}`, '#B71C1C');
+                  }
                 }}
               />
             );
@@ -2080,7 +1944,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           activeWaves={waveCenterWaves}
           onDispatch={(d, t) => handleWaveDispatch(d, t)}
           onClose={() => setShowWaveCenter(false)}
-          onMaximize={() => { prevViewModeRef.current = viewMode as 'card' | 'iso'; setProChannel({ type: 'wave' }); setViewMode('pro'); }}
+          onMaximize={() => { prevViewModeRef.current = 'iso'; setProChannel({ type: 'wave' }); setViewMode('pro'); }}
           onDone={() => {
             handleJobDone();
             setWaveDone(true);
@@ -2347,52 +2211,3 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   );
 }
 
-/* ─── Pixel Card Component (Team) ─────────── */
-
-function PixelCard({ role, speech, onClick, liveStatus, activeTask, featured, appearance, xpLevel }: {
-  role: Role; speech: string; onClick: () => void;
-  liveStatus?: string; activeTask?: string; featured?: boolean;
-  appearance?: CharacterAppearance;
-  xpLevel?: number;
-}) {
-  const color = ROLE_COLORS[role.id] ?? hashColor(role.id);
-  const level = xpLevel ?? 1;
-  const activity = DESK_ACTIVITY[role.id] ?? role.name;
-  const isWorking = liveStatus === 'working';
-
-  const taskText = isWorking && activeTask
-    ? activeTask
-    : speech || activity;
-
-  return (
-    <div
-      className={`pixel-card ${isWorking ? 'working' : ''} ${featured ? 'pixel-card--featured' : ''}`}
-      onClick={onClick}
-    >
-      {/* Header */}
-      <div className="pixel-card-hdr" style={{ background: color }}>
-        <span>{role.id.toUpperCase()} {'\u00B7'} {role.name.toUpperCase()}</span>
-        <span className="lvl">Lv.{level}</span>
-      </div>
-
-      {/* Sprite area */}
-      <div className="pixel-card-body">
-        <div className="pixel-desk" />
-        <TopDownCharCanvas roleId={role.id} appearance={appearance} />
-        {/* Status dot */}
-        <div
-          className="pixel-status-dot"
-          style={{
-            background: isWorking ? 'var(--idle-amber)' : 'var(--active-green)',
-          }}
-        />
-      </div>
-
-      {/* Task line */}
-      <div className="pixel-card-task">
-        <span className="pixel-card-task-icon">{isWorking ? '\u{1F6E0}\u{FE0F}' : ROLE_ICONS[role.id] ?? '\u{1F464}'}</span>
-        <span className="pixel-card-task-text">{taskText || activity}</span>
-      </div>
-    </div>
-  );
-}

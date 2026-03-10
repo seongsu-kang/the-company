@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import useWaveTree, { type WaveNode } from '../../hooks/useWaveTree';
-import OrgTreePreview from './OrgTreePreview';
 import OrgTreeLive from './OrgTreeLive';
 import EventRow from '../common/EventRow';
 import type { OrgNode, Wave, WaveReplay } from '../../types';
@@ -18,7 +17,6 @@ interface ActiveWave {
   directive: string;
   rootJobs: Array<{ sessionId: string; roleId: string; roleName: string; jobId?: string }>;
   startedAt: number;
-  /** D-014: Server-generated session IDs (one per role) */
   sessionIds?: string[];
 }
 
@@ -35,121 +33,268 @@ interface Props {
   rootRoleId: string;
   cLevelRoles: { id: string; name: string }[];
   pastWaves: Wave[];
-  /** Currently active waves passed from parent */
   activeWaves: ActiveWave[];
   onDispatch: (directive: string, targetRoles?: string[]) => void;
   onClose: () => void;
   onDone?: () => void;
   onSave?: (directive: string, jobIds: string[], extra?: { waveId?: string; sessionIds?: string[] }) => Promise<void>;
   onOpenKnowledgeDoc?: (docId: string) => void;
-  /** Refresh pastWaves list (e.g. after committing) */
   onRefreshWaves?: () => void;
   terminalWidth?: number;
   onMaximize?: () => void;
+  /** When true, renders inline (no dimmer/fixed positioning) for Pro view */
+  inline?: boolean;
 }
 
-type ViewMode = 'dispatch' | 'monitor';
-
 export default function WaveCenter({
-  orgNodes, rootRoleId, cLevelRoles, pastWaves,
+  orgNodes, rootRoleId, cLevelRoles: _cLevelRoles, pastWaves,
   activeWaves, onDispatch, onClose, onDone, onSave, onOpenKnowledgeDoc,
   onRefreshWaves,
   terminalWidth = 0,
   onMaximize,
+  inline = false,
 }: Props) {
-  const [viewMode, setViewMode] = useState<ViewMode>(activeWaves.length > 0 ? 'monitor' : 'dispatch');
-  const [selectedWaveIdx, setSelectedWaveIdx] = useState(0);
   const [directive, setDirective] = useState('');
-  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [replayData, setReplayData] = useState<WaveReplay | null>(null);
   const [replayLoading, setReplayLoading] = useState(false);
-  const [codeGitBrief, setCodeGitBrief] = useState<{ dirty: boolean; count: number; branch: string } | null>(null);
+  const [selectedWaveIdx, setSelectedWaveIdx] = useState(activeWaves.length > 0 ? 0 : -1);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Fetch CODE repo git status on mount & periodically
+  // Active wave tracking
+  const currentActiveWave = selectedWaveIdx >= 0 ? (activeWaves[selectedWaveIdx] ?? null) : null;
+
+  // Stable empty array to avoid re-renders when no active wave
+  const emptyRootJobs = useMemo<Array<{ sessionId: string; roleId: string; roleName?: string }>>(() => [], []);
+  const rootJobs = currentActiveWave?.rootJobs ?? emptyRootJobs;
+
+  // Unified wave tree — works for active waves and as base for replay
+  const waveTree = useWaveTree(
+    rootJobs,
+    orgNodes,
+    rootRoleId,
+  );
+
+  // When replay loads, inject static data
   useEffect(() => {
-    const fetch = () => api.getSaveStatus('code').then(s => {
-      setCodeGitBrief({ dirty: s.dirty, count: s.modified.length + s.untracked.length, branch: s.branch });
-    }).catch(() => {});
-    fetch();
-    const interval = setInterval(fetch, 30_000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // OrgTree role selection (for dispatch mode)
-  const [activeRoles, setActiveRoles] = useState<Set<string>>(() => {
-    const all = new Set<string>();
-    const root = orgNodes[rootRoleId];
-    if (root) {
-      for (const cId of root.children) {
-        all.add(cId);
-        const cNode = orgNodes[cId];
-        if (cNode) {
-          for (const subId of cNode.children) all.add(subId);
-        }
-      }
+    if (replayData) {
+      const staticNodes = buildReplayNodes(orgNodes, rootRoleId, replayData.roles);
+      waveTree.injectStaticNodes(staticNodes);
     }
-    return all;
-  });
+  }, [replayData, orgNodes, rootRoleId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { panelRight, panelWidth, isResizing, handleResizeStart } = usePanelResize(terminalWidth, 720, onMaximize);
-
-  // Auto-switch to monitor when a wave starts
+  // Default select CEO node
   useEffect(() => {
-    if (activeWaves.length > 0 && viewMode === 'dispatch') {
-      setViewMode('monitor');
+    if (!waveTree.selectedRoleId && rootRoleId) {
+      waveTree.selectNode(rootRoleId);
+    }
+  }, [rootRoleId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // When new active wave starts, select it
+  useEffect(() => {
+    if (activeWaves.length > 0 && selectedWaveIdx < 0) {
       setSelectedWaveIdx(0);
+      setReplayData(null);
     }
-  }, [activeWaves.length, viewMode]);
+  }, [activeWaves.length, selectedWaveIdx]);
 
-  // Focus input on dispatch mode
-  useEffect(() => {
-    if (viewMode === 'dispatch') {
-      setTimeout(() => inputRef.current?.focus(), 100);
-    }
-  }, [viewMode]);
+  // Code git status
+  const [codeGit, setCodeGit] = useState<GitInfo | null>(null);
+  const codeGitBrief = useMemo(() => {
+    if (!codeGit) return null;
+    const count = codeGit.modified.length + codeGit.untracked.length;
+    return { branch: codeGit.branch, dirty: count > 0, count };
+  }, [codeGit]);
 
-  const handleToggleRole = useCallback((roleId: string, active: boolean) => {
-    setActiveRoles(prev => {
-      const next = new Set(prev);
-      if (active) next.add(roleId);
-      else next.delete(roleId);
-      return next;
-    });
+  const fetchCodeGit = useCallback(() => {
+    api.getSaveStatus('code').then(r => {
+      setCodeGit({
+        dirty: r.modified.length + r.untracked.length > 0,
+        modified: r.modified,
+        untracked: r.untracked,
+        lastCommit: r.lastCommit,
+        branch: r.branch,
+      });
+    }).catch(() => {});
   }, []);
 
-  const activeCLevelCount = cLevelRoles.filter(r => activeRoles.has(r.id)).length;
+  useEffect(() => { fetchCodeGit(); }, [fetchCodeGit]);
 
-  const handleSubmit = () => {
-    if (!directive.trim() || activeCLevelCount === 0) return;
-    const root = orgNodes[rootRoleId];
-    let totalCount = 0;
-    if (root) {
-      for (const cId of root.children) {
-        totalCount++;
-        const cNode = orgNodes[cId];
-        if (cNode) totalCount += cNode.children.length;
-      }
+  // Commit state
+  const [commitMsg, setCommitMsg] = useState('');
+  const [committing, setCommitting] = useState(false);
+  const [commitResult, setCommitResult] = useState<{ ok: boolean; sha?: string; error?: string } | null>(null);
+  const [showChanges, setShowChanges] = useState(false);
+
+  // Timer for active wave
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!currentActiveWave) return;
+    const timer = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - currentActiveWave.startedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [currentActiveWave]);
+
+  // Reply state
+  const [replyText, setReplyText] = useState('');
+  const [replying, setReplying] = useState(false);
+
+  // History sidebar resize
+  const [sidebarW, setSidebarW] = useState(320);
+  const sidebarResizing = useRef(false);
+  const sidebarStartX = useRef(0);
+  const sidebarStartW = useRef(0);
+  const handleSidebarResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    sidebarResizing.current = true;
+    sidebarStartX.current = e.clientX;
+    sidebarStartW.current = sidebarW;
+    const onMove = (ev: MouseEvent) => {
+      if (!sidebarResizing.current) return;
+      const delta = sidebarStartX.current - ev.clientX; // dragging left = wider
+      setSidebarW(Math.max(200, Math.min(500, sidebarStartW.current + delta)));
+    };
+    const onUp = () => {
+      sidebarResizing.current = false;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [sidebarW]);
+  const [collapsedThinking, setCollapsedThinking] = useState<Set<number>>(new Set());
+  const outputRef = useRef<HTMLDivElement>(null);
+
+  // Smart auto-scroll
+  const userScrolledUp = useRef(false);
+  useEffect(() => {
+    const el = outputRef.current;
+    if (!el) return;
+    const handleScroll = () => {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+      userScrolledUp.current = !atBottom;
+    };
+    el.addEventListener('scroll', handleScroll);
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  useEffect(() => {
+    if (!userScrolledUp.current && outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
     }
-    const allSelected = activeRoles.size >= totalCount;
-    const targetRoles = allSelected ? undefined : Array.from(activeRoles);
-    onDispatch(directive.trim(), targetRoles);
+  }, [waveTree.nodes, waveTree.selectedRoleId]);
+
+  // Derived state
+  const selectedNode = waveTree.selectedRoleId ? waveTree.nodes.get(waveTree.selectedRoleId) ?? null : null;
+  const selectedColor = selectedNode ? (ROLE_COLORS[selectedNode.roleId] ?? '#888') : '#888';
+  const hasRunning = waveTree.progress.running > 0 || waveTree.progress.awaitingInput > 0;
+  const isCeoSelected = waveTree.selectedRoleId === rootRoleId;
+  const isReplay = !!replayData && !currentActiveWave;
+  const currentDirective = currentActiveWave?.directive ?? replayData?.directive ?? '';
+
+  // Get subtree of a node from orgNodes (stable — org structure doesn't change)
+  const getSubtree = useCallback((roleId: string): Set<string> => {
+    const result = new Set<string>();
+    const queue = [roleId];
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      if (result.has(id)) continue;
+      result.add(id);
+      const org = orgNodes[id];
+      if (org) queue.push(...org.children);
+    }
+    return result;
+  }, [orgNodes]);
+
+  // Eligible roles for checkboxes (subtree of selected node, excluding CEO)
+  const eligibleRoles = useMemo(() => {
+    if (!waveTree.selectedRoleId) return new Set<string>();
+    const subtree = getSubtree(waveTree.selectedRoleId);
+    subtree.delete(rootRoleId);
+    return subtree;
+  }, [waveTree.selectedRoleId, getSubtree, rootRoleId]);
+
+  // When selected node changes, update checked roles to match subtree
+  const prevSelectedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (waveTree.selectedRoleId === prevSelectedRef.current) return;
+    prevSelectedRef.current = waveTree.selectedRoleId;
+    if (!waveTree.selectedRoleId) return;
+
+    const subtree = getSubtree(waveTree.selectedRoleId);
+    subtree.delete(rootRoleId);
+    waveTree.setCheckedRoles(subtree);
+  }, [waveTree.selectedRoleId, getSubtree, rootRoleId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Count dispatch targets in checked set
+  const checkedTargetCount = waveTree.checkedRoles.size;
+
+  // ── Handlers ──
+
+  const handleDispatch = () => {
+    if (!directive.trim() || checkedTargetCount === 0) return;
+    const allNonCeo = Array.from(waveTree.nodes.keys()).filter(id => id !== rootRoleId);
+    const allChecked = allNonCeo.every(id => waveTree.checkedRoles.has(id));
+    onDispatch(directive.trim(), allChecked ? undefined : Array.from(waveTree.checkedRoles));
     setDirective('');
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      handleSubmit();
+      e.preventDefault();
+      handleDispatch();
     }
-    if (e.key === 'Escape' && viewMode === 'dispatch') {
+    if (e.key === 'Escape') {
       onClose();
     }
   };
+
+  const handleReply = useCallback(async () => {
+    if (!waveTree.selectedRoleId || !replyText.trim()) return;
+    const node = waveTree.nodes.get(waveTree.selectedRoleId);
+    if (!node) return;
+
+    setReplying(true);
+    try {
+      if (node.status === 'awaiting_input' && node.sessionId) {
+        // Reply to active awaiting_input session
+        const resp = await api.replyToSession(node.sessionId, replyText.trim());
+        setReplyText('');
+        // Use the returned sessionId (may be a new continuation session)
+        waveTree.connectStream(resp.sessionId || node.sessionId, waveTree.selectedRoleId);
+      } else {
+        // Start new job (follow-up for done, replay, or not-dispatched)
+        const resp = await api.startJob({ type: 'assign', roleId: waveTree.selectedRoleId, task: replyText.trim() });
+        setReplyText('');
+        if (resp.sessionId) {
+          waveTree.connectStream(resp.sessionId, waveTree.selectedRoleId);
+        }
+      }
+    } catch (err) {
+      console.error('Reply failed:', err);
+    } finally {
+      setReplying(false);
+    }
+  }, [waveTree, replyText]);
+
+  const handleForceStop = useCallback(async (roleId: string) => {
+    const node = waveTree.nodes.get(roleId);
+    if (!node?.sessionId) return;
+    try { await api.abortSession(node.sessionId); } catch { /* ignore */ }
+  }, [waveTree.nodes]);
+
+  const handleStopAll = useCallback(async () => {
+    for (const [, node] of waveTree.nodes) {
+      if ((node.status === 'running' || node.status === 'awaiting_input') && node.sessionId) {
+        try { await api.abortSession(node.sessionId); } catch { /* ignore */ }
+      }
+    }
+  }, [waveTree.nodes]);
 
   const handleLoadPastWave = useCallback(async (waveId: string) => {
     setReplayLoading(true);
     setReplayData(null);
     setSelectedWaveIdx(-1);
-    setViewMode('monitor');
     try {
       const detail = await api.getWaveDetail(waveId);
       if (detail.replay) {
@@ -162,141 +307,492 @@ export default function WaveCenter({
     }
   }, []);
 
-  const currentActiveWave = selectedWaveIdx >= 0 ? (activeWaves[selectedWaveIdx] ?? null) : null;
-  const hasOrgData = !!rootRoleId && Object.keys(orgNodes).length > 0;
+  const handleCommit = useCallback(async () => {
+    if (!commitMsg.trim() || committing) return;
+    setCommitting(true);
+    setCommitResult(null);
+    try {
+      const result = await api.save(commitMsg.trim(), 'code');
+      setCommitResult({ ok: true, sha: result.commitSha });
+      const waveId = currentActiveWave?.id ?? replayData?.id;
+      if (result.commitSha && waveId) {
+        api.patchWave(waveId, { commitSha: result.commitSha, commitMessage: commitMsg.trim() }).then(() => {
+          onRefreshWaves?.();
+        }).catch(() => {});
+      }
+      fetchCodeGit();
+    } catch (err) {
+      setCommitResult({ ok: false, error: err instanceof Error ? err.message : 'Commit failed' });
+    } finally {
+      setCommitting(false);
+    }
+  }, [commitMsg, committing, currentActiveWave, replayData, fetchCodeGit, onRefreshWaves]);
 
-  return (
+  // Default commit message
+  useEffect(() => {
+    const dir = currentDirective;
+    if (dir && !commitMsg) {
+      const short = dir.slice(0, 60).replace(/\n/g, ' ');
+      setCommitMsg(`wave: ${short}`);
+    }
+  }, [currentDirective, commitMsg]);
+
+  // Notify when done
+  const doneFired = useRef(false);
+  useEffect(() => {
+    if (waveTree.allDone && !doneFired.current && currentActiveWave) {
+      doneFired.current = true;
+      fetchCodeGit();
+      onDone?.();
+    }
+  }, [waveTree.allDone, currentActiveWave, onDone, fetchCodeGit]);
+
+  const handleSave = useCallback(async () => {
+    if (!onSave || !currentActiveWave) return;
+    const jobIds = currentActiveWave.rootJobs.map(r => r.jobId).filter((id): id is string => !!id);
+    await onSave(currentActiveWave.directive, jobIds, { waveId: currentActiveWave.id, sessionIds: currentActiveWave.sessionIds });
+  }, [onSave, currentActiveWave]);
+
+  const toggleThinking = (seq: number) => {
+    setCollapsedThinking(prev => {
+      const next = new Set(prev);
+      if (next.has(seq)) next.delete(seq);
+      else next.add(seq);
+      return next;
+    });
+  };
+
+  const fmtTime = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  };
+
+  // Panel resize — side panel style (only used in overlay mode)
+  const { panelRight, panelWidth, isResizing, handleResizeStart } = usePanelResize(terminalWidth, 700, onMaximize);
+
+  /* ─── Inner content (shared by inline & overlay) ─── */
+  const innerContent = (
     <>
-      {/* Dimmer */}
-      <div className="dimmer fixed top-0 left-0 bottom-0 bg-black/30 z-40 open" style={{ right: panelRight }} onClick={onClose} />
-
-      {/* Main Panel */}
-      <div
-        className={`side-panel open fixed top-0 h-full z-50 flex flex-col border-l-[3px] shadow-[-4px_0_20px_rgba(0,0,0,0.4)] ${isResizing ? 'resizing' : ''}`}
-        style={{ right: panelRight, width: panelWidth, background: 'var(--terminal-bg)', borderLeftColor: '#B71C1C' }}
-      >
-        {/* Resize handle */}
-        <div
-          className={`absolute top-0 -left-[5px] w-[10px] h-full cursor-col-resize z-[60] transition-colors ${isResizing ? 'bg-white/10' : 'hover:bg-white/5'}`}
-          onMouseDown={handleResizeStart}
-        />
-
-        {/* Header */}
-        <div className="px-5 py-3 text-white relative shrink-0" style={{ background: 'linear-gradient(135deg, #B71C1C, #D32F2F)' }}>
-          <div className="absolute top-3 right-3 flex items-center gap-1">
-            {onMaximize && (
-              <button onClick={onMaximize} className="w-7 h-7 rounded-full bg-white/20 text-white flex items-center justify-center text-sm hover:bg-white/30 cursor-pointer" title="Maximize (Pro View)">{'\u2922'}</button>
+      {/* Header */}
+      <div className="shrink-0 px-4 py-3" style={{ background: 'linear-gradient(180deg, #B71C1C 0%, #7f1d1d 100%)' }}>
+          <div className="flex items-center gap-3">
+            <span className="text-white font-bold text-lg tracking-wide" style={{ fontFamily: 'var(--pixel-font)' }}>
+              Wave Center
+            </span>
+            {hasRunning && (
+              <span className="text-white/60 text-xs">{waveTree.progress.running} running</span>
             )}
-            <button onClick={onClose} className="w-7 h-7 rounded-full bg-white/20 text-white flex items-center justify-center text-lg hover:bg-white/30 cursor-pointer">&times;</button>
+            <div className="ml-auto flex items-center gap-2">
+              {onMaximize && (
+                <button onClick={onMaximize} className="text-white/50 hover:text-white text-xs cursor-pointer">Maximize</button>
+              )}
+              <button onClick={onClose} className="text-white/50 hover:text-white text-xl leading-none cursor-pointer px-2">&#x2715;</button>
+            </div>
           </div>
-          <div className="text-lg font-bold">Wave Center</div>
-          <div className="text-xs opacity-70 mt-0.5">
-            {activeWaves.length > 0
+          <div className="text-white/60 text-xs mt-0.5">
+            {currentActiveWave
               ? `${activeWaves.length} active wave${activeWaves.length !== 1 ? 's' : ''}`
-              : 'Broadcast directives to your organization'}
+              : isReplay
+                ? 'Reviewing past wave'
+                : 'Broadcast directives to your organization'}
           </div>
         </div>
 
-        {/* Mode tabs */}
-        <div className="flex shrink-0" style={{ borderBottom: '1px solid var(--terminal-border)' }}>
-          <button
-            onClick={() => setViewMode('dispatch')}
-            className="px-4 py-2 text-xs font-semibold cursor-pointer transition-colors"
-            style={{
-              color: viewMode === 'dispatch' ? '#D32F2F' : 'var(--terminal-text-muted)',
-              borderBottom: viewMode === 'dispatch' ? '2px solid #D32F2F' : '2px solid transparent',
-            }}
-          >
-            New Wave
-          </button>
-          <button
-            onClick={() => setViewMode('monitor')}
-            className="px-4 py-2 text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1.5"
-            style={{
-              color: viewMode === 'monitor' ? '#D32F2F' : 'var(--terminal-text-muted)',
-              borderBottom: viewMode === 'monitor' ? '2px solid #D32F2F' : '2px solid transparent',
-            }}
-          >
-            Monitor
-            {activeWaves.length > 0 && (
-              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-            )}
-          </button>
-          <button
-            onClick={() => setViewMode('monitor')}
-            className="px-4 py-2 text-xs font-semibold cursor-pointer transition-colors ml-auto"
-            style={{
-              color: 'var(--terminal-text-muted)',
-            }}
-          >
-            History ({pastWaves.length})
-          </button>
-        </div>
-
-        {/* Content */}
+        {/* Main content */}
         <div className="flex-1 flex min-h-0">
-          {/* Left: Main content */}
+          {/* Left: Unified view */}
           <div className="flex-1 flex flex-col min-w-0 min-h-0">
-            {viewMode === 'dispatch' ? (
-              <DispatchView
-                orgNodes={orgNodes}
-                rootId={rootRoleId}
-                hasOrgData={hasOrgData}
-                cLevelRoles={cLevelRoles}
-                activeRoles={activeRoles}
-                onToggleRole={handleToggleRole}
-                directive={directive}
-                onDirectiveChange={setDirective}
-                onSubmit={handleSubmit}
-                onKeyDown={handleKeyDown}
-                activeCLevelCount={activeCLevelCount}
-                inputRef={inputRef}
-              />
-            ) : (
-              <>
-                {/* MonitorView: keep mounted while active wave exists to preserve SSE streams */}
-                {activeWaves.map((aw) => (
-                  <div
-                    key={aw.id}
-                    className="flex-1 flex flex-col min-h-0"
-                    style={{ display: currentActiveWave?.id === aw.id && !replayData ? 'flex' : 'none' }}
+
+            {/* Wave info bar (when active or replay) */}
+            {(currentActiveWave || isReplay) && (
+              <div className="px-4 py-2 border-b flex items-center gap-3 shrink-0" style={{ borderColor: 'var(--terminal-border)' }}>
+                <div
+                  className="w-3 h-3 rounded-full shrink-0"
+                  style={{
+                    background: hasRunning ? '#FBBF24' : waveTree.allDone || isReplay ? '#2E7D32' : '#B71C1C',
+                    animation: hasRunning ? 'wave-pulse 2s ease-in-out infinite' : undefined,
+                  }}
+                />
+                <span className="text-[var(--terminal-text-secondary)] text-xs italic flex-1 min-w-0 truncate">
+                  &ldquo;{currentDirective}&rdquo;
+                </span>
+                {currentActiveWave && (
+                  <span className="text-[var(--terminal-text-muted)] text-xs font-mono shrink-0">{fmtTime(elapsed)}</span>
+                )}
+                {isReplay && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0" style={{
+                    background: hasRunning ? '#FBBF2422' : '#2E7D3222',
+                    color: hasRunning ? '#FBBF24' : '#2E7D32',
+                  }}>
+                    {hasRunning ? 'LIVE' : 'REPLAY'}
+                  </span>
+                )}
+                {isReplay && replayData?.startedAt && (
+                  <span className="text-[var(--terminal-text-muted)] text-[10px] shrink-0">
+                    {new Date(replayData.startedAt).toLocaleString()}
+                  </span>
+                )}
+                {waveTree.progress.awaitingInput > 0 && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0" style={{ background: '#F59E0B22', color: '#F59E0B' }}>
+                    {waveTree.progress.awaitingInput} awaiting
+                  </span>
+                )}
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0" style={{
+                  background: waveTree.allDone || (isReplay && !hasRunning) ? '#2E7D3222' : '#B71C1C22',
+                  color: waveTree.allDone || (isReplay && !hasRunning) ? '#2E7D32' : '#B71C1C',
+                }}>
+                  {waveTree.progress.done}/{waveTree.progress.total}
+                </span>
+                {hasRunning && (
+                  <button
+                    onClick={handleStopAll}
+                    className="text-[10px] px-2 py-0.5 rounded font-semibold cursor-pointer shrink-0"
+                    style={{ background: '#C6282822', color: '#C62828', border: '1px solid #C6282844' }}
                   >
-                    <MonitorView
-                      wave={aw}
-                      orgNodes={orgNodes}
-                      rootRoleId={rootRoleId}
-                      onDone={onDone}
-                      onSave={onSave}
-                      onOpenKnowledgeDoc={onOpenKnowledgeDoc}
+                    Stop All
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Org Tree with checkboxes */}
+            <div className="shrink-0 border-b flex flex-col" style={{ borderColor: 'var(--terminal-border)' }}>
+              <div className="flex items-center gap-3 px-4 py-1.5">
+                <span className="text-[10px] font-bold text-[var(--terminal-text-secondary)] uppercase tracking-wider">
+                  {currentActiveWave || isReplay ? 'Org Propagation' : 'Select Target Roles'}
+                </span>
+                <span className="ml-auto text-[10px] text-[var(--terminal-text-muted)]">
+                  {waveTree.checkedRoles.size}/{waveTree.progress.total} selected
+                </span>
+                {(currentActiveWave || isReplay) && (
+                  <div className="flex gap-x-3">
+                    {[
+                      { label: 'running', color: '#FBBF24', dot: true },
+                      { label: 'awaiting', color: '#F59E0B', dot: true },
+                      { label: 'done', color: '#2E7D32', dot: false },
+                      { label: 'waiting', color: '#888', dot: false },
+                      { label: 'error', color: '#C62828', dot: false },
+                    ].map((item) => (
+                      <div key={item.label} className="flex items-center gap-1">
+                        <span
+                          className="w-2 h-2 rounded-full inline-block"
+                          style={{
+                            background: item.color,
+                            animation: item.dot ? 'wave-pulse 1.5s ease-in-out infinite' : undefined,
+                          }}
+                        />
+                        <span className="text-[8px] text-[var(--terminal-text-muted)]">{item.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="overflow-x-auto overflow-y-auto px-3 pb-2" style={{ maxHeight: '30vh' }}>
+                <OrgTreeLive
+                  nodes={waveTree.nodes}
+                  rootId={rootRoleId}
+                  selectedRoleId={waveTree.selectedRoleId}
+                  onSelectNode={waveTree.selectNode}
+                  checkedRoles={waveTree.checkedRoles}
+                  onToggleCheck={waveTree.toggleCheck}
+                  eligibleRoles={eligibleRoles}
+                />
+              </div>
+            </div>
+
+            {/* Activity Feed */}
+            {replayLoading ? (
+              <div className="flex-1 flex items-center justify-center text-[var(--terminal-text-muted)] text-sm">
+                Loading wave data...
+              </div>
+            ) : isCeoSelected ? (
+              /* ─── CEO selected: Directive UI ─── */
+              <div className="flex-1 flex flex-col min-w-0 min-h-0">
+                {/* CEO header */}
+                <div className="px-4 py-2 border-b shrink-0 flex items-center gap-2" style={{ borderColor: 'var(--terminal-border)' }}>
+                  <div className="w-2 h-2 rounded-full" style={{ background: '#B71C1C' }} />
+                  <span className="text-[var(--terminal-text)] font-bold text-xs">CEO</span>
+                  <span className="text-[var(--terminal-text-muted)] text-xs">Directive Control</span>
+                  <span className="ml-auto text-[10px] text-[var(--terminal-text-muted)]">
+                    {checkedTargetCount} target role{checkedTargetCount !== 1 ? 's' : ''} selected
+                  </span>
+                </div>
+
+                {/* Past directives log */}
+                <div ref={outputRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2 text-xs font-mono select-text">
+                  {currentDirective && (
+                    <div className="flex items-start gap-2 pb-3 border-b" style={{ borderColor: 'var(--terminal-border)' }}>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0" style={{ background: '#B71C1C33', color: '#EF5350' }}>CEO</span>
+                      <div>
+                        <span className="text-[var(--terminal-text-secondary)] whitespace-pre-wrap">{currentDirective}</span>
+                        {currentActiveWave && (
+                          <div className="text-[9px] text-[var(--terminal-text-muted)] mt-1">
+                            dispatched {fmtTime(elapsed)} ago to {currentActiveWave.rootJobs.length} role{currentActiveWave.rootJobs.length !== 1 ? 's' : ''}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {!currentDirective && !currentActiveWave && (
+                    <div className="text-[var(--terminal-text-muted)] text-center py-8">
+                      Select target roles using checkboxes, then dispatch a directive below.
+                    </div>
+                  )}
+                </div>
+
+                {/* Directive input */}
+                <div className="px-4 py-3 border-t shrink-0" style={{ borderColor: 'var(--terminal-border)', background: 'var(--hud-bg-alt)' }}>
+                  <div className="flex gap-2 items-end">
+                    <textarea
+                      ref={inputRef}
+                      value={directive}
+                      onChange={(e) => setDirective(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      placeholder="e.g. Report current status across all departments"
+                      rows={2}
+                      className="flex-1 px-3 py-2 text-sm rounded-lg border bg-[var(--terminal-bg)] text-[var(--terminal-text)] outline-none resize-none"
+                      style={{ borderColor: 'var(--terminal-border)' }}
                     />
-                  </div>
-                ))}
-                {replayData ? (
-                  <ReplayView replay={replayData} orgNodes={orgNodes} rootRoleId={rootRoleId} onOpenKnowledgeDoc={onOpenKnowledgeDoc} onRefreshWaves={onRefreshWaves} />
-                ) : replayLoading ? (
-                  <div className="flex-1 flex items-center justify-center text-[var(--terminal-text-muted)] text-sm">
-                    Loading wave data...
-                  </div>
-                ) : !currentActiveWave ? (
-                  <div className="flex-1 flex flex-col items-center justify-center text-[var(--terminal-text-muted)] gap-3 p-8">
-                    <span className="text-3xl">{'🌊'}</span>
-                    <div className="text-sm">No active waves</div>
-                    <div className="text-[10px]">Select a past wave from the list, or start a new one</div>
                     <button
-                      onClick={() => setViewMode('dispatch')}
-                      className="px-4 py-2 text-xs font-semibold rounded-lg cursor-pointer"
-                      style={{ background: '#B71C1C', color: '#fff' }}
+                      onClick={handleDispatch}
+                      disabled={!directive.trim() || checkedTargetCount === 0}
+                      className="px-4 py-2 text-xs font-bold rounded-lg cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+                      style={{
+                        background: directive.trim() && checkedTargetCount > 0 ? '#B71C1C' : '#333',
+                        color: '#fff',
+                        minWidth: 140,
+                      }}
                     >
-                      Start New Wave
+                      Dispatch to {checkedTargetCount} Role{checkedTargetCount !== 1 ? 's' : ''}
                     </button>
                   </div>
-                ) : null}
-              </>
+                  <div className="text-[9px] text-[var(--terminal-text-muted)] mt-1">
+                    Cmd+Enter to dispatch
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* ─── Non-CEO selected: Activity Feed ─── */
+              <div className="flex-1 flex flex-col min-w-0 min-h-0">
+                {/* Selected role header */}
+                {selectedNode && (
+                  <div className="px-4 py-2 border-b shrink-0 flex items-center gap-2" style={{ borderColor: 'var(--terminal-border)' }}>
+                    <div className="w-2 h-2 rounded-full" style={{ background: selectedColor }} />
+                    <span className="text-[var(--terminal-text)] font-bold text-xs">
+                      {selectedNode.roleId.toUpperCase()}
+                    </span>
+                    <span className="text-[var(--terminal-text-muted)] text-xs">
+                      {selectedNode.roleName}
+                    </span>
+                    <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{
+                      background: selectedNode.status === 'awaiting_input' ? '#F59E0B22'
+                        : selectedNode.status === 'running' ? '#FBBF2422'
+                        : `${selectedColor}22`,
+                      color: selectedNode.status === 'awaiting_input' ? '#F59E0B'
+                        : selectedNode.status === 'running' ? '#FBBF24'
+                        : selectedColor,
+                    }}>
+                      {selectedNode.status === 'running' ? 'Working...' :
+                       selectedNode.status === 'done' ? 'Complete' :
+                       selectedNode.status === 'error' ? 'Error' :
+                       selectedNode.status === 'waiting' ? 'Waiting' :
+                       selectedNode.status === 'awaiting_input' ? 'Awaiting Reply' :
+                       'Not dispatched'}
+                    </span>
+                    <span className="text-[10px] text-[var(--terminal-text-muted)]">{selectedNode.events.length} events</span>
+                    {(selectedNode.status === 'running' || selectedNode.status === 'awaiting_input') && selectedNode.sessionId && (
+                      <button
+                        onClick={() => handleForceStop(selectedNode.roleId)}
+                        className="text-[10px] px-2 py-0.5 rounded font-semibold cursor-pointer ml-1"
+                        style={{ background: '#C6282822', color: '#C62828', border: '1px solid #C6282844' }}
+                      >
+                        Stop
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Events */}
+                <div ref={outputRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-1 text-xs font-mono select-text">
+                  {/* CEO directive message */}
+                  {selectedNode && currentDirective && selectedNode.status !== 'waiting' && selectedNode.status !== 'not-dispatched' && (
+                    <div className="flex items-start gap-2 mb-3 pb-2 border-b" style={{ borderColor: 'var(--terminal-border)' }}>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0" style={{ background: '#B71C1C33', color: '#EF5350' }}>CEO</span>
+                      <span className="text-[var(--terminal-text-secondary)] whitespace-pre-wrap">{currentDirective}</span>
+                    </div>
+                  )}
+                  {selectedNode && selectedNode.events.length === 0 && (
+                    <div className="text-[var(--terminal-text-muted)]">
+                      {selectedNode.status === 'waiting' ? 'Waiting for dispatch...' :
+                       selectedNode.status === 'running' ? 'Connecting to activity stream...' :
+                       selectedNode.status === 'not-dispatched' ? 'This role was not dispatched. Send a follow-up to activate.' : ''}
+                    </div>
+                  )}
+                  {selectedNode?.events.map((event) => (
+                    <EventRow
+                      key={event.seq}
+                      event={event}
+                      isThinkingCollapsed={collapsedThinking.has(event.seq)}
+                      onToggleThinking={() => toggleThinking(event.seq)}
+                      onNavigateToJob={(childJobId) => {
+                        for (const [, node] of waveTree.nodes) {
+                          if (node.events.some(e => e.data.childJobId === childJobId)) {
+                            waveTree.selectNode(node.roleId);
+                            return;
+                          }
+                        }
+                      }}
+                      onOpenKnowledgeDoc={onOpenKnowledgeDoc}
+                    />
+                  ))}
+                  {selectedNode?.status === 'running' && (
+                    <span className="inline-block w-2 h-4 bg-green-400 animate-pulse ml-0.5" />
+                  )}
+                  {!selectedNode && (
+                    <div className="flex-1 flex items-center justify-center text-[var(--terminal-text-muted)] text-xs h-full">
+                      Click a node in the org tree to view activity
+                    </div>
+                  )}
+                </div>
+
+                {/* Reply / Follow-up input for selected role */}
+                {selectedNode?.status === 'awaiting_input' && (
+                  <div className="px-4 py-3 border-t shrink-0" style={{ borderColor: 'var(--terminal-border)', background: '#F59E0B0A' }}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="w-2 h-2 rounded-full inline-block" style={{ background: '#F59E0B', animation: 'wave-pulse 1.5s ease-in-out infinite' }} />
+                      <span className="text-[11px] font-semibold" style={{ color: '#F59E0B' }}>
+                        {selectedNode.roleName} is waiting for your response
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={replyText}
+                        onChange={(e) => setReplyText(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleReply(); } }}
+                        placeholder="Type your response..."
+                        disabled={replying}
+                        className="flex-1 px-3 py-1.5 text-xs rounded border bg-[var(--terminal-bg)] text-[var(--terminal-text)] outline-none"
+                        style={{ borderColor: 'var(--terminal-border)' }}
+                        autoFocus
+                      />
+                      <button
+                        onClick={handleReply}
+                        disabled={replying || !replyText.trim()}
+                        className="px-4 py-1.5 text-xs rounded font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        style={{ background: '#F59E0B', color: '#000' }}
+                      >
+                        {replying ? '...' : 'Reply'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Follow-up for done/not-dispatched roles */}
+                {selectedNode && (selectedNode.status === 'done' || selectedNode.status === 'not-dispatched') && (
+                  <div className="px-4 py-3 border-t shrink-0" style={{ borderColor: 'var(--terminal-border)', background: '#1565C00A' }}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-[11px] font-semibold" style={{ color: '#64B5F6' }}>
+                        Follow-up to {selectedNode.roleName}
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={replyText}
+                        onChange={(e) => setReplyText(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleReply(); } }}
+                        placeholder="Send a follow-up directive..."
+                        disabled={replying}
+                        className="flex-1 px-3 py-1.5 text-xs rounded border bg-[var(--terminal-bg)] text-[var(--terminal-text)] outline-none"
+                        style={{ borderColor: 'var(--terminal-border)' }}
+                      />
+                      <button
+                        onClick={handleReply}
+                        disabled={replying || !replyText.trim()}
+                        className="px-4 py-1.5 text-xs rounded font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        style={{ background: '#1565C0', color: '#fff' }}
+                      >
+                        {replying ? '...' : 'Send'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Git commit bar (when all done or replay) */}
+                {(waveTree.allDone || (isReplay && !hasRunning)) && codeGitBrief?.dirty && (
+                  <div className="px-4 py-3 border-t shrink-0" style={{ borderColor: 'var(--terminal-border)', background: 'var(--hud-bg-alt)' }}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="w-2 h-2 rounded-full" style={{ background: 'var(--idle-amber)' }} />
+                      <span className="text-[11px] font-semibold text-[var(--terminal-text-secondary)]">
+                        {codeGitBrief.count} uncommitted changes on {codeGitBrief.branch}
+                      </span>
+                      <button
+                        onClick={() => setShowChanges(v => !v)}
+                        className="text-[9px] text-[var(--terminal-text-muted)] cursor-pointer ml-auto hover:text-[var(--terminal-text)]"
+                      >
+                        {showChanges ? 'hide' : `${codeGitBrief.count} changes`}
+                      </button>
+                    </div>
+                    {showChanges && codeGit && (
+                      <div className="mb-2 text-[10px] text-[var(--terminal-text-muted)] font-mono max-h-20 overflow-y-auto">
+                        {codeGit.modified.map(f => <div key={f}>M {f}</div>)}
+                        {codeGit.untracked.map(f => <div key={f}>? {f}</div>)}
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={commitMsg}
+                        onChange={(e) => setCommitMsg(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleCommit(); } }}
+                        placeholder="Commit message..."
+                        disabled={committing}
+                        className="flex-1 px-3 py-1.5 text-xs rounded border bg-[var(--terminal-bg)] text-[var(--terminal-text)] outline-none"
+                        style={{ borderColor: 'var(--terminal-border)' }}
+                      />
+                      <button
+                        onClick={handleCommit}
+                        disabled={committing || !commitMsg.trim()}
+                        className="px-4 py-1.5 text-xs rounded font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        style={{ background: '#2E7D32', color: '#fff' }}
+                      >
+                        {committing ? '...' : 'Commit'}
+                      </button>
+                    </div>
+                    {commitResult && (
+                      <div className={`text-[10px] mt-1 ${commitResult.ok ? 'text-green-400' : 'text-red-400'}`}>
+                        {commitResult.ok ? `Committed ${commitResult.sha?.slice(0, 7)}` : commitResult.error}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Save wave button */}
+                {waveTree.allDone && currentActiveWave && onSave && (
+                  <div className="px-4 py-2 border-t shrink-0 flex justify-end" style={{ borderColor: 'var(--terminal-border)' }}>
+                    <button
+                      onClick={handleSave}
+                      className="px-4 py-1.5 text-xs rounded font-semibold cursor-pointer"
+                      style={{ background: '#1565C022', color: '#64B5F6', border: '1px solid #1565C044' }}
+                    >
+                      Save Wave
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
-          {/* Right: Wave list sidebar */}
-          <div className="w-[220px] shrink-0 border-l flex flex-col" style={{ borderColor: 'var(--terminal-border)', background: 'var(--hud-bg-alt)' }}>
+          {/* Right: History sidebar (resizable) */}
+          <div className="shrink-0 border-l flex flex-col relative" style={{ width: sidebarW, borderColor: 'var(--terminal-border)', background: 'var(--hud-bg-alt)' }}>
+            {/* Resize handle */}
+            <div
+              className="absolute top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-[var(--accent)] z-10"
+              style={{ left: -2 }}
+              onMouseDown={handleSidebarResizeStart}
+            />
             {/* Active waves */}
             {activeWaves.length > 0 && (
               <div className="p-3">
@@ -307,11 +803,11 @@ export default function WaveCenter({
                   {activeWaves.map((w, i) => (
                     <button
                       key={w.id}
-                      onClick={() => { setViewMode('monitor'); setSelectedWaveIdx(i); setReplayData(null); }}
+                      onClick={() => { setSelectedWaveIdx(i); setReplayData(null); }}
                       className="text-left p-2 rounded-lg cursor-pointer transition-colors"
                       style={{
-                        background: viewMode === 'monitor' && selectedWaveIdx === i ? 'var(--terminal-bg)' : 'transparent',
-                        border: viewMode === 'monitor' && selectedWaveIdx === i ? '1px solid var(--accent)' : '1px solid transparent',
+                        background: selectedWaveIdx === i && !replayData ? 'var(--terminal-bg)' : 'transparent',
+                        border: selectedWaveIdx === i && !replayData ? '1px solid var(--accent)' : '1px solid transparent',
                       }}
                     >
                       <div className="flex items-center gap-1.5">
@@ -370,571 +866,48 @@ export default function WaveCenter({
             </div>
           </div>
         </div>
+      </>
+  );
+
+  /* ─── Inline mode (Pro view): render content directly ─── */
+  if (inline) {
+    return (
+      <div className="flex flex-col h-full w-full" style={{ background: 'var(--terminal-bg)' }}>
+        {innerContent}
+      </div>
+    );
+  }
+
+  /* ─── Overlay mode (normal view): side panel with dimmer ─── */
+  return (
+    <>
+      <div
+        className="dimmer fixed top-0 left-0 bottom-0 bg-black/30 z-40 open"
+        style={{ right: panelRight }}
+        onClick={onClose}
+      />
+      <div
+        className="fixed top-0 bottom-0 z-50 flex flex-col"
+        style={{
+          right: panelRight,
+          width: panelWidth,
+          background: 'var(--terminal-bg)',
+          borderLeft: '1px solid var(--terminal-border)',
+          transition: isResizing ? 'none' : 'width 0.2s ease',
+        }}
+      >
+        <div
+          className="absolute top-0 bottom-0 w-1 cursor-col-resize hover:bg-[var(--accent)] z-50"
+          style={{ left: 0 }}
+          onMouseDown={handleResizeStart}
+        />
+        {innerContent}
       </div>
     </>
   );
 }
 
-/* ─── Dispatch View ─── */
-
-function DispatchView({
-  orgNodes, rootId, hasOrgData, cLevelRoles, activeRoles, onToggleRole,
-  directive, onDirectiveChange, onSubmit, onKeyDown, activeCLevelCount,
-  inputRef,
-}: {
-  orgNodes: Record<string, OrgNode>;
-  rootId: string;
-  hasOrgData: boolean;
-  cLevelRoles: { id: string; name: string }[];
-  activeRoles: Set<string>;
-  onToggleRole: (roleId: string, active: boolean) => void;
-  directive: string;
-  onDirectiveChange: (v: string) => void;
-  onSubmit: () => void;
-  onKeyDown: (e: React.KeyboardEvent) => void;
-  activeCLevelCount: number;
-  inputRef: React.RefObject<HTMLTextAreaElement | null>;
-}) {
-  return (
-    <div className="flex-1 overflow-y-auto p-5 space-y-4">
-      {/* Interactive Org Chart */}
-      {hasOrgData && (
-        <OrgTreePreview
-          orgNodes={orgNodes}
-          rootId={rootId}
-          activeRoles={activeRoles}
-          onToggleRole={onToggleRole}
-        />
-      )}
-
-      {/* Fallback role chips */}
-      {!hasOrgData && (
-        <div>
-          <label className="block text-[11px] font-bold text-[var(--terminal-text-secondary)] uppercase tracking-wider mb-2">
-            Dispatching to
-          </label>
-          <div className="flex gap-2 flex-wrap">
-            {cLevelRoles.length > 0 ? cLevelRoles.map((r) => (
-              <span
-                key={r.id}
-                className="px-3 py-1.5 text-xs font-semibold rounded-lg"
-                style={{ background: '#B71C1C22', color: '#E57373', border: '1px solid #B71C1C44' }}
-              >
-                {r.id.toUpperCase()} &middot; {r.name}
-              </span>
-            )) : (
-              <span className="text-xs text-[var(--terminal-text-muted)] italic">No C-Level roles found</span>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Directive input */}
-      <div>
-        <label className="block text-[11px] font-bold text-[var(--terminal-text-secondary)] uppercase tracking-wider mb-2">
-          Directive
-        </label>
-        <textarea
-          ref={inputRef}
-          value={directive}
-          onChange={(e) => onDirectiveChange(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder="e.g. Report current status across all departments"
-          className="w-full h-28 p-3 rounded-lg border text-sm resize-none focus:outline-none transition-colors"
-          style={{
-            background: 'var(--hud-bg-alt)',
-            border: '1px solid var(--terminal-border)',
-            color: 'var(--terminal-text)',
-          }}
-        />
-        <div className="flex items-center justify-between mt-2">
-          <span className="text-[10px] text-[var(--terminal-text-muted)]">Cmd+Enter to dispatch</span>
-          <button
-            onClick={onSubmit}
-            disabled={!directive.trim() || activeCLevelCount === 0}
-            className="px-5 py-2 text-sm text-white rounded-lg font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{ background: '#B71C1C' }}
-          >
-            Dispatch to {activeCLevelCount} Role{activeCLevelCount !== 1 ? 's' : ''}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ─── Monitor View ─── */
-
-function MonitorView({
-  wave, orgNodes, rootRoleId, onDone, onSave, onOpenKnowledgeDoc,
-}: {
-  wave: ActiveWave;
-  orgNodes: Record<string, OrgNode>;
-  rootRoleId: string;
-  onDone?: () => void;
-  onSave?: (directive: string, jobIds: string[], extra?: { waveId?: string; sessionIds?: string[] }) => Promise<void>;
-  onOpenKnowledgeDoc?: (docId: string) => void;
-}) {
-  const { nodes, selectedRoleId, selectNode, progress, allDone, connectStream } = useWaveTree(wave.rootJobs, orgNodes, rootRoleId);
-  const [elapsed, setElapsed] = useState(0);
-  const [collapsedThinking, setCollapsedThinking] = useState<Set<number>>(new Set());
-  const [replyText, setReplyText] = useState('');
-  const [replying, setReplying] = useState(false);
-  const [codeGit, setCodeGit] = useState<GitInfo | null>(null);
-  const [commitMsg, setCommitMsg] = useState('');
-  const [committing, setCommitting] = useState(false);
-  const [commitResult, setCommitResult] = useState<{ ok: boolean; sha?: string; error?: string } | null>(null);
-  const [showChanges, setShowChanges] = useState(false);
-  const savedWaveId = useRef<string | null>(null);
-  const outputRef = useRef<HTMLDivElement>(null);
-  const doneFired = useRef(false);
-
-  const handleReply = useCallback(async () => {
-    if (!selectedRoleId || !replyText.trim()) return;
-    const node = nodes.get(selectedRoleId);
-    if (!node?.sessionId || (node.status !== 'awaiting_input' && node.status !== 'done')) return;
-
-    setReplying(true);
-    try {
-      await api.replyToSession(node.sessionId, replyText.trim());
-      setReplyText('');
-      connectStream(node.sessionId, selectedRoleId);
-    } catch (err) {
-      console.error('Reply failed:', err);
-    } finally {
-      setReplying(false);
-    }
-  }, [selectedRoleId, replyText, nodes, connectStream]);
-
-  const handleForceStop = useCallback(async (roleId: string) => {
-    const node = nodes.get(roleId);
-    if (!node?.sessionId) return;
-    try {
-      await api.abortSession(node.sessionId);
-    } catch { /* ignore */ }
-  }, [nodes]);
-
-  const handleStopAll = useCallback(async () => {
-    for (const [, node] of nodes) {
-      if ((node.status === 'running' || node.status === 'awaiting_input') && node.sessionId) {
-        try {
-          await api.abortSession(node.sessionId);
-        } catch { /* ignore */ }
-      }
-    }
-  }, [nodes]);
-
-  // Timer
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - wave.startedAt) / 1000));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [wave.startedAt]);
-
-  // Smart auto-scroll
-  const userScrolledUp = useRef(false);
-  useEffect(() => {
-    const el = outputRef.current;
-    if (!el) return;
-    const handleScroll = () => {
-      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
-      userScrolledUp.current = !atBottom;
-    };
-    el.addEventListener('scroll', handleScroll);
-    return () => el.removeEventListener('scroll', handleScroll);
-  }, []);
-
-  useEffect(() => {
-    userScrolledUp.current = false;
-    if (outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight;
-  }, [selectedRoleId]);
-
-  useEffect(() => {
-    if (outputRef.current && !userScrolledUp.current) {
-      outputRef.current.scrollTop = outputRef.current.scrollHeight;
-    }
-  }, [nodes]);
-
-  // Fetch CODE repo git status
-  const fetchCodeGit = useCallback(() => {
-    api.getSaveStatus('code').then(s => {
-      setCodeGit(s);
-      if (!commitMsg) {
-        const short = wave.directive.slice(0, 60).replace(/\n/g, ' ');
-        setCommitMsg(`wave: ${short}`);
-      }
-    }).catch(() => {});
-  }, [wave.directive, commitMsg]);
-
-  // Commit changes inline
-  const handleCommit = useCallback(async () => {
-    if (!commitMsg.trim()) return;
-    setCommitting(true);
-    setCommitResult(null);
-    try {
-      const result = await api.save(commitMsg.trim(), 'code');
-      setCommitResult({ ok: true, sha: result.commitSha });
-      // Attach commit info to the saved wave
-      if (savedWaveId.current && result.commitSha) {
-        api.patchWave(savedWaveId.current, { commitSha: result.commitSha, commitMessage: commitMsg.trim() }).catch(() => {});
-      }
-      fetchCodeGit(); // refresh status
-    } catch (err) {
-      setCommitResult({ ok: false, error: err instanceof Error ? err.message : 'Commit failed' });
-    } finally {
-      setCommitting(false);
-    }
-  }, [commitMsg, fetchCodeGit]);
-
-  // Fire onDone + auto-save + fetch git status
-  useEffect(() => {
-    if (allDone && !doneFired.current) {
-      doneFired.current = true;
-      onDone?.();
-      // Auto-save wave on completion
-      if (onSave) {
-        const jobIds = wave.rootJobs.map(j => j.jobId).filter((id): id is string => !!id);
-        onSave(wave.directive, jobIds, { waveId: wave.id, sessionIds: wave.sessionIds }).then(() => {
-          // Try to find the saved wave ID from the most recent wave list
-          api.getWaves().then(waves => {
-            if (waves.length > 0) savedWaveId.current = waves[0].id;
-          }).catch(() => {});
-        }).catch(() => {});
-      }
-      // Fetch CODE git status
-      fetchCodeGit();
-    }
-    if (!allDone && doneFired.current) {
-      doneFired.current = false;
-    }
-  }, [allDone, onDone, onSave, wave, fetchCodeGit]);
-
-  const fmtTime = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-
-  const selectedNode = selectedRoleId ? nodes.get(selectedRoleId) : null;
-  const selectedColor = selectedRoleId ? (ROLE_COLORS[selectedRoleId] ?? '#888') : '#888';
-
-  const toggleThinking = (seq: number) => {
-    setCollapsedThinking((prev) => {
-      const next = new Set(prev);
-      if (next.has(seq)) next.delete(seq);
-      else next.add(seq);
-      return next;
-    });
-  };
-
-  return (
-    <div className="flex flex-col flex-1 min-h-0">
-      {/* Wave info bar */}
-      <div className="px-4 py-2 border-b flex items-center gap-3 shrink-0" style={{ borderColor: 'var(--terminal-border)' }}>
-        <div
-          className="w-3 h-3 rounded-full shrink-0"
-          style={{
-            background: allDone ? '#2E7D32' : '#B71C1C',
-            animation: allDone ? undefined : 'wave-pulse 2s ease-in-out infinite',
-          }}
-        />
-        <span className="text-[var(--terminal-text-secondary)] text-xs italic flex-1 min-w-0 truncate">
-          &ldquo;{wave.directive}&rdquo;
-        </span>
-        <span className="text-[var(--terminal-text-muted)] text-xs font-mono shrink-0">{fmtTime(elapsed)}</span>
-        {progress.awaitingInput > 0 && (
-          <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0" style={{ background: '#F59E0B22', color: '#F59E0B' }}>
-            {progress.awaitingInput} awaiting
-          </span>
-        )}
-        <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0" style={{
-          background: allDone ? '#2E7D3222' : '#B71C1C22',
-          color: allDone ? '#2E7D32' : '#B71C1C',
-        }}>
-          {progress.done}/{progress.total}
-        </span>
-        {!allDone && (progress.running > 0 || progress.awaitingInput > 0) && (
-          <button
-            onClick={handleStopAll}
-            className="text-[10px] px-2 py-0.5 rounded font-semibold cursor-pointer shrink-0"
-            style={{ background: '#C6282822', color: '#C62828', border: '1px solid #C6282844' }}
-          >
-            Stop All
-          </button>
-        )}
-      </div>
-
-      {/* Org Tree */}
-      <div className="shrink-0 border-b flex flex-col" style={{ borderColor: 'var(--terminal-border)' }}>
-        <div className="flex items-center gap-3 px-4 py-1.5">
-          <span className="text-[10px] font-bold text-[var(--terminal-text-secondary)] uppercase tracking-wider">
-            Org Propagation
-          </span>
-          <div className="flex gap-x-3 ml-auto">
-            {[
-              { label: 'running', color: '#FBBF24', dot: true },
-              { label: 'awaiting', color: '#F59E0B', dot: true },
-              { label: 'done', color: '#2E7D32', dot: false },
-              { label: 'waiting', color: '#888', dot: false },
-              { label: 'error', color: '#C62828', dot: false },
-            ].map((item) => (
-              <div key={item.label} className="flex items-center gap-1">
-                <span
-                  className="w-2 h-2 rounded-full inline-block"
-                  style={{
-                    background: item.color,
-                    animation: item.dot ? 'wave-pulse 1.5s ease-in-out infinite' : undefined,
-                  }}
-                />
-                <span className="text-[8px] text-[var(--terminal-text-muted)]">{item.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="overflow-x-auto overflow-y-auto px-3 pb-2" style={{ maxHeight: '30vh' }}>
-          <OrgTreeLive
-            nodes={nodes}
-            rootId={rootRoleId}
-            selectedRoleId={selectedRoleId}
-            onSelectNode={selectNode}
-          />
-        </div>
-      </div>
-
-      {/* Activity Feed */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-0">
-        {/* Selected role header */}
-        {selectedNode && (
-          <div className="px-4 py-2 border-b shrink-0 flex items-center gap-2" style={{ borderColor: 'var(--terminal-border)' }}>
-            <div className="w-2 h-2 rounded-full" style={{ background: selectedColor }} />
-            <span className="text-[var(--terminal-text)] font-bold text-xs">
-              {selectedNode.roleId.toUpperCase()}
-            </span>
-            <span className="text-[var(--terminal-text-muted)] text-xs">
-              {selectedNode.roleName}
-            </span>
-            <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{
-              background: selectedNode.status === 'awaiting_input' ? '#F59E0B22' : `${selectedColor}22`,
-              color: selectedNode.status === 'awaiting_input' ? '#F59E0B' : selectedColor,
-            }}>
-              {selectedNode.status === 'running' ? 'Working' :
-               selectedNode.status === 'done' ? 'Complete' :
-               selectedNode.status === 'error' ? 'Error' :
-               selectedNode.status === 'waiting' ? 'Waiting' :
-               selectedNode.status === 'awaiting_input' ? 'Awaiting Reply' :
-               'Not dispatched'}
-            </span>
-            {(selectedNode.status === 'running' || selectedNode.status === 'awaiting_input') && selectedNode.sessionId && (
-              <button
-                onClick={() => handleForceStop(selectedNode.roleId)}
-                className="text-[10px] px-2 py-0.5 rounded font-semibold cursor-pointer ml-1"
-                style={{ background: '#C6282822', color: '#C62828', border: '1px solid #C6282844' }}
-              >
-                Stop
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Events */}
-        <div ref={outputRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-1 text-xs font-mono select-text">
-          {/* CEO directive message */}
-          {selectedNode && selectedNode.status !== 'waiting' && selectedNode.status !== 'not-dispatched' && (
-            <div className="flex items-start gap-2 mb-3 pb-2 border-b" style={{ borderColor: 'var(--terminal-border)' }}>
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0" style={{ background: '#B71C1C33', color: '#EF5350' }}>CEO</span>
-              <span className="text-[var(--terminal-text-secondary)] whitespace-pre-wrap">{wave.directive}</span>
-            </div>
-          )}
-          {selectedNode && selectedNode.events.length === 0 && (
-            <div className="text-[var(--terminal-text-muted)]">
-              {selectedNode.status === 'waiting' ? 'Waiting for dispatch...' :
-               selectedNode.status === 'running' ? 'Connecting to activity stream...' :
-               selectedNode.status === 'not-dispatched' ? 'This role was not dispatched in this wave.' : ''}
-            </div>
-          )}
-          {selectedNode?.events.map((event) => (
-            <EventRow
-              key={event.seq}
-              event={event}
-              isThinkingCollapsed={collapsedThinking.has(event.seq)}
-              onToggleThinking={() => toggleThinking(event.seq)}
-              onNavigateToJob={(childJobId) => {
-                for (const [, node] of nodes) {
-                  if (node.events.some(e => e.data.childJobId === childJobId)) {
-                    selectNode(node.roleId);
-                    return;
-                  }
-                }
-              }}
-              onOpenKnowledgeDoc={onOpenKnowledgeDoc}
-            />
-          ))}
-          {selectedNode?.status === 'running' && (
-            <span className="inline-block w-2 h-4 bg-green-400 animate-pulse ml-0.5" />
-          )}
-          {!selectedNode && (
-            <div className="flex-1 flex items-center justify-center text-[var(--terminal-text-muted)] text-xs h-full">
-              Click a node in the org tree to view activity
-            </div>
-          )}
-        </div>
-
-        {/* Reply input */}
-        {selectedNode?.status === 'awaiting_input' && (
-          <div className="px-4 py-3 border-t shrink-0" style={{ borderColor: 'var(--terminal-border)', background: '#F59E0B0A' }}>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="w-2 h-2 rounded-full inline-block" style={{ background: '#F59E0B', animation: 'wave-pulse 1.5s ease-in-out infinite' }} />
-              <span className="text-[11px] font-semibold" style={{ color: '#F59E0B' }}>
-                {selectedNode.roleName} is waiting for your response
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={replyText}
-                onChange={(e) => setReplyText(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleReply(); } }}
-                placeholder="Type your response..."
-                disabled={replying}
-                className="flex-1 px-3 py-1.5 text-xs rounded border bg-[var(--terminal-bg)] text-[var(--terminal-text)] outline-none"
-                style={{ borderColor: 'var(--terminal-border)' }}
-                autoFocus
-              />
-              <button
-                onClick={handleReply}
-                disabled={replying || !replyText.trim()}
-                className="px-4 py-1.5 text-xs rounded font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{ background: '#F59E0B', color: '#000' }}
-              >
-                {replying ? '...' : 'Reply'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Follow-up */}
-        {selectedNode?.status === 'done' && selectedNode.sessionId && (
-          <div className="px-4 py-3 border-t shrink-0" style={{ borderColor: 'var(--terminal-border)', background: '#1565C00A' }}>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-[11px] font-semibold" style={{ color: '#64B5F6' }}>
-                Follow-up to {selectedNode.roleName}
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={replyText}
-                onChange={(e) => setReplyText(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleReply(); } }}
-                placeholder="Send a follow-up directive..."
-                disabled={replying}
-                className="flex-1 px-3 py-1.5 text-xs rounded border bg-[var(--terminal-bg)] text-[var(--terminal-text)] outline-none"
-                style={{ borderColor: 'var(--terminal-border)' }}
-              />
-              <button
-                onClick={handleReply}
-                disabled={replying || !replyText.trim()}
-                className="px-4 py-1.5 text-xs rounded font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{ background: '#1565C0', color: '#fff' }}
-              >
-                {replying ? '...' : 'Send'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Footer bar */}
-        <div className="px-4 py-2 border-t flex items-center justify-between shrink-0" style={{ borderColor: 'var(--terminal-border)' }}>
-          <div className="text-[10px] text-[var(--terminal-text-muted)]">
-            {selectedNode && selectedNode.events.length > 0 && `${selectedNode.events.length} events`}
-          </div>
-          {allDone && codeGit && (
-            <div className="flex items-center gap-2">
-              {codeGit.dirty && (
-                <button
-                  onClick={() => setShowChanges(v => !v)}
-                  className="px-3 py-1.5 text-[10px] font-bold cursor-pointer rounded"
-                  style={{
-                    background: showChanges ? 'var(--idle-amber)' : 'var(--terminal-bg)',
-                    color: showChanges ? '#000' : 'var(--idle-amber)',
-                    border: '1px solid var(--idle-amber)',
-                  }}
-                >
-                  {codeGit.modified.length + codeGit.untracked.length} changes
-                </button>
-              )}
-              {!codeGit.dirty && commitResult?.ok && (
-                <span className="text-[10px] text-green-400 font-mono">committed {commitResult.sha?.slice(0, 7)}</span>
-              )}
-              {!codeGit.dirty && !commitResult && (
-                <span className="text-[10px] text-green-400">no uncommitted changes</span>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Inline changes panel */}
-        {allDone && showChanges && codeGit?.dirty && (
-          <div className="border-t overflow-y-auto" style={{ borderColor: 'var(--terminal-border)', background: 'var(--hud-bg-alt)', maxHeight: '40vh' }}>
-            <div className="px-4 py-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-[var(--terminal-text-secondary)] uppercase tracking-wider">
-                  Code Changes ({codeGit.branch})
-                </span>
-                <button onClick={() => fetchCodeGit()} className="text-[9px] text-[var(--terminal-text-muted)] hover:text-[var(--terminal-text)] cursor-pointer">
-                  refresh
-                </button>
-              </div>
-
-              {/* File list */}
-              <div className="max-h-[120px] overflow-y-auto space-y-0.5">
-                {codeGit.modified.map(f => (
-                  <div key={f} className="text-[10px] font-mono text-[var(--terminal-text)] flex items-center gap-1.5">
-                    <span className="text-yellow-500">M</span>
-                    <span className="truncate">{f}</span>
-                  </div>
-                ))}
-                {codeGit.untracked.map(f => (
-                  <div key={f} className="text-[10px] font-mono text-[var(--terminal-text)] flex items-center gap-1.5">
-                    <span className="text-green-400">+</span>
-                    <span className="truncate">{f}</span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Commit input */}
-              <div className="flex gap-2">
-                <input
-                  value={commitMsg}
-                  onChange={e => setCommitMsg(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') handleCommit(); }}
-                  placeholder="Commit message..."
-                  disabled={committing}
-                  className="flex-1 px-2 py-1.5 text-xs rounded border bg-[var(--terminal-bg)] text-[var(--terminal-text)] outline-none font-mono"
-                  style={{ borderColor: 'var(--terminal-border)' }}
-                />
-                <button
-                  onClick={handleCommit}
-                  disabled={committing || !commitMsg.trim()}
-                  className="px-4 py-1.5 text-xs rounded font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                  style={{ background: '#2E7D32', color: '#fff' }}
-                >
-                  {committing ? '...' : 'Commit'}
-                </button>
-              </div>
-
-              {commitResult?.error && (
-                <div className="text-[10px] text-red-400">{commitResult.error}</div>
-              )}
-              {commitResult?.ok && (
-                <div className="text-[10px] text-green-400 font-mono">Committed: {commitResult.sha?.slice(0, 7)}</div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ─── Replay View (read-only past wave with OrgTree) ─── */
+/* ─── Build replay nodes (converts JSON replay → WaveNode map) ─── */
 
 function buildReplayNodes(
   orgNodes: Record<string, OrgNode>,
@@ -943,7 +916,6 @@ function buildReplayNodes(
 ): Map<string, WaveNode> {
   const nodes = new Map<string, WaveNode>();
 
-  // Build full org tree
   const addNode = (roleId: string) => {
     const org = orgNodes[roleId];
     if (!org || nodes.has(roleId)) return;
@@ -965,7 +937,6 @@ function buildReplayNodes(
     root.children.forEach(addNode);
   }
 
-  // Overlay replay data
   for (const r of replayRoles) {
     const existing = nodes.get(r.roleId);
     if (existing) {
@@ -989,409 +960,6 @@ function buildReplayNodes(
 
   return nodes;
 }
-
-function ReplayView({ replay, orgNodes, rootRoleId, onOpenKnowledgeDoc, onRefreshWaves }: {
-  replay: WaveReplay;
-  orgNodes: Record<string, OrgNode>;
-  rootRoleId: string;
-  onOpenKnowledgeDoc?: (docId: string) => void;
-  onRefreshWaves?: () => void;
-}) {
-  const initialNodes = useMemo(() => buildReplayNodes(orgNodes, rootRoleId, replay.roles), [orgNodes, rootRoleId, replay]);
-  const [nodes, setNodes] = useState<Map<string, WaveNode>>(initialNodes);
-  const [selectedRoleId, setSelectedRoleId] = useState<string | null>(replay.roles[0]?.roleId ?? null);
-  const [collapsedThinking, setCollapsedThinking] = useState<Set<number>>(new Set());
-  const outputRef = useRef<HTMLDivElement>(null);
-  const streamsRef = useRef<Map<string, AbortController>>(new Map());
-
-  // Sync with replay changes
-  useEffect(() => { setNodes(initialNodes); }, [initialNodes]);
-
-  // Git changes + commit state
-  const [codeGit, setCodeGit] = useState<GitInfo | null>(null);
-  const [commitMsg, setCommitMsg] = useState(`wave: ${replay.directive.slice(0, 60).replace(/\n/g, ' ')}`);
-  const [committing, setCommitting] = useState(false);
-  const [commitResult, setCommitResult] = useState<{ ok: boolean; sha?: string; error?: string } | null>(null);
-  const [showChanges, setShowChanges] = useState(false);
-
-  // Follow-up state
-  const [replyText, setReplyText] = useState('');
-  const [replying, setReplying] = useState(false);
-
-  const selectedNode = selectedRoleId ? nodes.get(selectedRoleId) : null;
-  const selectedColor = selectedRoleId ? (ROLE_COLORS[selectedRoleId] ?? '#888') : '#888';
-
-  useEffect(() => {
-    if (outputRef.current) outputRef.current.scrollTop = 0;
-  }, [selectedRoleId]);
-
-  // Fetch git status on mount
-  const fetchCodeGit = useCallback(() => {
-    api.getSaveStatus('code').then(setCodeGit).catch(() => {});
-  }, []);
-
-  useEffect(() => { fetchCodeGit(); }, [fetchCodeGit]);
-
-  const handleCommit = useCallback(async () => {
-    if (!commitMsg.trim()) return;
-    setCommitting(true);
-    setCommitResult(null);
-    try {
-      const result = await api.save(commitMsg.trim(), 'code');
-      setCommitResult({ ok: true, sha: result.commitSha });
-      // Attach commit to this wave
-      if (result.commitSha) {
-        api.patchWave(replay.id, { commitSha: result.commitSha, commitMessage: commitMsg.trim() }).then(() => {
-          onRefreshWaves?.();
-        }).catch(() => {});
-      }
-      fetchCodeGit();
-    } catch (err) {
-      setCommitResult({ ok: false, error: err instanceof Error ? err.message : 'Commit failed' });
-    } finally {
-      setCommitting(false);
-    }
-  }, [commitMsg, fetchCodeGit, replay.id, onRefreshWaves]);
-
-  /** Connect SSE for a follow-up job and update replay nodes in real-time */
-  const connectFollowUpStream = useCallback((sessionId: string, roleId: string) => {
-    const existing = streamsRef.current.get(sessionId);
-    if (existing) existing.abort();
-
-    const controller = new AbortController();
-    streamsRef.current.set(sessionId, controller);
-
-    // Mark node as running
-    setNodes(prev => {
-      const next = new Map(prev);
-      const node = next.get(roleId);
-      if (node) next.set(roleId, { ...node, sessionId, status: 'running', streamStatus: 'streaming', events: [] });
-      return next;
-    });
-
-    fetch(`/api/sessions/${sessionId}/stream?from=0`, { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok || !response.body) return;
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() ?? '';
-
-          let currentEvent = '';
-          for (const line of lines) {
-            if (line.startsWith('event: ')) {
-              currentEvent = line.slice(7).trim();
-            } else if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                if (currentEvent === 'activity') {
-                  const event = data as import('../../types').ActivityEvent;
-                  setNodes(prev => {
-                    const next = new Map(prev);
-                    const node = next.get(roleId);
-                    if (!node) return prev;
-                    if (node.events.some(e => e.seq === event.seq)) return prev;
-                    const updated = { ...node, events: [...node.events, event] };
-                    if (event.type === 'job:done') { updated.status = 'done'; updated.streamStatus = 'done'; }
-                    else if (event.type === 'job:error') { updated.status = 'error'; updated.streamStatus = 'error'; }
-                    else if (event.type === 'job:awaiting_input') { updated.status = 'awaiting_input'; updated.streamStatus = 'done'; }
-                    next.set(roleId, updated);
-                    return next;
-                  });
-                } else if (currentEvent === 'stream:end') {
-                  setNodes(prev => {
-                    const next = new Map(prev);
-                    const node = next.get(roleId);
-                    if (!node || node.status !== 'running') return prev;
-                    next.set(roleId, { ...node, status: 'done', streamStatus: 'done' });
-                    return next;
-                  });
-                }
-              } catch { /* skip */ }
-              currentEvent = '';
-            }
-          }
-        }
-      })
-      .catch((err) => {
-        if (err.name === 'AbortError') return;
-        setNodes(prev => {
-          const next = new Map(prev);
-          const node = next.get(roleId);
-          if (node) next.set(roleId, { ...node, status: 'error', streamStatus: 'error' });
-          return next;
-        });
-      });
-  }, []);
-
-  // Cleanup SSE streams on unmount
-  useEffect(() => {
-    return () => {
-      for (const [, ctrl] of streamsRef.current) ctrl.abort();
-      streamsRef.current.clear();
-    };
-  }, []);
-
-  const handleReply = useCallback(async () => {
-    if (!selectedRoleId || !replyText.trim()) return;
-    const node = nodes.get(selectedRoleId);
-    if (!node) return;
-    setReplying(true);
-    try {
-      // Start a new assign job for this role — wave "comes alive" again
-      const resp = await api.startJob({ type: 'assign', roleId: selectedRoleId, task: replyText.trim() });
-      setReplyText('');
-      // Connect SSE stream to show live results in the replay tree
-      const sessionId = resp.sessionId;
-      if (sessionId) {
-        connectFollowUpStream(sessionId, selectedRoleId);
-      }
-    } catch (err) {
-      console.error('Follow-up failed:', err);
-    } finally {
-      setReplying(false);
-    }
-  }, [selectedRoleId, replyText, nodes, connectFollowUpStream]);
-
-  const toggleThinking = (seq: number) => {
-    setCollapsedThinking(prev => {
-      const next = new Set(prev);
-      if (next.has(seq)) next.delete(seq);
-      else next.add(seq);
-      return next;
-    });
-  };
-
-  const startedAt = replay.startedAt ? new Date(replay.startedAt).toLocaleString() : '';
-  const hasRunning = Array.from(nodes.values()).some(n => n.status === 'running' || n.status === 'awaiting_input');
-  const progress = useMemo(() => {
-    let done = 0, total = 0;
-    for (const [id, n] of nodes) {
-      if (id === rootRoleId) continue;
-      total++;
-      if (n.status === 'done') done++;
-    }
-    return { done, total };
-  }, [nodes, rootRoleId]);
-
-  return (
-    <div className="flex flex-col flex-1 min-h-0">
-      {/* Wave info bar */}
-      <div className="px-4 py-2 border-b flex items-center gap-3 shrink-0" style={{ borderColor: 'var(--terminal-border)' }}>
-        <div className="w-3 h-3 rounded-full shrink-0" style={{
-          background: hasRunning ? '#FBBF24' : '#2E7D32',
-          animation: hasRunning ? 'wave-pulse 2s ease-in-out infinite' : undefined,
-        }} />
-        <span className="text-[var(--terminal-text-secondary)] text-xs italic flex-1 min-w-0 truncate">
-          &ldquo;{replay.directive}&rdquo;
-        </span>
-        <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0" style={{
-          background: hasRunning ? '#FBBF2422' : '#2E7D3222',
-          color: hasRunning ? '#FBBF24' : '#2E7D32',
-        }}>
-          {hasRunning ? 'LIVE' : 'REPLAY'}
-        </span>
-        <span className="text-[var(--terminal-text-muted)] text-[10px] shrink-0">{startedAt}</span>
-        <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0" style={{ background: '#2E7D3222', color: '#2E7D32' }}>
-          {progress.done}/{progress.total}
-        </span>
-      </div>
-
-      {/* Org Tree */}
-      <div className="shrink-0 border-b flex flex-col" style={{ borderColor: 'var(--terminal-border)' }}>
-        <div className="flex items-center gap-3 px-4 py-1.5">
-          <span className="text-[10px] font-bold text-[var(--terminal-text-secondary)] uppercase tracking-wider">
-            Org Propagation
-          </span>
-        </div>
-        <div className="overflow-x-auto overflow-y-auto px-3 pb-2" style={{ maxHeight: '30vh' }}>
-          <OrgTreeLive
-            nodes={nodes}
-            rootId={rootRoleId}
-            selectedRoleId={selectedRoleId}
-            onSelectNode={setSelectedRoleId}
-          />
-        </div>
-      </div>
-
-      {/* Activity Feed */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-0">
-        {/* Selected role header */}
-        {selectedNode && (
-          <div className="px-4 py-2 border-b shrink-0 flex items-center gap-2" style={{ borderColor: 'var(--terminal-border)' }}>
-            <div className="w-2 h-2 rounded-full" style={{ background: selectedColor }} />
-            <span className="text-[var(--terminal-text)] font-bold text-xs">{selectedNode.roleId.toUpperCase()}</span>
-            <span className="text-[var(--terminal-text-muted)] text-xs">{selectedNode.roleName}</span>
-            <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{
-              background: selectedNode.status === 'running' ? '#FBBF2422' : selectedNode.status === 'awaiting_input' ? '#F59E0B22' : `${selectedColor}22`,
-              color: selectedNode.status === 'running' ? '#FBBF24' : selectedNode.status === 'awaiting_input' ? '#F59E0B' : selectedColor,
-            }}>
-              {selectedNode.status === 'done' ? 'Complete' : selectedNode.status === 'error' ? 'Error' : selectedNode.status === 'running' ? 'Working...' : selectedNode.status === 'awaiting_input' ? 'Awaiting Reply' : selectedNode.status}
-            </span>
-            <span className="text-[10px] text-[var(--terminal-text-muted)]">{selectedNode.events.length} events</span>
-          </div>
-        )}
-
-        {/* Events */}
-        <div ref={outputRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-1 text-xs font-mono select-text">
-          {selectedNode && selectedNode.events.length === 0 && (
-            <div className="text-[var(--terminal-text-muted)]">
-              {selectedNode.status === 'not-dispatched' ? 'This role was not dispatched in this wave.' : 'No events recorded for this role.'}
-            </div>
-          )}
-          {selectedNode?.events.map((event) => (
-            <EventRow
-              key={event.seq}
-              event={event}
-              isThinkingCollapsed={collapsedThinking.has(event.seq)}
-              onToggleThinking={() => toggleThinking(event.seq)}
-              onNavigateToJob={(childJobId) => {
-                for (const [, node] of nodes) {
-                  if (node.events.some(e => e.data.childJobId === childJobId)) {
-                    setSelectedRoleId(node.roleId);
-                    return;
-                  }
-                }
-              }}
-              onOpenKnowledgeDoc={onOpenKnowledgeDoc}
-            />
-          ))}
-          {selectedNode?.status === 'running' && (
-            <span className="inline-block w-2 h-4 bg-green-400 animate-pulse ml-0.5" />
-          )}
-          {!selectedNode && (
-            <div className="flex-1 flex items-center justify-center text-[var(--terminal-text-muted)] text-xs h-full">
-              Click a node in the org tree to view activity
-            </div>
-          )}
-        </div>
-
-        {/* Follow-up to completed/done role */}
-        {selectedNode && (selectedNode.status === 'done' || selectedNode.status === 'not-dispatched') && (
-          <div className="px-4 py-3 border-t shrink-0" style={{ borderColor: 'var(--terminal-border)', background: '#1565C00A' }}>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-[11px] font-semibold" style={{ color: '#64B5F6' }}>
-                Follow-up to {selectedNode.roleName}
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={replyText}
-                onChange={(e) => setReplyText(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleReply(); } }}
-                placeholder="Send a follow-up directive..."
-                disabled={replying}
-                className="flex-1 px-3 py-1.5 text-xs rounded border bg-[var(--terminal-bg)] text-[var(--terminal-text)] outline-none"
-                style={{ borderColor: 'var(--terminal-border)' }}
-              />
-              <button
-                onClick={handleReply}
-                disabled={replying || !replyText.trim()}
-                className="px-4 py-1.5 text-xs rounded font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{ background: '#1565C0', color: '#fff' }}
-              >
-                {replying ? '...' : 'Send'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Footer bar */}
-        <div className="px-4 py-2 border-t flex items-center justify-between shrink-0" style={{ borderColor: 'var(--terminal-border)' }}>
-          <div className="text-[10px] text-[var(--terminal-text-muted)]">
-            {selectedNode && selectedNode.events.length > 0 && `${selectedNode.events.length} events`}
-          </div>
-          {codeGit && (
-            <div className="flex items-center gap-2">
-              {codeGit.dirty && (
-                <button
-                  onClick={() => setShowChanges(v => !v)}
-                  className="px-3 py-1.5 text-[10px] font-bold cursor-pointer rounded"
-                  style={{
-                    background: showChanges ? 'var(--idle-amber)' : 'var(--terminal-bg)',
-                    color: showChanges ? '#000' : 'var(--idle-amber)',
-                    border: '1px solid var(--idle-amber)',
-                  }}
-                >
-                  {codeGit.modified.length + codeGit.untracked.length} changes
-                </button>
-              )}
-              {!codeGit.dirty && commitResult?.ok && (
-                <span className="text-[10px] text-green-400 font-mono">committed {commitResult.sha?.slice(0, 7)}</span>
-              )}
-              {!codeGit.dirty && !commitResult && (
-                <span className="text-[10px] text-green-400">no uncommitted changes</span>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Inline changes panel */}
-        {showChanges && codeGit?.dirty && (
-          <div className="border-t overflow-y-auto" style={{ borderColor: 'var(--terminal-border)', background: 'var(--hud-bg-alt)', maxHeight: '40vh' }}>
-            <div className="px-4 py-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-[var(--terminal-text-secondary)] uppercase tracking-wider">
-                  Code Changes ({codeGit.branch})
-                </span>
-                <button onClick={fetchCodeGit} className="text-[9px] text-[var(--terminal-text-muted)] hover:text-[var(--terminal-text)] cursor-pointer">
-                  refresh
-                </button>
-              </div>
-              <div className="max-h-[120px] overflow-y-auto space-y-0.5">
-                {codeGit.modified.map(f => (
-                  <div key={f} className="text-[10px] font-mono text-[var(--terminal-text)] flex items-center gap-1.5">
-                    <span className="text-yellow-500">M</span>
-                    <span className="truncate">{f}</span>
-                  </div>
-                ))}
-                {codeGit.untracked.map(f => (
-                  <div key={f} className="text-[10px] font-mono text-[var(--terminal-text)] flex items-center gap-1.5">
-                    <span className="text-green-400">+</span>
-                    <span className="truncate">{f}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <input
-                  value={commitMsg}
-                  onChange={e => setCommitMsg(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') handleCommit(); }}
-                  placeholder="Commit message..."
-                  disabled={committing}
-                  className="flex-1 px-2 py-1.5 text-xs rounded border bg-[var(--terminal-bg)] text-[var(--terminal-text)] outline-none font-mono"
-                  style={{ borderColor: 'var(--terminal-border)' }}
-                />
-                <button
-                  onClick={handleCommit}
-                  disabled={committing || !commitMsg.trim()}
-                  className="px-4 py-1.5 text-xs rounded font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                  style={{ background: '#2E7D32', color: '#fff' }}
-                >
-                  {committing ? '...' : 'Commit'}
-                </button>
-              </div>
-              {commitResult?.error && (
-                <div className="text-[10px] text-red-400">{commitResult.error}</div>
-              )}
-              {commitResult?.ok && (
-                <div className="text-[10px] text-green-400 font-mono">Committed: {commitResult.sha?.slice(0, 7)}</div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 
 /* ─── Past Wave Card ─── */
 
