@@ -1,10 +1,10 @@
 # Web Sanity Tests
 
 > Playwright 기반 UI 동작 검증 체크리스트
-> 최종 검증: 2026-03-08 (6명 Preset M + 13명 Preset L 전환 검증)
+> 최종 검증: 2026-03-10 (8명 Preset M, agent-browser CLI 기반 검증)
 
 **실행 환경**: Vite dev server (`npx vite --port 5174`) + 브라우저
-**도구**: Playwright MCP 또는 수동 브라우저
+**도구**: agent-browser CLI 또는 Playwright MCP 또는 수동 브라우저
 
 ---
 
@@ -59,7 +59,7 @@
 | TC-H19 | 연속 고용 | 3회 이상 연속 고용 -> 모두 정상 반영 | PASS |
 | TC-H20 | 고용 후 데스크 카운트 | "Expand: +N desks available" 숫자 감소 | PASS |
 | TC-H21 | Back 버튼 | 각 단계에서 Back -> 이전 단계 복귀, 입력 유지 | - |
-| TC-H22 | Cancel 버튼 | 어느 단계에서든 Cancel -> 모달 닫힘, 고용 안됨 | - |
+| TC-H22 | Cancel 버튼 | 어느 단계에서든 Cancel -> 모달 닫힘, 고용 안됨 | PASS |
 
 ---
 
@@ -86,10 +86,10 @@
 | TC-R02 | 패널 닫기 | X 버튼 -> 패널 닫힘 | PASS |
 | TC-R03 | 기본 정보 표시 | Role ID, Name, Level, Status, Reports To | PASS |
 | TC-R04 | 캐릭터 프리뷰 | 패널 상단 캐릭터 픽셀아트 표시 | PASS |
-| TC-R05 | 커스터마이즈 버튼 | 팔레트 아이콘 클릭 -> 캐릭터 에디터 | - |
-| TC-R06 | 인라인 이름 편집 | 이름 옆 편집 아이콘 클릭 -> 편집 모드 | - |
+| TC-R05 | 커스터마이즈 버튼 | 팔레트 아이콘 클릭 -> 캐릭터 에디터 | PASS |
+| TC-R06 | 인라인 이름 편집 | 이름 옆 편집 아이콘 클릭 -> 편집 모드 | PASS |
 | TC-R07 | Talk/Do 탭 | Talk/Do 탭 전환 + 입력 필드 | PASS |
-| TC-R08 | Profile/Authority 접기 | 아코디언 토글 | - |
+| TC-R08 | Profile/Authority 접기 | 아코디언 토글 | PASS |
 | TC-R09 | Fire Role | Fire Role 버튼 표시 | PASS |
 
 ---
@@ -158,14 +158,14 @@
 |------|------|------|--------|
 | Page Load (TC-P) | 4 | 4 | 0 |
 | View Toggle (TC-V) | 8 | 8 | 0 |
-| Hire (TC-H) | 22 | 20 | 2 |
+| Hire (TC-H) | 22 | 21 | 1 |
 | Office ISO (TC-O) | 8 | 6 | 2 |
-| Role Panel (TC-R) | 9 | 6 | 3 |
+| Role Panel (TC-R) | 9 | 9 | 0 |
 | Terminal (TC-T) | 3 | 3 | 0 |
 | Floor Template (TC-F) | 7 | 7 | 0 |
 | Pro View (TC-PRO) | 18 | 11 | 7 |
 | Save (TC-S) | 2 | 1 | 1 |
-| **합계** | **81** | **66** | **15** |
+| **합계** | **81** | **70** | **11** |
 
 ---
 
@@ -193,5 +193,5 @@ cd src/web && npx vite --port 5174
 
 ---
 
-*작성: CTO | 2026-03-08*
+*작성: CTO | 2026-03-10*
 *관련: [test-strategy](../../../knowledge/test-strategy.md) | [floor-template](../../src/components/office/floor-template.ts)*
