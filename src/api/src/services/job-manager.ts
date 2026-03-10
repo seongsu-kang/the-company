@@ -11,6 +11,7 @@ import { readConfig, getConversationLimits } from './company-config.js';
 import { postKnowledgingCheck, type KnowledgeDebtItem } from '../engine/knowledge-gate.js';
 import { earnCoinsInternal } from '../routes/coins.js';
 import { getSession, createSession, addMessage, updateMessage as updateSessionMessage, appendMessageEvent, type Message } from './session-store.js';
+import { portRegistry, type PortAllocation } from './port-registry.js';
 
 /* ─── Types ──────────────────────────────── */
 
@@ -38,6 +39,8 @@ export interface Job {
   knowledgeDebt?: KnowledgeDebtItem[];
   /** D-014: Session this job belongs to */
   sessionId?: string;
+  /** PSM-003: Allocated ports for this job's dev servers */
+  ports?: PortAllocation;
 }
 
 export interface JobInfo {
@@ -175,6 +178,17 @@ class JobManager {
     };
 
     this.jobs.set(jobId, job);
+
+    // PSM-003: Allocate ports for this job (async, non-blocking)
+    portRegistry.allocate(jobId, params.roleId, params.task)
+      .then(ports => {
+        job.ports = ports;
+        console.log(`[JobManager] Allocated ports for ${jobId} (${params.roleId}): API :${ports.api}, Vite :${ports.vite}`);
+      })
+      .catch(err => {
+        console.warn(`[JobManager] Port allocation failed for ${jobId}:`, err);
+        // Non-critical — job can proceed without ports
+      });
 
     // Emit job:start
     stream.emit('job:start', params.roleId, {
