@@ -179,20 +179,32 @@ class JobManager {
 
     this.jobs.set(jobId, job);
 
-    // PSM-003: Allocate ports for this job (async, non-blocking)
-    portRegistry.allocate(jobId, params.roleId, params.task)
-      .then(ports => {
-        job.ports = ports;
-        console.log(`[JobManager] Allocated ports for ${jobId} (${params.roleId}): API :${ports.api}, Vite :${ports.vite}`);
-      })
-      .catch(err => {
-        console.warn(`[JobManager] Port allocation failed for ${jobId}:`, err);
-        // Non-critical — job can proceed without ports
-      });
+    // PSM-003: Allocate ports for this job (blocking)
+    // Run async initialization, then start runner
+    this.initializeAndRunJob(job, params, orgTree);
+
+    return job;
+  }
+
+  /** PSM-003: Initialize job with port allocation, then start runner */
+  private async initializeAndRunJob(
+    job: Job,
+    params: StartJobParams,
+    orgTree: ReturnType<typeof buildOrgTree>,
+  ): Promise<void> {
+    try {
+      // PSM-003: Allocate ports before starting runner
+      const ports = await portRegistry.allocate(job.id, params.roleId, params.task);
+      job.ports = ports;
+      console.log(`[JobManager] Allocated ports for ${job.id} (${params.roleId}): API :${ports.api}, Vite :${ports.vite}`);
+    } catch (err) {
+      console.warn(`[JobManager] Port allocation failed for ${job.id}:`, err);
+      // Non-critical — job can proceed without ports
+    }
 
     // Emit job:start
-    stream.emit('job:start', params.roleId, {
-      jobId,
+    job.stream.emit('job:start', params.roleId, {
+      jobId: job.id,
       type: params.type,
       task: params.task,
       sourceRole: params.sourceRole ?? 'ceo',
@@ -203,11 +215,11 @@ class JobManager {
     if (params.parentJobId) {
       const parentJob = this.jobs.get(params.parentJobId);
       if (parentJob) {
-        parentJob.childJobIds.push(jobId);
+        parentJob.childJobIds.push(job.id);
         parentJob.stream.emit('dispatch:start', parentJob.roleId, {
           targetRoleId: params.roleId,
           task: params.task,
-          childJobId: jobId,
+          childJobId: job.id,
           childSessionId: params.sessionId,
         });
       }
@@ -228,10 +240,18 @@ class JobManager {
     // Build team status snapshot: which roles are currently busy
     const teamStatus: Record<string, { status: string; task?: string }> = {};
     for (const [, j] of this.jobs) {
-      if (j.status === 'running' && j.id !== jobId) {
+      if (j.status === 'running' && j.id !== job.id) {
         teamStatus[j.roleId] = { status: 'working', task: j.task };
       }
     }
+
+    // PSM-004: Inject port env vars into runner
+    const portEnv = job.ports ? {
+      API_PORT: String(job.ports.api),
+      PORT: String(job.ports.api),
+      VITE_PORT: String(job.ports.vite),
+      ...(job.ports.hmr && { VITE_HMR_PORT: String(job.ports.hmr) }),
+    } : {};
 
     const handle = this.runner.execute(
       {
@@ -243,29 +263,33 @@ class JobManager {
         readOnly: params.readOnly,
         maxTurns: limits.hardLimit,
         model,
-        jobId,
+        jobId: job.id,
         teamStatus,
         targetRoles: params.targetRoles,
         codeRoot: config.codeRoot,
+        env: {
+          ...process.env,
+          ...portEnv,
+        },
       },
       {
         onText: (text) => {
           updateActivity(params.roleId, text);
-          stream.emit('text', params.roleId, { text });
+          job.stream.emit('text', params.roleId, { text });
           // D-014: Update linked session message content
           if (job.sessionId) {
             this.updateSessionRoleMessage(job, text);
           }
         },
         onThinking: (text) => {
-          stream.emit('thinking', params.roleId, { text });
+          job.stream.emit('thinking', params.roleId, { text });
           // D-014 SCA-010: Embed thinking event in session message
           if (job.sessionId) {
             this.embedSessionEvent(job, 'thinking', { text: text.slice(0, 200) });
           }
         },
         onToolUse: (name, input) => {
-          stream.emit('tool:start', params.roleId, {
+          job.stream.emit('tool:start', params.roleId, {
             name,
             input: input ? summarizeInput(input) : undefined,
           });
@@ -282,7 +306,7 @@ class JobManager {
           if (params.targetRoles && params.targetRoles.length > 0) {
             if (!params.targetRoles.includes(subRoleId)) {
               console.warn(`[JobManager] Dispatch blocked: ${params.roleId} → ${subRoleId} (not in targetRoles)`);
-              stream.emit('stderr', params.roleId, {
+              job.stream.emit('stderr', params.roleId, {
                 message: `Dispatch to ${subRoleId} blocked — not in active target scope for this wave.`,
               });
               return;
@@ -310,7 +334,7 @@ class JobManager {
             roleId: subRoleId,
             task: subTask,
             sourceRole: params.roleId,
-            parentJobId: jobId,
+            parentJobId: job.id,
             targetRoles: params.targetRoles,
             sessionId: childSession.id,
           });
@@ -346,14 +370,14 @@ class JobManager {
             task: `[Consultation from ${params.roleId}] ${question}\n\nAnswer this question based on your role's expertise and knowledge. Be concise and specific.`,
             sourceRole: params.roleId,
             readOnly: true,
-            parentJobId: jobId,
+            parentJobId: job.id,
           });
         },
         onTurnComplete: (turn) => {
           // ─── Harness-level turn policy ───
           // Runner reports its internal turn count; Harness tracks independently.
           harnessTurnCount++;
-          stream.emit('turn:complete', params.roleId, {
+          job.stream.emit('turn:complete', params.roleId, {
             turn: harnessTurnCount,
             runnerTurn: turn,
           });
@@ -362,9 +386,9 @@ class JobManager {
           if (!softLimitWarned && harnessTurnCount >= limits.softLimit) {
             softLimitWarned = true;
             console.warn(
-              `[Harness] Job ${jobId} (${params.roleId}): turn ${harnessTurnCount} reached softLimit (${limits.softLimit})`,
+              `[Harness] Job ${job.id} (${params.roleId}): turn ${harnessTurnCount} reached softLimit (${limits.softLimit})`,
             );
-            stream.emit('turn:warning', params.roleId, {
+            job.stream.emit('turn:warning', params.roleId, {
               turn: harnessTurnCount,
               softLimit: limits.softLimit,
               hardLimit: limits.hardLimit,
@@ -375,9 +399,9 @@ class JobManager {
           if (harnessTurnCount >= limits.hardLimit) {
             hardLimitReached = true;
             console.warn(
-              `[Harness] Job ${jobId} (${params.roleId}): turn ${harnessTurnCount} reached hardLimit (${limits.hardLimit}). Pausing for approval.`,
+              `[Harness] Job ${job.id} (${params.roleId}): turn ${harnessTurnCount} reached hardLimit (${limits.hardLimit}). Pausing for approval.`,
             );
-            stream.emit('turn:limit', params.roleId, {
+            job.stream.emit('turn:limit', params.roleId, {
               turn: harnessTurnCount,
               hardLimit: limits.hardLimit,
             });
@@ -385,7 +409,7 @@ class JobManager {
           }
         },
         onError: (error) => {
-          stream.emit('stderr', params.roleId, { message: error });
+          job.stream.emit('stderr', params.roleId, { message: error });
         },
       },
     );
@@ -427,7 +451,7 @@ class JobManager {
           job.status = 'awaiting_input';
           job.targetRole = targetRole;
           const question = `[Turn limit] ${harnessTurnCount}턴 도달 (hardLimit: ${limits.hardLimit}). 계속 진행할까요?`;
-          stream.emit('job:awaiting_input', params.roleId, {
+          job.stream.emit('job:awaiting_input', params.roleId, {
             ...doneData,
             question,
             awaitingInput: true,
@@ -440,7 +464,7 @@ class JobManager {
         else if (!params.isContinuation && hasQuestion(result.output)) {
           job.status = 'awaiting_input';
           job.targetRole = targetRole;
-          stream.emit('job:awaiting_input', params.roleId, {
+          job.stream.emit('job:awaiting_input', params.roleId, {
             ...doneData,
             question: result.output.trim().split('\n').slice(-5).join('\n'),
             awaitingInput: true,
@@ -460,7 +484,7 @@ class JobManager {
               if (!pkResult.pass) {
                 job.knowledgeDebt = pkResult.debt;
                 console.log(
-                  `[Post-K] Job ${jobId} (${params.roleId}): ${pkResult.debt.length} knowledge debt item(s)`,
+                  `[Post-K] Job ${job.id} (${params.roleId}): ${pkResult.debt.length} knowledge debt item(s)`,
                 );
                 for (const d of pkResult.debt) {
                   console.log(`  [Post-K] ${d.type}: ${d.message}`);
@@ -479,7 +503,7 @@ class JobManager {
 
           job.status = 'done';
           completeActivity(params.roleId);
-          stream.emit('job:done', params.roleId, doneData);
+          job.stream.emit('job:done', params.roleId, doneData);
           // D-014: Update linked session message with final results
           if (job.sessionId) {
             this.finalizeSessionMessage(job, 'done', result);
@@ -505,7 +529,7 @@ class JobManager {
           job.status = 'awaiting_input';
           job.targetRole = targetRole;
           const question = `[Turn limit] ${harnessTurnCount}턴 도달 (hardLimit: ${limits.hardLimit}). 계속 진행할까요?`;
-          stream.emit('job:awaiting_input', params.roleId, {
+          job.stream.emit('job:awaiting_input', params.roleId, {
             question,
             awaitingInput: true,
             targetRole,
@@ -518,14 +542,21 @@ class JobManager {
         job.error = err.message;
         completeActivity(params.roleId);
 
-        stream.emit('job:error', params.roleId, { message: err.message });
+        job.stream.emit('job:error', params.roleId, { message: err.message });
         // D-014: Mark linked session message as error
         if (job.sessionId) {
           this.finalizeSessionMessage(job, 'error');
         }
+      })
+      .finally(() => {
+        // PSM-005: Release ports when job ends (success or error)
+        if (job.ports) {
+          const released = portRegistry.release(job.id);
+          if (released) {
+            console.log(`[JobManager] Released ports for ${job.id}: API :${job.ports.api}, Vite :${job.ports.vite}`);
+          }
+        }
       });
-
-    return job;
   }
 
   /* ─── D-014: Session ↔ Job bridge ───────── */

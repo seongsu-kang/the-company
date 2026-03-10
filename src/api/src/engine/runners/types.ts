@@ -41,6 +41,8 @@ export interface RunnerConfig {
   targetRoles?: string[];
   /** EG-001: Code project root for bash_execute tool */
   codeRoot?: string;
+  /** PSM-004: Environment variables to inject (e.g., port assignments) */
+  env?: Record<string, string>;
 }
 
 /* ─── Callbacks ───────────────────────────────── */
