@@ -82,10 +82,13 @@ export const api = {
   deleteEmptySessions: () => del<{ deleted: number; ids: string[] }>('/sessions?empty=true'),
   updateSession: (id: string, patch: { title?: string; mode?: 'talk' | 'do' }) =>
     patch_<Session>(`/sessions/${id}`, patch),
+  /** D-014: Send a message to a session (returns SSE EventSource URL) */
+  sendSessionMessage: (sessionId: string, content: string, mode: 'talk' | 'do' = 'talk') =>
+    post<Record<string, unknown>>(`/exec/session/${sessionId}/message`, { content, mode }),
 
   // Jobs
   startJob: (params: { type?: string; roleId?: string; task?: string; directive?: string; sourceRole?: string; readOnly?: boolean; targetRole?: string; targetRoles?: string[] }) =>
-    post<{ jobId: string; jobIds?: string[] }>('/jobs', params),
+    post<{ jobId: string; jobIds?: string[]; waveId?: string; sessionIds?: string[] }>('/jobs', params),
   getJob: (id: string) => get<JobInfo>(`/jobs/${id}`),
   listJobs: (filter?: { status?: string; roleId?: string }) => {
     const params = new URLSearchParams();
@@ -97,7 +100,7 @@ export const api = {
   abortJob: (id: string) => del<{ ok: boolean }>(`/jobs/${id}`),
   replyToJob: (id: string, message: string) =>
     post<{ jobId: string; roleId: string }>(`/jobs/${id}/reply`, { message }),
-  saveWave: (params: { directive: string; jobIds: string[] }) =>
+  saveWave: (params: { directive: string; jobIds: string[]; waveId?: string; sessionIds?: string[] }) =>
     post<{ ok: boolean; path: string }>('/waves/save', params),
 
   // Setup / Onboarding

@@ -18,6 +18,8 @@ interface ActiveWave {
   directive: string;
   rootJobs: Array<{ jobId: string; roleId: string; roleName: string }>;
   startedAt: number;
+  /** D-014: Server-generated session IDs (one per role) */
+  sessionIds?: string[];
 }
 
 interface GitInfo {
@@ -38,11 +40,12 @@ interface Props {
   onDispatch: (directive: string, targetRoles?: string[]) => void;
   onClose: () => void;
   onDone?: () => void;
-  onSave?: (directive: string, jobIds: string[]) => Promise<void>;
+  onSave?: (directive: string, jobIds: string[], extra?: { waveId?: string; sessionIds?: string[] }) => Promise<void>;
   onOpenKnowledgeDoc?: (docId: string) => void;
   /** Refresh pastWaves list (e.g. after committing) */
   onRefreshWaves?: () => void;
   terminalWidth?: number;
+  onMaximize?: () => void;
 }
 
 type ViewMode = 'dispatch' | 'monitor';
@@ -52,6 +55,7 @@ export default function WaveCenter({
   activeWaves, onDispatch, onClose, onDone, onSave, onOpenKnowledgeDoc,
   onRefreshWaves,
   terminalWidth = 0,
+  onMaximize,
 }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>(activeWaves.length > 0 ? 'monitor' : 'dispatch');
   const [selectedWaveIdx, setSelectedWaveIdx] = useState(0);
@@ -87,7 +91,7 @@ export default function WaveCenter({
     return all;
   });
 
-  const { panelRight, panelWidth, isResizing, handleResizeStart } = usePanelResize(terminalWidth, 720);
+  const { panelRight, panelWidth, isResizing, handleResizeStart } = usePanelResize(terminalWidth, 720, onMaximize);
 
   // Auto-switch to monitor when a wave starts
   useEffect(() => {
@@ -179,12 +183,12 @@ export default function WaveCenter({
 
         {/* Header */}
         <div className="px-5 py-3 text-white relative shrink-0" style={{ background: 'linear-gradient(135deg, #B71C1C, #D32F2F)' }}>
-          <button
-            onClick={onClose}
-            className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 text-white flex items-center justify-center text-lg hover:bg-white/30 cursor-pointer"
-          >
-            &times;
-          </button>
+          <div className="absolute top-3 right-3 flex items-center gap-1">
+            {onMaximize && (
+              <button onClick={onMaximize} className="w-7 h-7 rounded-full bg-white/20 text-white flex items-center justify-center text-sm hover:bg-white/30 cursor-pointer" title="Maximize (Pro View)">{'\u2922'}</button>
+            )}
+            <button onClick={onClose} className="w-7 h-7 rounded-full bg-white/20 text-white flex items-center justify-center text-lg hover:bg-white/30 cursor-pointer">&times;</button>
+          </div>
           <div className="text-lg font-bold">Wave Center</div>
           <div className="text-xs opacity-70 mt-0.5">
             {activeWaves.length > 0
@@ -456,7 +460,7 @@ function MonitorView({
   orgNodes: Record<string, OrgNode>;
   rootRoleId: string;
   onDone?: () => void;
-  onSave?: (directive: string, jobIds: string[]) => Promise<void>;
+  onSave?: (directive: string, jobIds: string[], extra?: { waveId?: string; sessionIds?: string[] }) => Promise<void>;
   onOpenKnowledgeDoc?: (docId: string) => void;
 }) {
   const { nodes, selectedRoleId, selectNode, progress, allDone, connectStream } = useWaveTree(wave.rootJobs, orgNodes, rootRoleId);
@@ -575,7 +579,7 @@ function MonitorView({
       // Auto-save wave on completion
       if (onSave) {
         const jobIds = wave.rootJobs.map(j => j.jobId);
-        onSave(wave.directive, jobIds).then(() => {
+        onSave(wave.directive, jobIds, { waveId: wave.id, sessionIds: wave.sessionIds }).then(() => {
           // Try to find the saved wave ID from the most recent wave list
           api.getWaves().then(waves => {
             if (waves.length > 0) savedWaveId.current = waves[0].id;
@@ -1027,7 +1031,16 @@ function ReplayView({ replay, orgNodes, rootRoleId, onOpenKnowledgeDoc, onRefres
     if (!node) return;
     setReplying(true);
     try {
-      // Try replyToJob first (works if job still in memory)
+      // D-014: Prefer session-based messaging when sessionIds available
+      const roleIdx = replay.roles.findIndex(r => r.roleId === selectedRoleId);
+      const sessionId = replay.sessionIds?.[roleIdx];
+      if (sessionId) {
+        await api.sendSessionMessage(sessionId, replyText.trim(), 'do');
+        setReplyText('');
+        return;
+      }
+
+      // Legacy: Try replyToJob (works if job still in memory)
       if (node.jobId) {
         try {
           await api.replyToJob(node.jobId, replyText.trim());
@@ -1045,7 +1058,7 @@ function ReplayView({ replay, orgNodes, rootRoleId, onOpenKnowledgeDoc, onRefres
     } finally {
       setReplying(false);
     }
-  }, [selectedRoleId, replyText, nodes]);
+  }, [selectedRoleId, replyText, nodes, replay.roles, replay.sessionIds]);
 
   const toggleThinking = (seq: number) => {
     setCollapsedThinking(prev => {

@@ -55,6 +55,10 @@ export interface WaveReplay {
   startedAt: string;
   duration: number;
   roles: WaveReplayRole[];
+  /** D-014: Server-generated wave ID */
+  waveId?: string;
+  /** D-014: Session IDs created for this wave (one per role) */
+  sessionIds?: string[];
 }
 
 export interface WaveReplayRole {

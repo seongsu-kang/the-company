@@ -31,6 +31,7 @@ import GitStatusPanel from '../components/office/GitStatusPanel';
 import SessionPanel from '../components/office/SessionPanel';
 import SettingsPanel from '../components/office/SettingsPanel';
 import ThemeDropup from '../components/office/ThemeDropup';
+import ProView, { ProDashboard, type ProChannel } from '../components/pro/ProView';
 import { OFFICE_THEMES } from '../types/appearance';
 import type { CharacterAppearance, OfficeTheme } from '../types/appearance';
 import { computeRoleLevels, type RoleLevelData } from '../utils/role-level';
@@ -309,8 +310,10 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
     // No cleanup abort — import runs in background on server
   }, [importJob]);
 
-  /* View mode: card grid vs topdown */
-  const [viewMode, setViewMode] = useState<'card' | 'iso'>('iso');
+  /* View mode: card grid vs topdown vs pro */
+  const [viewMode, setViewMode] = useState<'card' | 'iso' | 'pro'>('iso');
+  const prevViewModeRef = useRef<'card' | 'iso'>('iso');
+  const [proChannel, setProChannel] = useState<ProChannel>({ type: 'dashboard' });
 
   /* Window width for mobile responsive */
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
@@ -730,36 +733,62 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
       });
 
       // Add to WaveCenter active waves
+      // D-014: Use server-generated waveId and sessionIds
+      const serverWaveId = resp.waveId ?? `wave-${Date.now()}`;
+      const serverSessionIds = resp.sessionIds ?? [];
+
       const newActiveWave = {
-        id: `wave-${Date.now()}`,
+        id: serverWaveId,
         directive,
         rootJobs: wj,
         startedAt: Date.now(),
+        sessionIds: serverSessionIds,
       };
       setWaveCenterWaves(prev => [newActiveWave, ...prev]);
       openWaveCenter();
 
-      // Create virtual wave sessions in terminal
+      // D-014: Use server-created sessions (backend creates them with wave source)
+      // If server provided sessionIds, fetch them; otherwise create virtual sessions as fallback
       const now = new Date().toISOString();
-      const waveSessions: Session[] = wj.map((w) => ({
-        id: `wave-${w.jobId}`,
-        roleId: w.roleId,
-        title: `WAVE: ${w.roleName}`,
-        mode: 'do' as const,
-        source: 'wave' as const,
-        jobId: w.jobId,
-        messages: [{
-          id: `msg-wave-${w.jobId}-ceo`,
-          from: 'ceo' as const,
-          content: directive,
-          type: 'directive' as const,
-          status: 'done' as const,
-          timestamp: now,
-        }],
-        status: 'active' as const,
-        createdAt: now,
-        updatedAt: now,
-      }));
+      const waveSessions: Session[] = serverSessionIds.length > 0
+        ? wj.map((w, i) => ({
+            id: serverSessionIds[i] ?? `wave-${w.jobId}`,
+            roleId: w.roleId,
+            title: `WAVE: ${w.roleName}`,
+            mode: 'do' as const,
+            source: 'wave' as const,
+            jobId: w.jobId,
+            messages: [{
+              id: `msg-wave-${w.jobId}-ceo`,
+              from: 'ceo' as const,
+              content: directive,
+              type: 'directive' as const,
+              status: 'done' as const,
+              timestamp: now,
+            }],
+            status: 'active' as const,
+            createdAt: now,
+            updatedAt: now,
+          }))
+        : wj.map((w) => ({
+            id: `wave-${w.jobId}`,
+            roleId: w.roleId,
+            title: `WAVE: ${w.roleName}`,
+            mode: 'do' as const,
+            source: 'wave' as const,
+            jobId: w.jobId,
+            messages: [{
+              id: `msg-wave-${w.jobId}-ceo`,
+              from: 'ceo' as const,
+              content: directive,
+              type: 'directive' as const,
+              status: 'done' as const,
+              timestamp: now,
+            }],
+            status: 'active' as const,
+            createdAt: now,
+            updatedAt: now,
+          }));
 
       setSessions((prev) => [...waveSessions, ...prev]);
       if (waveSessions.length > 0) {
@@ -1591,7 +1620,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           )}
         </div>
 
-        {/* ─── Terminal Panel ─── */}
+        {/* ─── Terminal Panel (non-Pro modes only; Pro renders it inline) ─── */}
         {terminalOpen && (
           <div className={isMobile ? 'absolute inset-0 z-50' : 'contents'}>
             <TerminalPanel
@@ -1640,6 +1669,12 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
             className={`view-toggle-btn ${viewMode === 'iso' ? 'active' : ''}`}
           >
             OFFICE
+          </button>
+          <button
+            onClick={() => { prevViewModeRef.current = viewMode === 'pro' ? 'iso' : viewMode as 'card' | 'iso'; setViewMode('pro'); }}
+            className={`view-toggle-btn ${viewMode === 'pro' ? 'active' : ''}`}
+          >
+            PRO
           </button>
           <span className="mx-1">|</span>
           <div style={{ position: 'relative' }}>
@@ -1789,8 +1824,8 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
         </div>
       </div>
 
-      {/* ─── Side Panels ─── */}
-      {panel.type === 'role' && selectedRole && (() => {
+      {/* ─── Side Panels (hidden in Pro mode — rendered inline via panelNode) ─── */}
+      {viewMode !== 'pro' && panel.type === 'role' && selectedRole && (() => {
         const roleExec = activeExecsByRole[selectedRole.id];
         return (
         <SidePanel
@@ -1821,10 +1856,10 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
         />
         );
       })()}
-      {panel.type === 'project' && mainProject && (
+      {viewMode !== 'pro' && panel.type === 'project' && mainProject && (
         <ProjectPanel projectId={mainProject.id} onClose={closePanel} terminalWidth={terminalOpen ? terminalWidth : 0} />
       )}
-      {(panel.type === 'bulletin' || panel.type === 'decisions') && (
+      {viewMode !== 'pro' && (panel.type === 'bulletin' || panel.type === 'decisions') && (
         <OperationsPanel
           standups={standups}
           waves={waves}
@@ -1835,7 +1870,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           terminalWidth={terminalOpen ? terminalWidth : 0}
         />
       )}
-      {panel.type === 'quest' && (
+      {viewMode !== 'pro' && panel.type === 'quest' && (
         <QuestBoard
           progress={questProgress}
           onClose={closePanel}
@@ -1847,7 +1882,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           }}
         />
       )}
-      {panel.type === 'knowledge' && (
+      {viewMode !== 'pro' && panel.type === 'knowledge' && (
         <KnowledgePanel
           docs={knowledgeDocs}
           onClose={closePanel}
@@ -1855,6 +1890,183 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           terminalWidth={terminalOpen ? terminalWidth : 0}
           initialDocId={panel.docId}
         />
+      )}
+
+      {/* ─── Pro View (full-screen overlay) ─── */}
+      {viewMode === 'pro' && (
+        <ProView
+          roles={roles}
+          roleStatuses={effectiveRoleStatuses}
+          activeExecs={activeExecs}
+          waves={waves}
+          knowledgeDocs={knowledgeDocs}
+          sessions={sessions}
+          roleLevels={roleLevels}
+          companyName={companyName}
+          getAppearance={getAppearance}
+          waveCenterWaves={waveCenterWaves}
+          channel={proChannel}
+          onChannelChange={(ch) => {
+            setProChannel(ch);
+            // Sync internal state based on channel
+            if (ch.type === 'role') {
+              openPanel({ type: 'role', roleId: ch.roleId });
+            } else if (ch.type === 'knowledge') {
+              openPanel({ type: 'knowledge' });
+            } else if (ch.type === 'operations') {
+              openPanel({ type: 'bulletin' });
+            } else if (ch.type === 'wave') {
+              setShowWaveCenter(true);
+            } else if (ch.type === 'terminal') {
+              setTerminalOpen(true);
+            } else {
+              setPanel({ type: 'none' });
+              setShowWaveCenter(false);
+            }
+          }}
+          onClose={() => {
+            setViewMode(prevViewModeRef.current);
+            // Clean up pro state
+            setPanel({ type: 'none' });
+            setShowWaveCenter(false);
+          }}
+        >
+          {/* Dashboard */}
+          {proChannel.type === 'dashboard' && (
+            <ProDashboard
+              roles={roles}
+              roleStatuses={effectiveRoleStatuses}
+              activeExecs={activeExecs}
+              waves={waves}
+              knowledgeDocs={knowledgeDocs}
+              roleLevels={roleLevels}
+              getAppearance={getAppearance}
+              onRoleClick={(id) => setProChannel({ type: 'role', roleId: id })}
+              onWaveClick={() => setProChannel({ type: 'wave' })}
+              onKnowledgeClick={() => setProChannel({ type: 'knowledge' })}
+            />
+          )}
+
+          {/* Terminal (full-width) */}
+          {proChannel.type === 'terminal' && (
+            <TerminalPanel
+              sessions={sessions}
+              activeSessionId={activeSessionId}
+              roles={roles}
+              streamingSessionId={streamingSessionId}
+              width={typeof window !== 'undefined' ? window.innerWidth - 240 : 1000}
+              onSwitchSession={setActiveSessionId}
+              onCloseSession={handleCloseSession}
+              onCreateSession={handleCreateSession}
+              onClearEmpty={handleClearEmptySessions}
+              onCloseAll={handleCloseAllSessions}
+              onSendMessage={handleSendMessage}
+              onModeChange={handleModeChange}
+              onCloseTerminal={() => setProChannel({ type: 'dashboard' })}
+              chatChannels={officeChat.channels}
+              activeChatChannelId={officeChat.activeChannelId}
+              onSwitchChatChannel={officeChat.setActiveChannelId}
+              onCreateChatChannel={(...args: Parameters<typeof officeChat.createChannel>) => { const r = officeChat.createChannel(...args); fireQuestTrigger({ type: 'chat_channel_created' }); return r; }}
+              onDeleteChatChannel={officeChat.deleteChannel}
+              onUpdateChatMembers={officeChat.updateMembers}
+              onUpdateChatTopic={officeChat.updateTopic}
+              onSendChatMessage={handleCeoChat}
+              unreadChannels={officeChat.unreadChannels}
+            />
+          )}
+
+          {/* Wave Center (full-width) */}
+          {proChannel.type === 'wave' && (
+            <WaveCenter
+              orgNodes={orgNodes}
+              rootRoleId={orgRootId}
+              cLevelRoles={orgRootId && orgNodes[orgRootId]
+                ? orgNodes[orgRootId].children.map(id => roles.find(r => r.id === id)).filter((r): r is typeof roles[number] => !!r)
+                : roles.filter(r => r.level === 'c-level')}
+              pastWaves={waves}
+              activeWaves={waveCenterWaves}
+              onDispatch={(d, t) => handleWaveDispatch(d, t)}
+              onClose={() => setProChannel({ type: 'dashboard' })}
+              onDone={() => {
+                handleJobDone();
+                setWaveDone(true);
+                addToast('Wave complete', '#2E7D32');
+              }}
+              onSave={async (dir, jobIds, extra) => {
+                try {
+                  await api.saveWave({ directive: dir, jobIds, waveId: extra?.waveId, sessionIds: extra?.sessionIds });
+                  handleJobDone();
+                  addToast('Wave saved', '#2E7D32');
+                } catch (err) {
+                  addToast(`Save failed: ${err instanceof Error ? err.message : 'unknown'}`, '#C62828');
+                }
+              }}
+              onOpenKnowledgeDoc={(docId) => {
+                setProChannel({ type: 'knowledge' });
+                openPanel({ type: 'knowledge', docId });
+                api.getKnowledge().then(setKnowledgeDocs).catch(() => {});
+              }}
+              onRefreshWaves={() => api.getWaves().then(setWaves).catch(() => {})}
+              terminalWidth={0}
+            />
+          )}
+
+          {/* Knowledge (full-width) */}
+          {proChannel.type === 'knowledge' && (
+            <KnowledgePanel
+              docs={knowledgeDocs}
+              onClose={() => setProChannel({ type: 'dashboard' })}
+              onRefresh={() => api.getKnowledge().then(setKnowledgeDocs).catch(() => {})}
+              terminalWidth={0}
+            />
+          )}
+
+          {/* Operations (full-width) */}
+          {proChannel.type === 'operations' && (
+            <OperationsPanel
+              standups={standups}
+              waves={waves}
+              decisions={decisions}
+              mode="bulletin"
+              onClose={() => setProChannel({ type: 'dashboard' })}
+              onOpenWaveCenter={() => setProChannel({ type: 'wave' })}
+              terminalWidth={0}
+            />
+          )}
+
+          {/* Role Detail (full-width) */}
+          {proChannel.type === 'role' && selectedRole && (() => {
+            const roleExec = activeExecsByRole[selectedRole.id];
+            return (
+              <SidePanel
+                role={selectedRole}
+                allRoles={roles}
+                recentActivity={getRoleSpeechFull(selectedRole.id)}
+                onClose={() => setProChannel({ type: 'dashboard' })}
+                onFireRole={(id, name) => { setFireTarget({ roleId: id, roleName: name }); setProChannel({ type: 'dashboard' }); }}
+                terminalWidth={0}
+                activeJobId={roleExec?.id}
+                activeTask={roleExec?.task}
+                isWorking={effectiveRoleStatuses[selectedRole.id] === 'working'}
+                jobStartedAt={roleExec?.startedAt}
+                onStopJob={(jobId) => api.abortJob(jobId)}
+                sessions={sessions}
+                streamingSessionId={streamingSessionId}
+                onCreateSessionSilent={handleCreateSessionSilent}
+                onSendMessage={handleSendMessage}
+                onFocusTerminal={() => setProChannel({ type: 'terminal' })}
+                onCustomize={(roleId) => {
+                  const r = roles.find(x => x.id === roleId);
+                  if (r) { setCustomizeInitialTab('character'); setCustomizeTarget(r); }
+                }}
+                onUpdateRole={handleUpdateRole}
+                appearance={getAppearance(selectedRole.id)}
+                relationships={ambient.relationships}
+                roleLevel={roleLevels[selectedRole.id]?.level}
+              />
+            );
+          })()}
+        </ProView>
       )}
 
       {/* Phase 2: Assign Task Modal */}
@@ -1923,9 +2135,9 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
             setWaveDone(true);
             addToast('Wave complete', '#2E7D32');
           }}
-          onSave={async (dir, jobIds) => {
+          onSave={async (dir, jobIds, extra) => {
             try {
-              await api.saveWave({ directive: dir, jobIds });
+              await api.saveWave({ directive: dir, jobIds, waveId: extra?.waveId, sessionIds: extra?.sessionIds });
               handleJobDone();
               addToast('Wave saved', '#2E7D32');
             } catch (err) {

@@ -357,6 +357,8 @@ function handleReplyToJob(jobId: string, body: Record<string, unknown>, res: Ser
 function handleSaveWave(body: Record<string, unknown>, res: ServerResponse): void {
   const directive = body.directive as string;
   const jobIds = body.jobIds as string[];
+  const sessionIds = body.sessionIds as string[] | undefined;
+  const waveId = body.waveId as string | undefined;
 
   if (!directive || !jobIds || jobIds.length === 0) {
     jsonResponse(res, 400, { error: 'directive and jobIds are required' });
@@ -422,6 +424,9 @@ function handleSaveWave(body: Record<string, unknown>, res: ServerResponse): voi
     startedAt: now.toISOString(),
     duration: 0, // Could be computed from events
     roles: rolesData,
+    // D-014: Session references for follow-up
+    ...(waveId && { waveId }),
+    ...(sessionIds && sessionIds.length > 0 && { sessionIds }),
   };
   fs.writeFileSync(jsonPath, JSON.stringify(waveJson, null, 2), 'utf-8');
 
