@@ -33,7 +33,7 @@ export interface ProViewProps {
   roleLevels: RoleLevelData;
   companyName: string;
   getAppearance: (roleId: string) => CharacterAppearance | undefined;
-  waveCenterWaves: Array<{ id: string; directive: string; rootJobs: Array<{ jobId: string; roleId: string; roleName: string }>; startedAt: number }>;
+  waveCenterWaves: Array<{ id: string; directive: string; rootJobs: Array<{ sessionId: string; roleId: string; roleName: string; jobId?: string }>; startedAt: number }>;
 
   /* Profile panel — rendered in right column when open.
      Receives a close callback so the panel × button can dismiss it. */

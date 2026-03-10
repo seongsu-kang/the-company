@@ -93,13 +93,13 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   const [panel, setPanel] = useState<PanelState>({ type: 'none' });
   const [selectedRole, setSelectedRole] = useState<RoleDetail | null>(null);
 
-  /* Phase 2: Execution state — now job-based */
+  /* Phase 2: Execution state — session-centric */
   const [assignModal, setAssignModal] = useState<{ roleId: string; roleName: string; mode: 'assign' | 'ask' } | null>(null);
-  const [jobStack, setJobStack] = useState<Array<{ jobId: string; sessionId?: string; title: string; color: string }>>([]);
+  const [jobStack, setJobStack] = useState<Array<{ sessionId: string; jobId: string; title: string; color: string }>>([]);
   const [showWaveModal, setShowWaveModal] = useState(false);
   const [showWaveCenter, setShowWaveCenter] = useState(false);
-  const [waveCenterWaves, setWaveCenterWaves] = useState<Array<{ id: string; directive: string; rootJobs: Array<{ jobId: string; roleId: string; roleName: string; sessionId?: string }>; startedAt: number }>>([]);
-  const [waveJobs, setWaveJobs] = useState<Array<{ jobId: string; roleId: string; roleName: string; sessionId?: string }>>([]);
+  const [waveCenterWaves, setWaveCenterWaves] = useState<Array<{ id: string; directive: string; rootJobs: Array<{ sessionId: string; roleId: string; roleName: string; jobId?: string }>; startedAt: number }>>([]);
+  const [waveJobs, setWaveJobs] = useState<Array<{ sessionId: string; roleId: string; roleName: string; jobId?: string }>>([]);
   const [waveActiveIdx, setWaveActiveIdx] = useState(0);
   const [jobMinimized, setJobMinimized] = useState(false);
 
@@ -108,7 +108,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   const [orgRootId, setOrgRootId] = useState('ceo');
   const [waveState, setWaveState] = useState<{
     directive: string;
-    rootJobs: Array<{ jobId: string; roleId: string; roleName: string; sessionId?: string }>;
+    rootJobs: Array<{ sessionId: string; roleId: string; roleName: string; jobId?: string }>;
   } | null>(null);
   const [waveMinimized, setWaveMinimized] = useState(false);
   const [waveDone, setWaveDone] = useState(false);
@@ -132,6 +132,9 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
 
   /* Coins (Virtual Economy) */
   const [coinBalance, setCoinBalance] = useState(0);
+
+  /* Office Expansion */
+  const [purchasedPreset, setPurchasedPreset] = useState<'M' | 'L'>('M');
 
   /* Quest Board */
   const [questProgress, setQuestProgress] = useState<QuestProgress>(getDefaultProgress());
@@ -361,7 +364,25 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
         }
       }).catch(() => {});
     }).catch(() => { questLoadedRef.current = true; });
+    // Office expansion: load purchased preset + auto-migrate large offices
+    api.getPreferences().then((prefs: Record<string, unknown>) => {
+      const expansion = prefs.officeExpansion as { preset: 'M' | 'L' } | undefined;
+      if (expansion?.preset) {
+        setPurchasedPreset(expansion.preset);
+      }
+    }).catch(() => {});
   }, []);
+
+  // Auto-migrate existing large offices (roles > 12 without expansion record)
+  useEffect(() => {
+    if (roles.length <= 12) return;
+    api.getPreferences().then((prefs: Record<string, unknown>) => {
+      if (prefs.officeExpansion) return; // already has expansion record
+      const expansion = { preset: 'L' as const, purchaseHistory: [{ type: 'migration-L', cost: 0, ts: new Date().toISOString() }] };
+      setPurchasedPreset('L');
+      api.updatePreferences({ officeExpansion: expansion });
+    }).catch(() => {});
+  }, [roles.length]);
 
   // Detect new project creation for quest trigger
   useEffect(() => {
@@ -461,11 +482,11 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
     try {
       const resp = await api.startJob({ type: 'assign', roleId, task, readOnly: isAsk });
       const jobId = resp.jobId;
-      const sessionId = resp.sessionId;
+      const sessionId = resp.sessionId ?? `job-${jobId}`;
       const color = ROLE_COLORS[roleId] ?? '#666';
       const title = `${roleId.toUpperCase()} · ${role?.name ?? roleId}`;
       setJobMinimized(false);
-      setJobStack([{ jobId, sessionId, title, color }]);
+      setJobStack([{ sessionId, jobId, title, color }]);
       fireQuestTrigger({ type: 'task_executed', condition: { roleId } });
       // Log to #office
       officeChat.pushMessage({
@@ -610,7 +631,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
 
     // Create initial role message (streaming)
     const roleMsg: Message = {
-      id: `msg-wave-${jobId}-role`,
+      id: `msg-wave-${serverSessionId}-role`,
       from: 'role',
       content: '',
       type: 'conversation',
@@ -622,10 +643,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
       s.id === sessionId ? { ...s, messages: [...s.messages, roleMsg] } : s,
     ));
 
-    // SCA-012: prefer session stream
-    const streamUrl = serverSessionId
-      ? `/api/sessions/${serverSessionId}/stream?from=0`
-      : `/api/jobs/${jobId}/stream?from=0`;
+    const streamUrl = `/api/sessions/${serverSessionId}/stream?from=0`;
     fetch(streamUrl, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok || !response.body) return;
@@ -803,9 +821,9 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
         openTerminal();
       }
 
-      // Connect SSE streams for each wave job
+      // Connect SSE streams for each wave session
       for (const w of wj) {
-        connectWaveStream(w.jobId, w.roleId, w.sessionId);
+        connectWaveStream(w.sessionId, w.roleId, w.jobId);
       }
     } catch (err) {
       addToast(`Failed to start wave: ${err instanceof Error ? err.message : 'unknown'}`, '#C62828');
@@ -902,7 +920,10 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
       const role = roles.find(r => r.id === roleId);
       const color = ROLE_COLORS[roleId] ?? '#666';
       const title = `${roleId.toUpperCase()} · ${role?.name ?? roleId}`;
-      setJobStack([{ jobId, title, color }]);
+      // Find session for this role (from active sessions or wave sessions)
+      const activeSession = sessions.find(s => s.roleId === roleId && s.status === 'active');
+      const sessionId = activeSession?.id ?? `job-${jobId}`;
+      setJobStack([{ sessionId, jobId, title, color }]);
       setJobMinimized(false);
       return;
     }
@@ -1501,6 +1522,15 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
                 fireQuestTrigger({ type: 'furniture_placed' });
                 if (price > 0) fireQuestTrigger({ type: 'furniture_purchased' });
               }}
+              purchasedPreset={purchasedPreset}
+              onExpansionPurchased={(preset) => {
+                setPurchasedPreset(preset);
+                const expansion = {
+                  preset,
+                  purchaseHistory: [{ type: 'preset-L', cost: 15000, ts: new Date().toISOString() }],
+                };
+                api.updatePreferences({ officeExpansion: expansion });
+              }}
             />
           ) : (
           <div className={`${terminalOpen ? 'max-w-full' : 'max-w-[1100px]'} mx-auto h-full p-4 flex flex-col gap-3 relative z-[1]`}>
@@ -1844,16 +1874,13 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           onFireRole={(id, name) => { setFireTarget({ roleId: id, roleName: name }); closePanel(); }}
           terminalWidth={terminalOpen ? terminalWidth : 0}
           activeJobId={roleExec?.id}
+          activeSessionId={jobStack.find(j => j.jobId === roleExec?.jobId)?.sessionId}
           activeTask={roleExec?.task}
           isWorking={effectiveRoleStatuses[selectedRole.id] === 'working'}
           jobStartedAt={roleExec?.startedAt}
           onStopJob={(jobId) => {
             const entry = jobStack.find(j => j.jobId === jobId);
-            if (entry?.sessionId) {
-              api.abortSession(entry.sessionId);
-            } else {
-              api.abortJob(jobId);
-            }
+            if (entry) api.abortSession(entry.sessionId);
           }}
           sessions={sessions}
           streamingSessionId={streamingSessionId}
@@ -1934,16 +1961,13 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
                 onFireRole={(id, name) => { setFireTarget({ roleId: id, roleName: name }); }}
                 terminalWidth={0}
                 activeJobId={roleExec?.id}
+          activeSessionId={jobStack.find(j => j.jobId === roleExec?.jobId)?.sessionId}
                 activeTask={roleExec?.task}
                 isWorking={effectiveRoleStatuses[selectedRole.id] === 'working'}
                 jobStartedAt={roleExec?.startedAt}
                 onStopJob={(jobId) => {
             const entry = jobStack.find(j => j.jobId === jobId);
-            if (entry?.sessionId) {
-              api.abortSession(entry.sessionId);
-            } else {
-              api.abortJob(jobId);
-            }
+            if (entry) api.abortSession(entry.sessionId);
           }}
                 sessions={sessions}
                 streamingSessionId={streamingSessionId}
@@ -2220,10 +2244,10 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
               <div className="fixed top-[5%] left-1/2 -translate-x-1/2 w-[720px] max-w-[95vw] z-[63] flex gap-1 px-2 pt-2">
                 {waveJobs.map((wj, i) => (
                   <button
-                    key={wj.jobId}
+                    key={wj.sessionId}
                     onClick={() => {
                       setWaveActiveIdx(i);
-                      setJobStack([{ jobId: wj.jobId, title: `CEO WAVE · ${wj.roleId.toUpperCase()}`, color: '#B71C1C' }]);
+                      setJobStack([{ sessionId: wj.sessionId, jobId: wj.jobId ?? '', title: `CEO WAVE · ${wj.roleId.toUpperCase()}`, color: '#B71C1C' }]);
                     }}
                     className="px-3 py-1.5 text-xs font-bold rounded-t-lg cursor-pointer transition-colors"
                     style={{
@@ -2239,8 +2263,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
               </div>
             )}
             <ActivityPanel
-              key={current.jobId}
-              jobId={current.jobId}
+              key={current.sessionId}
               sessionId={current.sessionId}
               title={jobStack.length > 1
                 ? current.title
@@ -2254,15 +2277,8 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
               onClose={() => { setJobStack([]); setWaveJobs([]); setWaveActiveIdx(0); setJobMinimized(false); }}
               onMinimize={() => setJobMinimized(true)}
               onDone={() => { handleExecutionDone(); handleJobDone(); }}
-              onNavigateToJob={(childJobId) => {
-                api.getJob(childJobId).then((info) => {
-                  const childColor = ROLE_COLORS[info.roleId] ?? '#888';
-                  setJobStack((prev) => [...prev, {
-                    jobId: childJobId,
-                    title: `${info.roleId.toUpperCase()} · ${info.task.slice(0, 40)}`,
-                    color: childColor,
-                  }]);
-                }).catch(console.error);
+              onNavigateToJob={() => {
+                // Child job navigation removed — all monitoring via sessions
               }}
               onOpenKnowledgeDoc={(docId) => {
                 setJobStack([]); setWaveJobs([]); setWaveActiveIdx(0); setJobMinimized(false);

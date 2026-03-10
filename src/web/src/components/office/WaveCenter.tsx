@@ -16,7 +16,7 @@ const ROLE_COLORS: Record<string, string> = {
 interface ActiveWave {
   id: string;
   directive: string;
-  rootJobs: Array<{ jobId: string; roleId: string; roleName: string; sessionId?: string }>;
+  rootJobs: Array<{ sessionId: string; roleId: string; roleName: string; jobId?: string }>;
   startedAt: number;
   /** D-014: Server-generated session IDs (one per role) */
   sessionIds?: string[];
@@ -480,20 +480,13 @@ function MonitorView({
   const handleReply = useCallback(async () => {
     if (!selectedRoleId || !replyText.trim()) return;
     const node = nodes.get(selectedRoleId);
-    if (!node?.jobId || (node.status !== 'awaiting_input' && node.status !== 'done')) return;
+    if (!node?.sessionId || (node.status !== 'awaiting_input' && node.status !== 'done')) return;
 
     setReplying(true);
     try {
-      // SCA-012: prefer session-based reply
-      if (node.sessionId) {
-        const { jobId: newJobId } = await api.replyToSession(node.sessionId, replyText.trim());
-        setReplyText('');
-        connectStream(newJobId, selectedRoleId, node.sessionId);
-      } else {
-        const { jobId: newJobId } = await api.replyToJob(node.jobId, replyText.trim());
-        setReplyText('');
-        connectStream(newJobId, selectedRoleId);
-      }
+      await api.replyToSession(node.sessionId, replyText.trim());
+      setReplyText('');
+      connectStream(node.sessionId, selectedRoleId);
     } catch (err) {
       console.error('Reply failed:', err);
     } finally {
@@ -503,25 +496,17 @@ function MonitorView({
 
   const handleForceStop = useCallback(async (roleId: string) => {
     const node = nodes.get(roleId);
-    if (!node?.jobId) return;
+    if (!node?.sessionId) return;
     try {
-      if (node.sessionId) {
-        await api.abortSession(node.sessionId);
-      } else {
-        await api.abortJob(node.jobId);
-      }
+      await api.abortSession(node.sessionId);
     } catch { /* ignore */ }
   }, [nodes]);
 
   const handleStopAll = useCallback(async () => {
     for (const [, node] of nodes) {
-      if ((node.status === 'running' || node.status === 'awaiting_input') && node.jobId) {
+      if ((node.status === 'running' || node.status === 'awaiting_input') && node.sessionId) {
         try {
-          if (node.sessionId) {
-            await api.abortSession(node.sessionId);
-          } else {
-            await api.abortJob(node.jobId);
-          }
+          await api.abortSession(node.sessionId);
         } catch { /* ignore */ }
       }
     }
@@ -597,7 +582,7 @@ function MonitorView({
       onDone?.();
       // Auto-save wave on completion
       if (onSave) {
-        const jobIds = wave.rootJobs.map(j => j.jobId);
+        const jobIds = wave.rootJobs.map(j => j.jobId).filter((id): id is string => !!id);
         onSave(wave.directive, jobIds, { waveId: wave.id, sessionIds: wave.sessionIds }).then(() => {
           // Try to find the saved wave ID from the most recent wave list
           api.getWaves().then(waves => {
@@ -724,7 +709,7 @@ function MonitorView({
                selectedNode.status === 'awaiting_input' ? 'Awaiting Reply' :
                'Not dispatched'}
             </span>
-            {(selectedNode.status === 'running' || selectedNode.status === 'awaiting_input') && selectedNode.jobId && (
+            {(selectedNode.status === 'running' || selectedNode.status === 'awaiting_input') && selectedNode.sessionId && (
               <button
                 onClick={() => handleForceStop(selectedNode.roleId)}
                 className="text-[10px] px-2 py-0.5 rounded font-semibold cursor-pointer ml-1"
@@ -753,7 +738,7 @@ function MonitorView({
               onToggleThinking={() => toggleThinking(event.seq)}
               onNavigateToJob={(childJobId) => {
                 for (const [, node] of nodes) {
-                  if (node.jobId === childJobId) {
+                  if (node.events.some(e => e.data.childJobId === childJobId)) {
                     selectNode(node.roleId);
                     return;
                   }
@@ -806,7 +791,7 @@ function MonitorView({
         )}
 
         {/* Follow-up */}
-        {selectedNode?.status === 'done' && selectedNode.jobId && (
+        {selectedNode?.status === 'done' && selectedNode.sessionId && (
           <div className="px-4 py-3 border-t shrink-0" style={{ borderColor: 'var(--terminal-border)', background: '#1565C00A' }}>
             <div className="flex items-center gap-2 mb-2">
               <span className="text-[11px] font-semibold" style={{ color: '#64B5F6' }}>
@@ -944,7 +929,7 @@ function buildReplayNodes(
     const org = orgNodes[roleId];
     if (!org || nodes.has(roleId)) return;
     nodes.set(roleId, {
-      jobId: null, roleId, roleName: org.name,
+      sessionId: '', roleId, roleName: org.name,
       children: org.children, status: 'not-dispatched',
       events: [], streamStatus: 'idle',
     });
@@ -954,7 +939,7 @@ function buildReplayNodes(
   const root = orgNodes[rootRoleId];
   if (root) {
     nodes.set(rootRoleId, {
-      jobId: null, roleId: rootRoleId, roleName: 'CEO',
+      sessionId: '', roleId: rootRoleId, roleName: 'CEO',
       children: root.children, status: 'not-dispatched',
       events: [], streamStatus: 'idle',
     });
@@ -967,7 +952,7 @@ function buildReplayNodes(
     if (existing) {
       nodes.set(r.roleId, {
         ...existing,
-        jobId: r.jobId, status: (r.status as WaveNode['status']) || 'done',
+        sessionId: r.jobId ?? '', status: (r.status as WaveNode['status']) || 'done',
         events: r.events, streamStatus: 'done',
       });
     }
@@ -976,7 +961,7 @@ function buildReplayNodes(
       if (child) {
         nodes.set(c.roleId, {
           ...child,
-          jobId: c.jobId, status: (c.status as WaveNode['status']) || 'done',
+          sessionId: c.jobId ?? '', status: (c.status as WaveNode['status']) || 'done',
           events: c.events, streamStatus: 'done',
         });
       }
@@ -1050,31 +1035,13 @@ function ReplayView({ replay, orgNodes, rootRoleId, onOpenKnowledgeDoc, onRefres
     if (!node) return;
     setReplying(true);
     try {
-      // D-014: Prefer session-based messaging when sessionIds available
+      // Resolve session for this role
       const roleIdx = replay.roles.findIndex(r => r.roleId === selectedRoleId);
-      const sessionId = replay.sessionIds?.[roleIdx];
-      if (sessionId) {
-        await api.sendSessionMessage(sessionId, replyText.trim(), 'do');
+      const resolvedSessionId = node.sessionId || replay.sessionIds?.[roleIdx];
+      if (resolvedSessionId) {
+        await api.sendSessionMessage(resolvedSessionId, replyText.trim(), 'do');
         setReplyText('');
         return;
-      }
-
-      // SCA-012: Try session-based reply, then job reply, then fallback
-      if (node.sessionId) {
-        try {
-          await api.replyToSession(node.sessionId, replyText.trim());
-          setReplyText('');
-          return;
-        } catch { /* fall through */ }
-      }
-      if (node.jobId) {
-        try {
-          await api.replyToJob(node.jobId, replyText.trim());
-          setReplyText('');
-          return;
-        } catch {
-          // Job no longer in server memory — fall through to startJob
-        }
       }
       // Fallback: start a new assign job for this role
       await api.startJob({ type: 'assign', roleId: selectedRoleId, task: replyText.trim() });
@@ -1172,7 +1139,7 @@ function ReplayView({ replay, orgNodes, rootRoleId, onOpenKnowledgeDoc, onRefres
               onToggleThinking={() => toggleThinking(event.seq)}
               onNavigateToJob={(childJobId) => {
                 for (const [, node] of nodes) {
-                  if (node.jobId === childJobId) {
+                  if (node.events.some(e => e.data.childJobId === childJobId)) {
                     setSelectedRoleId(node.roleId);
                     return;
                   }
@@ -1189,7 +1156,7 @@ function ReplayView({ replay, orgNodes, rootRoleId, onOpenKnowledgeDoc, onRefres
         </div>
 
         {/* Follow-up to completed role */}
-        {selectedNode?.status === 'done' && selectedNode.jobId && (
+        {selectedNode?.status === 'done' && selectedNode.sessionId && (
           <div className="px-4 py-3 border-t shrink-0" style={{ borderColor: 'var(--terminal-border)', background: '#1565C00A' }}>
             <div className="flex items-center gap-2 mb-2">
               <span className="text-[11px] font-semibold" style={{ color: '#64B5F6' }}>

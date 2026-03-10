@@ -13,7 +13,7 @@ const ROLE_COLORS: Record<string, string> = {
 
 interface Props {
   directive: string;
-  rootJobs: Array<{ jobId: string; roleId: string; roleName: string; sessionId?: string }>;
+  rootJobs: Array<{ sessionId: string; roleId: string; roleName: string; jobId?: string }>;
   orgNodes: Record<string, OrgNode>;
   rootRoleId: string;
   onClose: () => void;
@@ -41,7 +41,7 @@ export default function WaveCommandCenter({
     if (!onSave) return;
     setSaving(true);
     try {
-      const jobIds = rootJobs.map(j => j.jobId);
+      const jobIds = rootJobs.map(j => j.jobId).filter((id): id is string => !!id);
       await onSave(jobIds);
     } catch (err) {
       console.error('Save failed:', err);
@@ -54,20 +54,13 @@ export default function WaveCommandCenter({
   const handleReply = useCallback(async () => {
     if (!selectedRoleId || !replyText.trim()) return;
     const node = nodes.get(selectedRoleId);
-    if (!node?.jobId || (node.status !== 'awaiting_input' && node.status !== 'done')) return;
+    if (!node?.sessionId || (node.status !== 'awaiting_input' && node.status !== 'done')) return;
 
     setReplying(true);
     try {
-      // SCA-012: prefer session-based reply, fall back to job reply
-      if (node.sessionId) {
-        const { jobId: newJobId } = await api.replyToSession(node.sessionId, replyText.trim());
-        setReplyText('');
-        connectStream(newJobId, selectedRoleId, node.sessionId);
-      } else {
-        const { jobId: newJobId } = await api.replyToJob(node.jobId, replyText.trim());
-        setReplyText('');
-        connectStream(newJobId, selectedRoleId);
-      }
+      await api.replyToSession(node.sessionId, replyText.trim());
+      setReplyText('');
+      connectStream(node.sessionId, selectedRoleId);
     } catch (err) {
       console.error('Reply failed:', err);
     } finally {
@@ -77,14 +70,9 @@ export default function WaveCommandCenter({
 
   const handleForceStop = useCallback(async (roleId: string) => {
     const node = nodes.get(roleId);
-    if (!node?.jobId) return;
+    if (!node?.sessionId) return;
     try {
-      // SCA-012: prefer session-based abort
-      if (node.sessionId) {
-        await api.abortSession(node.sessionId);
-      } else {
-        await api.abortJob(node.jobId);
-      }
+      await api.abortSession(node.sessionId);
     } catch (err) {
       console.error('Abort failed:', err);
     }
@@ -92,14 +80,8 @@ export default function WaveCommandCenter({
 
   const handleStopAll = useCallback(async () => {
     for (const [, node] of nodes) {
-      if ((node.status === 'running' || node.status === 'awaiting_input') && node.jobId) {
-        try {
-          if (node.sessionId) {
-            await api.abortSession(node.sessionId);
-          } else {
-            await api.abortJob(node.jobId);
-          }
-        } catch { /* ignore */ }
+      if ((node.status === 'running' || node.status === 'awaiting_input') && node.sessionId) {
+        try { await api.abortSession(node.sessionId); } catch { /* ignore */ }
       }
     }
   }, [nodes]);
@@ -306,7 +288,7 @@ export default function WaveCommandCenter({
                    selectedNode.status === 'awaiting_input' ? 'Awaiting Reply' :
                    'Not dispatched'}
                 </span>
-                {(selectedNode.status === 'running' || selectedNode.status === 'awaiting_input') && selectedNode.jobId && (
+                {(selectedNode.status === 'running' || selectedNode.status === 'awaiting_input') && selectedNode.sessionId && (
                   <button
                     onClick={() => handleForceStop(selectedNode.roleId)}
                     className="text-[10px] px-2 py-0.5 rounded font-semibold cursor-pointer ml-1"
@@ -338,13 +320,14 @@ export default function WaveCommandCenter({
                   event={event}
                   isThinkingCollapsed={collapsedThinking.has(event.seq)}
                   onToggleThinking={() => toggleThinking(event.seq)}
-                  onNavigateToJob={(childJobId) => {
-                    // Find which role this child job belongs to and select it
-                    for (const [, node] of nodes) {
-                      if (node.jobId === childJobId) {
-                        selectNode(node.roleId);
-                        return;
-                      }
+                  onNavigateToJob={(_childJobId) => {
+                    // Find dispatch event to determine target role
+                    const dispatchEvt = selectedNode?.events.find(e =>
+                      e.type === 'dispatch:start' && e.data.childJobId === _childJobId
+                    );
+                    const targetRole = dispatchEvt?.data.targetRoleId as string | undefined;
+                    if (targetRole && nodes.has(targetRole)) {
+                      selectNode(targetRole);
                     }
                   }}
                   onOpenKnowledgeDoc={onOpenKnowledgeDoc}
@@ -389,7 +372,7 @@ export default function WaveCommandCenter({
             )}
 
             {/* Follow-up directive for completed roles */}
-            {selectedNode?.status === 'done' && selectedNode.jobId && (
+            {selectedNode?.status === 'done' && selectedNode.sessionId && (
               <div className="px-4 py-3 border-t border-[var(--terminal-border)] shrink-0"
                    style={{ background: '#1565C00A' }}>
                 <div className="flex items-center gap-2 mb-2">

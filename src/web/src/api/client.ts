@@ -1,4 +1,4 @@
-import type { Company, Role, RoleDetail, Project, ProjectDetail, Standup, Wave, Decision, Session, CreateRoleInput, JobInfo, CompanyStatus, EngineDetection, PathValidation, ScaffoldInput, ScaffoldResult, TeamTemplate, BrowseResult, ConnectAkbResult, KnowledgeDoc, KnowledgeDocDetail, OrgTreeResponse, TrackedRole, CompanyStats, GitStatus, ActiveSessionsResponse, ActiveSession } from '../types';
+import type { Company, Role, RoleDetail, Project, ProjectDetail, Standup, Wave, Decision, Session, CreateRoleInput, CompanyStatus, EngineDetection, PathValidation, ScaffoldInput, ScaffoldResult, TeamTemplate, BrowseResult, ConnectAkbResult, KnowledgeDoc, KnowledgeDocDetail, OrgTreeResponse, TrackedRole, CompanyStats, GitStatus, ActiveSessionsResponse, ActiveSession } from '../types';
 import type { SpeechSettings } from '../types/speech';
 
 const BASE = '/api';
@@ -92,20 +92,9 @@ export const api = {
   replyToSession: (sessionId: string, message: string) =>
     post<{ ok: boolean; jobId: string; sessionId: string }>(`/sessions/${sessionId}/reply`, { message }),
 
-  // Jobs
+  // Jobs (start only — monitoring/control via Session API)
   startJob: (params: { type?: string; roleId?: string; task?: string; directive?: string; sourceRole?: string; readOnly?: boolean; targetRole?: string; targetRoles?: string[] }) =>
     post<{ jobId: string; jobIds?: string[]; waveId?: string; sessionId?: string; sessionIds?: string[] }>('/jobs', params),
-  getJob: (id: string) => get<JobInfo>(`/jobs/${id}`),
-  listJobs: (filter?: { status?: string; roleId?: string }) => {
-    const params = new URLSearchParams();
-    if (filter?.status) params.set('status', filter.status);
-    if (filter?.roleId) params.set('roleId', filter.roleId);
-    const qs = params.toString();
-    return get<{ jobs: JobInfo[] }>(`/jobs${qs ? '?' + qs : ''}`);
-  },
-  abortJob: (id: string) => del<{ ok: boolean }>(`/jobs/${id}`),
-  replyToJob: (id: string, message: string) =>
-    post<{ jobId: string; roleId: string }>(`/jobs/${id}/reply`, { message }),
   saveWave: (params: { directive: string; jobIds: string[]; waveId?: string; sessionIds?: string[] }) =>
     post<{ ok: boolean; path: string }>('/waves/save', params),
 

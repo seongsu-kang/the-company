@@ -16,6 +16,7 @@ interface Props {
   terminalWidth?: number;
   // Live activity
   activeJobId?: string;
+  activeSessionId?: string;
   activeTask?: string;
   isWorking?: boolean;
   jobStartedAt?: string;
@@ -61,7 +62,7 @@ const fmtElapsed = (seconds: number) => `${Math.floor(seconds / 60)}:${String(se
 
 export default function SidePanel({
   role, allRoles, recentActivity, onClose, onFireRole, terminalWidth = 0,
-  activeJobId, activeTask, isWorking, jobStartedAt, onStopJob,
+  activeJobId, activeSessionId, activeTask, isWorking, jobStartedAt, onStopJob,
   sessions, streamingSessionId, onCreateSessionSilent, onSendMessage, onFocusTerminal, onCustomize, onUpdateRole, appearance, relationships, roleLevel, onMaximize,
 }: Props) {
   const [panelW, setPanelW] = useState(DEFAULT_WIDTH);
@@ -90,7 +91,7 @@ export default function SidePanel({
   const [personaSaving, setPersonaSaving] = useState(false);
 
   // Activity stream for working state (compact summary)
-  const { events: activityEvents, status: activityStatus } = useActivityStream(activeJobId ?? null);
+  const { events: activityEvents, status: activityStatus } = useActivityStream(activeSessionId ?? null);
 
   // Elapsed timer
   const [elapsed, setElapsed] = useState(0);

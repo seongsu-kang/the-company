@@ -69,58 +69,17 @@ export function handleExecRequest(req: IncomingMessage, res: ServerResponse): vo
    ═══════════════════════════════════════════════ */
 
 function handleJobsRequest(url: string, method: string, req: IncomingMessage, res: ServerResponse): void {
-  // Strip query string for matching
-  const [path, queryString] = url.split('?');
+  const [path] = url.split('?');
 
-  // POST /api/jobs — start a new job
+  // POST /api/jobs — start a new job (creates session + job)
   if (method === 'POST' && path === '/api/jobs') {
     readBody(req).then((body) => handleStartJob(body, res));
     return;
   }
 
-  // GET /api/jobs — list jobs
-  if (method === 'GET' && path === '/api/jobs') {
-    const params = new URLSearchParams(queryString ?? '');
-    handleListJobs(params, res);
-    return;
-  }
-
-  // Match /api/jobs/:id/stream
-  const streamMatch = path.match(/^\/api\/jobs\/([^/]+)\/stream$/);
-  if (streamMatch && method === 'GET') {
-    const params = new URLSearchParams(queryString ?? '');
-    const fromSeq = parseInt(params.get('from') ?? '0', 10);
-    handleJobStream(streamMatch[1], fromSeq, req, res);
-    return;
-  }
-
-  // Match /api/jobs/:id/reply
-  const replyMatch = path.match(/^\/api\/jobs\/([^/]+)\/reply$/);
-  if (replyMatch && method === 'POST') {
-    readBody(req).then((body) => handleReplyToJob(replyMatch[1], body, res));
-    return;
-  }
-
-  // Match /api/jobs/:id/history
-  const historyMatch = path.match(/^\/api\/jobs\/([^/]+)\/history$/);
-  if (historyMatch && method === 'GET') {
-    handleJobHistory(historyMatch[1], res);
-    return;
-  }
-
-  // Match /api/jobs/:id
-  const idMatch = path.match(/^\/api\/jobs\/([^/]+)$/);
-  if (idMatch && method === 'GET') {
-    handleGetJob(idMatch[1], res);
-    return;
-  }
-  if (idMatch && method === 'DELETE') {
-    handleAbortJob(idMatch[1], res);
-    return;
-  }
-
-  res.writeHead(404);
-  res.end(JSON.stringify({ error: 'Not found' }));
+  // All other /api/jobs/* endpoints removed — use /api/sessions/* instead
+  res.writeHead(410);  // Gone
+  res.end(JSON.stringify({ error: 'Job monitoring endpoints removed. Use /api/sessions/:id/stream, /api/sessions/:id/abort, /api/sessions/:id/reply instead.' }));
 }
 
 /* ─── POST /api/jobs ─────────────────────── */
@@ -273,121 +232,6 @@ function handleStartJob(body: Record<string, unknown>, res: ServerResponse): voi
   }
 
   jsonResponse(res, 200, { jobId: job.id, ...(sessionId && { sessionId }) });
-}
-
-/* ─── GET /api/jobs ──────────────────────── */
-
-function handleListJobs(params: URLSearchParams, res: ServerResponse): void {
-  const status = params.get('status') as 'running' | 'done' | 'error' | null;
-  const roleId = params.get('roleId') ?? undefined;
-
-  const jobs = jobManager.listJobs({
-    status: status ?? undefined,
-    roleId,
-  });
-
-  jsonResponse(res, 200, { jobs });
-}
-
-/* ─── GET /api/jobs/:id ──────────────────── */
-
-function handleGetJob(jobId: string, res: ServerResponse): void {
-  const info = jobManager.getJobInfo(jobId);
-  if (!info) {
-    jsonResponse(res, 404, { error: 'Job not found' });
-    return;
-  }
-  jsonResponse(res, 200, info);
-}
-
-/* ─── GET /api/jobs/:id/stream ───────────── */
-
-function handleJobStream(jobId: string, fromSeq: number, req: IncomingMessage, res: ServerResponse): void {
-  const job = jobManager.getJob(jobId);
-
-  // Start SSE
-  startSSE(res);
-
-  // Replay historical events from file
-  const pastEvents = ActivityStream.readFrom(jobId, fromSeq);
-  for (const event of pastEvents) {
-    sendSSE(res, 'activity', event);
-  }
-
-  // If the job is finished (not running/awaiting), send end and close
-  if (!job || (job.status !== 'running' && job.status !== 'awaiting_input')) {
-    sendSSE(res, 'stream:end', { reason: job ? job.status : 'not-found' });
-    res.end();
-    return;
-  }
-
-  // Subscribe for live events
-  const subscriber = (event: ActivityEvent) => {
-    if (event.seq >= fromSeq) {
-      sendSSE(res, 'activity', event);
-    }
-    // Auto-close SSE when job ends or CEO replies (new stream takes over)
-    if (event.type === 'job:done' || event.type === 'job:error') {
-      sendSSE(res, 'stream:end', { reason: event.type === 'job:done' ? 'done' : 'error' });
-      res.end();
-      job.stream.unsubscribe(subscriber);
-    } else if (event.type === 'job:reply') {
-      // CEO replied → close this stream; frontend will connect to continuation job
-      sendSSE(res, 'stream:end', { reason: 'replied' });
-      res.end();
-      job.stream.unsubscribe(subscriber);
-    }
-    // awaiting_input keeps SSE open (sends event but doesn't close)
-  };
-
-  job.stream.subscribe(subscriber);
-
-  // Client disconnect → just unsubscribe (job keeps running)
-  req.on('close', () => {
-    job.stream.unsubscribe(subscriber);
-  });
-}
-
-/* ─── GET /api/jobs/:id/history ──────────── */
-
-function handleJobHistory(jobId: string, res: ServerResponse): void {
-  if (!ActivityStream.exists(jobId)) {
-    jsonResponse(res, 404, { error: 'Job history not found' });
-    return;
-  }
-  const events = ActivityStream.readAll(jobId);
-  jsonResponse(res, 200, { events });
-}
-
-/* ─── DELETE /api/jobs/:id ───────────────── */
-
-function handleAbortJob(jobId: string, res: ServerResponse): void {
-  const success = jobManager.abortJob(jobId);
-  if (!success) {
-    jsonResponse(res, 404, { error: 'Job not found or not running' });
-    return;
-  }
-  jsonResponse(res, 200, { ok: true });
-}
-
-/* ─── POST /api/jobs/:id/reply ──────────── */
-
-function handleReplyToJob(jobId: string, body: Record<string, unknown>, res: ServerResponse): void {
-  const message = body.message as string;
-  if (!message) {
-    jsonResponse(res, 400, { error: 'message is required' });
-    return;
-  }
-
-  const responderRole = body.responderRole as string | undefined;
-
-  const newJob = jobManager.replyToJob(jobId, message, responderRole);
-  if (!newJob) {
-    jsonResponse(res, 400, { error: 'Job not found or not in a replyable state' });
-    return;
-  }
-
-  jsonResponse(res, 200, { jobId: newJob.id, roleId: newJob.roleId });
 }
 
 /* ─── POST /api/waves/save ──────────────── */
