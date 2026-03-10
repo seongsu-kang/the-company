@@ -257,17 +257,33 @@ export async function runAgentLoop(config: AgentConfig): Promise<AgentResult> {
       (b): b is MessageContent & { type: 'tool_use' } => b.type === 'tool_use'
     );
 
-    const toolResults: ToolResult[] = [];
+    // EG-004: Parallel tool execution for independent tools
+    // dispatch/consult run sequentially (recursive agent calls)
+    // All other tools run in parallel via Promise.all()
+    const sequentialTools = new Set(['dispatch', 'consult']);
+    const parallelCalls = toolCalls.filter(tc => !sequentialTools.has(tc.name));
+    const sequentialCalls = toolCalls.filter(tc => sequentialTools.has(tc.name));
 
+    // Record all tool calls
     for (const tc of toolCalls) {
       allToolCalls.push({ name: tc.name, input: tc.input });
+    }
 
+    // Run parallel tools concurrently
+    const parallelResults = await Promise.all(
+      parallelCalls.map(tc =>
+        executeTool({ id: tc.id, name: tc.name, input: tc.input }, toolExecOptions)
+      )
+    );
+
+    // Run sequential tools one by one
+    const sequentialResults: ToolResult[] = [];
+    for (const tc of sequentialCalls) {
       const result = await executeTool(
         { id: tc.id, name: tc.name, input: tc.input },
         toolExecOptions,
       );
-
-      toolResults.push(result);
+      sequentialResults.push(result);
 
       // Track dispatches
       if (tc.name === 'dispatch' && !result.is_error) {
@@ -276,6 +292,27 @@ export async function runAgentLoop(config: AgentConfig): Promise<AgentResult> {
           task: String(tc.input.task),
           result: result.content,
         });
+      }
+    }
+
+    // EG-005: Merge results in original tool_use_id order
+    const resultMap = new Map<string, ToolResult>();
+    for (const r of [...parallelResults, ...sequentialResults]) {
+      resultMap.set(r.tool_use_id, r);
+    }
+    const toolResults = toolCalls.map(tc => resultMap.get(tc.id)!);
+
+    // Track dispatches from parallel results too
+    for (const tc of parallelCalls) {
+      if (tc.name === 'dispatch') {
+        const r = resultMap.get(tc.id)!;
+        if (!r.is_error) {
+          dispatches.push({
+            roleId: String(tc.input.roleId),
+            task: String(tc.input.task),
+            result: r.content,
+          });
+        }
       }
     }
 
