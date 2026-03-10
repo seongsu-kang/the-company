@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import type { Role, RoleDetail, Project, Standup, Wave, Decision, Session, Message, StreamEvent, CreateRoleInput, ImportJob, KnowledgeDoc, OrgNode, GitStatus, ImageAttachment, ActivityEvent } from '../types';
 import SidePanel from '../components/office/SidePanel';
 import OperationsPanel from '../components/office/OperationsPanel';
+import QuestBoard from '../components/office/QuestBoard';
 import ProjectPanel from '../components/office/ProjectPanel';
 import AssignTaskModal from '../components/office/AssignTaskModal';
 import ActivityPanel from '../components/office/ActivityPanel';
@@ -32,7 +33,7 @@ import { OFFICE_THEMES } from '../types/appearance';
 import type { CharacterAppearance, OfficeTheme } from '../types/appearance';
 import { computeRoleLevels, type RoleLevelData } from '../utils/role-level';
 import { computeBadges, type BadgeContext } from '../utils/badges';
-import { getActiveQuest, getDefaultProgress, completeQuest, checkTrigger } from '../utils/quests';
+import { getActiveQuest, getDefaultProgress, completeQuest, checkTrigger, recalcActiveChapter } from '../utils/quests';
 import type { QuestProgress, QuestTrigger } from '../utils/quests';
 
 /* ─── Role metadata ─────────────────────── */
@@ -70,7 +71,8 @@ type PanelState =
   | { type: 'project'; projectId: string }
   | { type: 'bulletin' }
   | { type: 'decisions' }
-  | { type: 'knowledge'; docId?: string };
+  | { type: 'knowledge'; docId?: string }
+  | { type: 'quest' };
 
 /* ─── Page ───────────────────────────────── */
 
@@ -128,6 +130,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
 
   /* Quest Board */
   const [questProgress, setQuestProgress] = useState<QuestProgress>(getDefaultProgress());
+  const questProgressRef = useRef<QuestProgress>(getDefaultProgress());
   const questLoadedRef = useRef(false);
   const prevProjectCountRef = useRef(-1);
   const [questSpotlight, setQuestSpotlight] = useState<string | null>(null);
@@ -207,7 +210,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   const importLogEnd = useRef<HTMLDivElement>(null);
   let logId = useRef(0);
   const prevBadgeIdsRef = useRef<Set<string>>(new Set());
-  const badgeInitCountRef = useRef(0);
+  const badgeMountTimeRef = useRef(Date.now());
 
   const addImportLog = (type: ImportLogEntry['type'], text: string, detail?: string) => {
     const entry: ImportLogEntry = { id: logId.current++, type, text, detail };
@@ -337,8 +340,10 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
     api.getWaves().then(setWaves).catch(() => {});
     api.getDecisions().then(setDecisions).catch(() => {});
     api.getKnowledge().then(setKnowledgeDocs).catch(() => {});
-    api.getQuestProgress().then(p => {
-      setQuestProgress(p); questLoadedRef.current = true;
+    api.getQuestProgress().then(raw => {
+      const p = recalcActiveChapter(raw);
+      if (p.activeChapter !== raw.activeChapter) api.saveQuestProgress(p).catch(() => {});
+      setQuestProgress(p); questProgressRef.current = p; questLoadedRef.current = true;
       // Coins: load + auto-migrate for existing users
       api.getCoins().then(c => {
         if (c.totalEarned === 0) {
@@ -456,24 +461,25 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   /** Fire a quest trigger event and complete matching quest */
   const fireQuestTrigger = (event: QuestTrigger) => {
     if (!questLoadedRef.current) return;
-    setQuestProgress(prev => {
-      const active = getActiveQuest(prev);
-      if (!active || !checkTrigger(active, event)) return prev;
-      const { progress: next, quest } = completeQuest(prev, active.id);
-      if (quest) {
-        const coinReward = quest.rewards.coins ?? 0;
-        const coinMsg = coinReward > 0 ? ` 💰 +${coinReward.toLocaleString()}` : '';
-        addToast(`📋 Quest complete: ${quest.title}${coinMsg}`, '#7C3AED');
-        setQuestSpotlight(null);
-        api.saveQuestProgress(next).catch(() => {});
-        if (coinReward > 0) {
-          api.earnCoins(coinReward, `quest: ${quest.id}`, quest.id)
-            .then(r => setCoinBalance(r.balance))
-            .catch(() => {});
-        }
-      }
-      return next;
-    });
+    const prev = questProgressRef.current;
+    const active = getActiveQuest(prev);
+    if (!active || !checkTrigger(active, event)) return;
+    const { progress: next, quest } = completeQuest(prev, active.id);
+    if (!quest) return;
+    // Update state + ref atomically
+    questProgressRef.current = next;
+    setQuestProgress(next);
+    // Side effects (outside setState updater to prevent React StrictMode double-fire)
+    const coinReward = quest.rewards.coins ?? 0;
+    const coinMsg = coinReward > 0 ? ` 💰 +${coinReward.toLocaleString()}` : '';
+    addToast(`📋 Quest complete: ${quest.title}${coinMsg}`, '#7C3AED');
+    setQuestSpotlight(null);
+    api.saveQuestProgress(next).catch(() => {});
+    if (coinReward > 0) {
+      api.earnCoins(coinReward, `quest: ${quest.id}`, quest.id)
+        .then(r => setCoinBalance(r.balance))
+        .catch(() => {});
+    }
   };
 
   /* Apply/remove quest-spotlight CSS class on target element */
@@ -517,17 +523,18 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
       completedQuests: questProgress.completedQuests,
     };
     const earned = computeBadges(badgeCtx);
-    const prevIds = prevBadgeIdsRef.current;
-    // Skip toasts during initial data load (first 2 effect cycles)
-    if (badgeInitCountRef.current >= 2) {
+    const earnedIds = new Set(earned.map(b => b.id));
+    // Suppress toasts for first 5s after mount (data still loading/stabilizing)
+    const elapsed = Date.now() - badgeMountTimeRef.current;
+    if (elapsed > 5000) {
+      const prevIds = prevBadgeIdsRef.current;
       for (const badge of earned) {
         if (!prevIds.has(badge.id)) {
           addToast(`${badge.icon} Badge earned: ${badge.name}!`, '#D4A017');
         }
       }
     }
-    badgeInitCountRef.current++;
-    prevBadgeIdsRef.current = new Set(earned.map(b => b.id));
+    prevBadgeIdsRef.current = earnedIds;
   }, [roleLevels, roles.length, questProgress.completedQuests]);
 
   const handleExecutionDone = () => {
@@ -1389,7 +1396,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
               getRoleSpeech={ambient.getSpeech}
               getAppearance={getAppearance}
               onHireClick={() => setShowHireModal(true)}
-              onMascotClick={() => setPanel({ type: 'bulletin' })}
+              onMascotClick={() => setPanel({ type: 'quest' })}
               roleLevels={roleLevels}
               coinBalance={coinBalance}
               onCoinsSpent={(b) => setCoinBalance(b)}
@@ -1745,16 +1752,21 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           mode={panel.type === 'bulletin' ? 'bulletin' : 'decisions'}
           onClose={closePanel}
           terminalWidth={terminalOpen ? terminalWidth : 0}
-          questProgress={questProgress}
+        />
+      )}
+      {panel.type === 'quest' && (
+        <QuestBoard
+          progress={questProgress}
+          onClose={closePanel}
+          terminalWidth={terminalOpen ? terminalWidth : 0}
           onQuestAction={(questId) => {
             closePanel();
-            // Map quest → spotlight target
             const targetMap: Record<string, string> = {
               'ch1-q1': 'hire-btn', 'ch3-q1': 'hire-btn', 'ch4-q1': 'hire-btn',
               'ch2-q1': 'meeting-room',
               'ch2-q2': 'terminal-btn', 'ch3-q2': 'terminal-btn',
               'ch4-q2': 'wave-btn',
-              'ch5-q1': 'hire-btn',  // store is inside hire modal
+              'ch5-q1': 'hire-btn',
               'ch5-q2': 'hire-btn',
             };
             const target = targetMap[questId];
