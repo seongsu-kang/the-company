@@ -792,7 +792,7 @@ function PublishToStore({ role, appearance }: { role: RoleDetail; appearance?: C
         <div className="px-3 py-2.5 flex items-center justify-between gap-2" style={{ background: 'var(--hud-bg-alt)' }}>
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-[11px] font-bold uppercase tracking-wider shrink-0" style={{ color: 'var(--terminal-text-secondary)', fontFamily: 'var(--pixel-font)' }}>
-              Cloud Store
+              Job Board
             </span>
             {publishedVersion && (
               <span className="text-[9px] px-1.5 py-0.5 rounded shrink-0" style={{ background: 'rgba(34,197,94,0.1)', color: 'rgba(34,197,94,0.6)', border: '1px solid rgba(34,197,94,0.2)' }}>
