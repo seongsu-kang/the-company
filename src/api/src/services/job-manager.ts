@@ -230,6 +230,7 @@ class JobManager {
         jobId,
         teamStatus,
         targetRoles: params.targetRoles,
+        codeRoot: config.codeRoot,
       },
       {
         onText: (text) => {

@@ -17,6 +17,7 @@ export interface AgentConfig {
   orgTree: OrgTree;
   readOnly?: boolean;
   maxTurns?: number;
+  codeRoot?: string;  // EG-001: code project root for bash_execute
   llm?: LLMProvider;
   depth?: number;             // Current dispatch depth (default 0)
   visitedRoles?: Set<string>; // Circular dispatch detection
@@ -87,13 +88,15 @@ export async function runAgentLoop(config: AgentConfig): Promise<AgentResult> {
 
   // 2. Determine tools
   const subordinates = getSubordinates(orgTree, roleId);
-  const tools = getToolsForRole(subordinates.length > 0, readOnly);
+  const hasBash = !readOnly && !!config.codeRoot;
+  const tools = getToolsForRole(subordinates.length > 0, readOnly, hasBash);
 
   // 3. Set up tool executor
   const toolExecOptions: ToolExecutorOptions = {
     companyRoot,
     roleId,
     orgTree,
+    codeRoot: config.codeRoot,
     onToolExec,
     onDispatch: async (targetRoleId: string, subTask: string) => {
       // Recursive dispatch — validate, then run sub-agent
@@ -118,6 +121,7 @@ export async function runAgentLoop(config: AgentConfig): Promise<AgentResult> {
         orgTree,
         readOnly: false,
         maxTurns: Math.min(maxTurns, 15), // Limit sub-agent turns
+        codeRoot: config.codeRoot,
         llm,
         depth: depth + 1,
         visitedRoles: new Set(visitedRoles), // Copy for parallel dispatch support
