@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 import { writeConfig } from './company-config.js';
+import { mergePreferences } from './preferences.js';
 import type { CompanyConfig } from './company-config.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -305,6 +306,11 @@ export function scaffold(config: ScaffoldConfig): string[] {
     const companyConfig: CompanyConfig = { engine: 'claude-cli' };
     writeConfig(root, companyConfig);
     created.push('.tycono/config.json');
+  }
+
+  // Save language preference
+  if (config.language) {
+    mergePreferences(root, { language: config.language });
   }
 
   // Create team roles + install skills
