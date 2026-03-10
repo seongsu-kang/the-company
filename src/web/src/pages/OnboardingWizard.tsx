@@ -537,8 +537,8 @@ export default function OnboardingWizard({ onComplete }: Props) {
                       />
                       <button
                         onClick={() => setShowLocationBrowser(!showLocationBrowser)}
-                        className="px-3 py-2 rounded text-xs font-medium transition-colors shrink-0"
-                        style={{ background: 'var(--hud-bg-alt)', color: 'var(--terminal-text)', border: '1px solid var(--terminal-border)' }}
+                        className="px-3 py-2 rounded text-xs font-medium transition-colors shrink-0 cursor-pointer hover:brightness-125"
+                        style={{ background: 'var(--terminal-surface)', color: 'var(--terminal-text)', border: '1px solid var(--terminal-border)' }}
                         title="Browse folders"
                       >
                         {'\uD83D\uDCC1'}
@@ -571,8 +571,8 @@ export default function OnboardingWizard({ onComplete }: Props) {
                       />
                       <button
                         onClick={() => setShowCodeRootBrowser(!showCodeRootBrowser)}
-                        className="px-3 py-2 rounded text-xs font-medium transition-colors shrink-0"
-                        style={{ background: 'var(--hud-bg-alt)', color: 'var(--terminal-text)', border: '1px solid var(--terminal-border)' }}
+                        className="px-3 py-2 rounded text-xs font-medium transition-colors shrink-0 cursor-pointer hover:brightness-125"
+                        style={{ background: 'var(--terminal-surface)', color: 'var(--terminal-text)', border: '1px solid var(--terminal-border)' }}
                         title="Browse folders"
                       >
                         {'\uD83D\uDCC1'}
@@ -606,8 +606,8 @@ export default function OnboardingWizard({ onComplete }: Props) {
                       />
                       <button
                         onClick={() => setShowKnowledgeBrowser(!showKnowledgeBrowser)}
-                        className="px-3 py-2 rounded text-xs font-medium transition-colors shrink-0"
-                        style={{ background: 'var(--hud-bg-alt)', color: 'var(--terminal-text)', border: '1px solid var(--terminal-border)' }}
+                        className="px-3 py-2 rounded text-xs font-medium transition-colors shrink-0 cursor-pointer hover:brightness-125"
+                        style={{ background: 'var(--terminal-surface)', color: 'var(--terminal-text)', border: '1px solid var(--terminal-border)' }}
                         title="Browse folders"
                       >
                         {'\uD83D\uDCC1'}
@@ -660,8 +660,8 @@ export default function OnboardingWizard({ onComplete }: Props) {
                       />
                       <button
                         onClick={() => setShowAkbBrowser(!showAkbBrowser)}
-                        className="px-3 py-2 rounded text-xs font-medium transition-colors shrink-0"
-                        style={{ background: 'var(--hud-bg-alt)', color: 'var(--terminal-text)', border: '1px solid var(--terminal-border)' }}
+                        className="px-3 py-2 rounded text-xs font-medium transition-colors shrink-0 cursor-pointer hover:brightness-125"
+                        style={{ background: 'var(--terminal-surface)', color: 'var(--terminal-text)', border: '1px solid var(--terminal-border)' }}
                         title="Browse folders"
                       >
                         {'\uD83D\uDCC1'}
