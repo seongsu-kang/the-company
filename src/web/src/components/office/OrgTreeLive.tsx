@@ -216,7 +216,12 @@ export default function OrgTreeLive({ nodes, rootId, selectedRoleId, onSelectNod
             >
               {node.status === 'running' ? 'Working...' :
                node.status === 'awaiting_input' ? 'Awaiting Reply' :
-               node.status === 'done' ? 'Complete' :
+               node.status === 'done' ? (
+                 node.children.some(cid => {
+                   const child = nodes.get(cid);
+                   return child && (child.status === 'running' || child.status === 'awaiting_input');
+                 }) ? 'Supervising...' : 'Complete'
+               ) :
                node.status === 'error' ? 'Error' :
                node.status === 'waiting' ? 'Waiting' : ''}
             </text>

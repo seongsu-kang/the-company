@@ -2053,7 +2053,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
       )}
 
       {/* Unified Wave Center */}
-      {showWaveCenter && (
+      {showWaveCenter && viewMode !== 'pro' && (
         <WaveCenter
           orgNodes={orgNodes}
           rootRoleId={orgRootId}

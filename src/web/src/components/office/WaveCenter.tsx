@@ -667,7 +667,12 @@ export default function WaveCenter({
                         : selectedColor,
                     }}>
                       {selectedNode.status === 'running' ? 'Working...' :
-                       selectedNode.status === 'done' ? 'Complete' :
+                       selectedNode.status === 'done' ? (
+                         selectedNode.children.some(cid => {
+                           const child = waveTree.nodes.get(cid);
+                           return child && (child.status === 'running' || child.status === 'awaiting_input');
+                         }) ? 'Supervising...' : 'Complete'
+                       ) :
                        selectedNode.status === 'error' ? 'Error' :
                        selectedNode.status === 'waiting' ? 'Waiting' :
                        selectedNode.status === 'awaiting_input' ? 'Awaiting Reply' :
