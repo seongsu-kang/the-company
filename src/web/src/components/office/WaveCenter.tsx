@@ -252,34 +252,46 @@ export default function WaveCenter({
                 activeCLevelCount={activeCLevelCount}
                 inputRef={inputRef}
               />
-            ) : currentActiveWave ? (
-              <MonitorView
-                wave={currentActiveWave}
-                orgNodes={orgNodes}
-                rootRoleId={rootRoleId}
-                onDone={onDone}
-                onSave={onSave}
-                onOpenKnowledgeDoc={onOpenKnowledgeDoc}
-              />
-            ) : replayData ? (
-              <ReplayView replay={replayData} orgNodes={orgNodes} rootRoleId={rootRoleId} onOpenKnowledgeDoc={onOpenKnowledgeDoc} onRefreshWaves={onRefreshWaves} />
-            ) : replayLoading ? (
-              <div className="flex-1 flex items-center justify-center text-[var(--terminal-text-muted)] text-sm">
-                Loading wave data...
-              </div>
             ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-[var(--terminal-text-muted)] gap-3 p-8">
-                <span className="text-3xl">{'🌊'}</span>
-                <div className="text-sm">No active waves</div>
-                <div className="text-[10px]">Select a past wave from the list, or start a new one</div>
-                <button
-                  onClick={() => setViewMode('dispatch')}
-                  className="px-4 py-2 text-xs font-semibold rounded-lg cursor-pointer"
-                  style={{ background: '#B71C1C', color: '#fff' }}
-                >
-                  Start New Wave
-                </button>
-              </div>
+              <>
+                {/* MonitorView: keep mounted while active wave exists to preserve SSE streams */}
+                {activeWaves.map((aw) => (
+                  <div
+                    key={aw.id}
+                    className="flex-1 flex flex-col min-h-0"
+                    style={{ display: currentActiveWave?.id === aw.id && !replayData ? 'flex' : 'none' }}
+                  >
+                    <MonitorView
+                      wave={aw}
+                      orgNodes={orgNodes}
+                      rootRoleId={rootRoleId}
+                      onDone={onDone}
+                      onSave={onSave}
+                      onOpenKnowledgeDoc={onOpenKnowledgeDoc}
+                    />
+                  </div>
+                ))}
+                {replayData ? (
+                  <ReplayView replay={replayData} orgNodes={orgNodes} rootRoleId={rootRoleId} onOpenKnowledgeDoc={onOpenKnowledgeDoc} onRefreshWaves={onRefreshWaves} />
+                ) : replayLoading ? (
+                  <div className="flex-1 flex items-center justify-center text-[var(--terminal-text-muted)] text-sm">
+                    Loading wave data...
+                  </div>
+                ) : !currentActiveWave ? (
+                  <div className="flex-1 flex flex-col items-center justify-center text-[var(--terminal-text-muted)] gap-3 p-8">
+                    <span className="text-3xl">{'🌊'}</span>
+                    <div className="text-sm">No active waves</div>
+                    <div className="text-[10px]">Select a past wave from the list, or start a new one</div>
+                    <button
+                      onClick={() => setViewMode('dispatch')}
+                      className="px-4 py-2 text-xs font-semibold rounded-lg cursor-pointer"
+                      style={{ background: '#B71C1C', color: '#fff' }}
+                    >
+                      Start New Wave
+                    </button>
+                  </div>
+                ) : null}
+              </>
             )}
           </div>
 
@@ -723,6 +735,13 @@ function MonitorView({
 
         {/* Events */}
         <div ref={outputRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-1 text-xs font-mono select-text">
+          {/* CEO directive message */}
+          {selectedNode && selectedNode.status !== 'waiting' && selectedNode.status !== 'not-dispatched' && (
+            <div className="flex items-start gap-2 mb-3 pb-2 border-b" style={{ borderColor: 'var(--terminal-border)' }}>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0" style={{ background: '#B71C1C33', color: '#EF5350' }}>CEO</span>
+              <span className="text-[var(--terminal-text-secondary)] whitespace-pre-wrap">{wave.directive}</span>
+            </div>
+          )}
           {selectedNode && selectedNode.events.length === 0 && (
             <div className="text-[var(--terminal-text-muted)]">
               {selectedNode.status === 'waiting' ? 'Waiting for dispatch...' :
