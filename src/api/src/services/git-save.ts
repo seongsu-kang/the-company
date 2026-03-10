@@ -15,7 +15,7 @@
  */
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { resolveCodeRoot } from './company-config.js';
 
 export type RepoType = 'akb' | 'code';
@@ -132,9 +132,16 @@ function isGitAvailable(): boolean {
   }
 }
 
-/** Check if directory is a git repository */
+/** Check if directory is (or is inside) a git repository */
 function isGitRepo(root: string): boolean {
   return run('git rev-parse --is-inside-work-tree', root) === 'true';
+}
+
+/** Check if directory is the root of its own git repository (has .git here) */
+function isGitRoot(root: string): boolean {
+  const toplevel = run('git rev-parse --show-toplevel', root);
+  if (!toplevel) return false;
+  return resolve(toplevel) === resolve(root);
 }
 
 /**
@@ -149,7 +156,7 @@ export function gitInit(root: string, repo: RepoType = 'akb'): { ok: boolean; me
 
   const repoRoot = resolveRepoRoot(root, repo);
 
-  if (isGitRepo(repoRoot)) {
+  if (isGitRoot(repoRoot)) {
     return { ok: true, message: 'Already a git repository' };
   }
   try {
@@ -170,7 +177,7 @@ export function gitInit(root: string, repo: RepoType = 'akb'): { ok: boolean; me
 export function getGitStatus(root: string, repo: RepoType = 'akb'): GitStatus {
   const repoRoot = resolveRepoRoot(root, repo);
 
-  if (!isGitRepo(repoRoot)) {
+  if (!isGitRoot(repoRoot)) {
     return {
       dirty: false,
       modified: [],
@@ -244,7 +251,7 @@ export function getGitStatus(root: string, repo: RepoType = 'akb'): GitStatus {
 export function gitSave(root: string, message?: string, repo: RepoType = 'akb'): SaveResult {
   const repoRoot = resolveRepoRoot(root, repo);
 
-  if (!isGitRepo(repoRoot)) {
+  if (!isGitRoot(repoRoot)) {
     throw new Error('Not a git repository. Run "git init" first.');
   }
 
@@ -297,7 +304,7 @@ export function gitSave(root: string, message?: string, repo: RepoType = 'akb'):
 export function gitHistory(root: string, limit = 20, repo: RepoType = 'akb'): CommitInfo[] {
   const repoRoot = resolveRepoRoot(root, repo);
 
-  if (!isGitRepo(repoRoot)) return [];
+  if (!isGitRoot(repoRoot)) return [];
 
   const log = run(`git log --format=%H%n%h%n%s%n%aI -n ${limit}`, repoRoot);
   if (!log) return [];
@@ -327,7 +334,7 @@ export function gitHistory(root: string, limit = 20, repo: RepoType = 'akb'): Co
 export function gitRestore(root: string, sha: string, paths?: string[], repo: RepoType = 'akb'): RestoreResult {
   const repoRoot = resolveRepoRoot(root, repo);
 
-  if (!isGitRepo(repoRoot)) {
+  if (!isGitRoot(repoRoot)) {
     throw new Error('Not a git repository');
   }
 
@@ -366,7 +373,7 @@ export function gitRestore(root: string, sha: string, paths?: string[], repo: Re
 export function gitFetchStatus(root: string, repo: RepoType = 'akb'): SyncStatus {
   const repoRoot = resolveRepoRoot(root, repo);
 
-  if (!isGitRepo(repoRoot)) {
+  if (!isGitRoot(repoRoot)) {
     return { ahead: 0, behind: 0, branch: '', remote: '', hasRemote: false };
   }
 
@@ -406,7 +413,7 @@ export function gitFetchStatus(root: string, repo: RepoType = 'akb'): SyncStatus
 export function gitPull(root: string, repo: RepoType = 'akb'): PullResult {
   const repoRoot = resolveRepoRoot(root, repo);
 
-  if (!isGitRepo(repoRoot)) {
+  if (!isGitRoot(repoRoot)) {
     return { status: 'error', message: 'Not a git repository' };
   }
 
@@ -517,7 +524,7 @@ export function githubStatus(root: string, repo: RepoType = 'akb'): GitHubStatus
   let remoteUrl: string | undefined;
   try {
     const repoRoot = resolveRepoRoot(root, repo);
-    if (isGitRepo(repoRoot)) {
+    if (isGitRoot(repoRoot)) {
       remoteUrl = run('git remote get-url origin', repoRoot) || undefined;
       hasRemote = !!remoteUrl;
     }
@@ -539,8 +546,12 @@ export function githubCreateRepo(
 ): GitHubCreateResult {
   const repoRoot = resolveRepoRoot(root, repo);
 
-  if (!isGitRepo(repoRoot)) {
-    return { ok: false, message: 'Not a git repository — save first to initialize' };
+  // Auto-init git if not a proper git root (e.g. fresh init, or nested inside parent repo)
+  if (!isGitRoot(repoRoot)) {
+    const initResult = gitInit(root, repo);
+    if (!initResult.ok) {
+      return { ok: false, message: initResult.message };
+    }
   }
 
   // Check gh + auth
@@ -585,7 +596,7 @@ export function githubCreateRepo(
 export function gitAddRemote(root: string, url: string, repo: RepoType = 'akb'): { ok: boolean; message: string } {
   const repoRoot = resolveRepoRoot(root, repo);
 
-  if (!isGitRepo(repoRoot)) {
+  if (!isGitRoot(repoRoot)) {
     return { ok: false, message: 'Not a git repository' };
   }
 

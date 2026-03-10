@@ -4,6 +4,7 @@
  * AKB 디렉토리의 영구 설정을 읽고 쓴다.
  * scaffold 시 생성되고, 서버 시작 시 로드된다.
  */
+import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -59,6 +60,15 @@ export function resolveCodeRoot(companyRoot: string): string {
 
   if (!fs.existsSync(autoCodeRoot)) {
     fs.mkdirSync(autoCodeRoot, { recursive: true });
+  }
+
+  // Auto-init git if not already a repo
+  const gitDir = path.join(autoCodeRoot, '.git');
+  if (!fs.existsSync(gitDir)) {
+    try {
+      execSync('git init', { cwd: autoCodeRoot, stdio: 'pipe' });
+      execSync('git commit --allow-empty -m "Initial commit by Tycono"', { cwd: autoCodeRoot, stdio: 'pipe' });
+    } catch { /* ignore — git may not be installed */ }
   }
 
   // Persist so it's stable across restarts

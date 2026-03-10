@@ -449,6 +449,16 @@ export function scaffold(config: ScaffoldConfig): string[] {
     fs.writeFileSync(knowledgeMd, content);
   }
 
+  // Auto-init git for AKB
+  const gitDir = path.join(root, '.git');
+  if (!fs.existsSync(gitDir)) {
+    try {
+      execSync('git init', { cwd: root, stdio: 'pipe' });
+      execSync('git add -A', { cwd: root, stdio: 'pipe' });
+      execSync('git commit -m "Initial commit by Tycono"', { cwd: root, stdio: 'pipe' });
+    } catch { /* ignore — git may not be installed */ }
+  }
+
   return created;
 }
 
