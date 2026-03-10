@@ -308,10 +308,8 @@ export function scaffold(config: ScaffoldConfig): string[] {
     created.push('.tycono/config.json');
   }
 
-  // Save language preference
-  if (config.language) {
-    mergePreferences(root, { language: config.language });
-  }
+  // Save language preference (default: English)
+  mergePreferences(root, { language: config.language || 'en' });
 
   // Create team roles + install skills
   if (config.team !== 'custom') {

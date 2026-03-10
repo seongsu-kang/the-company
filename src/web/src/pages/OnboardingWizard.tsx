@@ -179,7 +179,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
   // Step: Company
   const [companyName, setCompanyName] = useState('');
   const [description, setDescription] = useState('');
-  const [language, setLanguage] = useState('auto');
+  const [language, setLanguage] = useState('en');
   const nameRef = useRef<HTMLInputElement>(null);
 
   // Step: Workspace
@@ -534,7 +534,6 @@ export default function OnboardingWizard({ onComplete }: Props) {
               <div>
                 <label className="text-xs font-medium block mb-1" style={{ color: 'var(--terminal-text-secondary)' }}>AI Response Language</label>
                 <select className={inputClass} value={language} onChange={e => setLanguage(e.target.value)}>
-                  <option value="auto">Auto</option>
                   <option value="en">English</option>
                   <option value="ko">한국어</option>
                   <option value="ja">日本語</option>

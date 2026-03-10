@@ -155,13 +155,24 @@ Use the code repository path for all source code work (reading, writing, buildin
     sections.push(consultSection);
   }
 
-  // Language preference
+  // Language preference (default: English)
   const prefs = readPreferences(companyRoot);
-  const lang = prefs.language ?? 'auto';
-  if (lang !== 'auto') {
-    const langNames: Record<string, string> = { en: 'English', ko: 'Korean', ja: 'Japanese' };
-    sections.push(`# Language\n\nAlways respond in **${langNames[lang] ?? lang}**. All output — reports, analysis, code comments, status updates — must be in ${langNames[lang] ?? lang}.`);
-  }
+  const lang = prefs.language && prefs.language !== 'auto' ? prefs.language : 'en';
+  const langNames: Record<string, string> = { en: 'English', ko: 'Korean (한국어)', ja: 'Japanese (日本語)' };
+  const langName = langNames[lang] ?? lang;
+  sections.push(`# Language (CRITICAL)
+
+You MUST respond in **${langName}**.
+
+This applies to ALL output without exception:
+- Status updates, reports, and analysis
+- Journal entries and standup notes
+- Decision logs and knowledge documents
+- User-facing messages and explanations
+- Git commit messages and PR descriptions
+
+Code (variable names, comments in code) may remain in English for readability.
+Everything else MUST be in ${langName}.`);
 
   // Execution behavior rules (prevents infinite exploration loops in -p mode)
   sections.push(`# Execution Rules (CRITICAL)
