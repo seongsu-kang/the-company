@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { api } from '../api/client';
-import type { Role, RoleDetail, Project, Standup, Wave, Decision, Session, Message, StreamEvent, CreateRoleInput, ImportJob, KnowledgeDoc, OrgNode, GitStatus, ImageAttachment, ActivityEvent } from '../types';
+import type { Role, RoleDetail, Project, Standup, Wave, Decision, Session, Message, StreamEvent, CreateRoleInput, ImportJob, KnowledgeDoc, OrgNode, GitStatus, ImageAttachment } from '../types';
 import SidePanel from '../components/office/SidePanel';
 import OperationsPanel from '../components/office/OperationsPanel';
 import QuestBoard from '../components/office/QuestBoard';
@@ -133,8 +133,8 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   /* Coins (Virtual Economy) */
   const [coinBalance, setCoinBalance] = useState(0);
 
-  /* Office Expansion */
-  const [purchasedPreset, setPurchasedPreset] = useState<'M' | 'L'>('M');
+  /* Office Expansion (hidden until 6-room preset + multi-floor ready) */
+  // const [purchasedPreset, setPurchasedPreset] = useState<'M' | 'L'>('M');
 
   /* Quest Board */
   const [questProgress, setQuestProgress] = useState<QuestProgress>(getDefaultProgress());
@@ -364,25 +364,8 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
         }
       }).catch(() => {});
     }).catch(() => { questLoadedRef.current = true; });
-    // Office expansion: load purchased preset + auto-migrate large offices
-    api.getPreferences().then((prefs: Record<string, unknown>) => {
-      const expansion = prefs.officeExpansion as { preset: 'M' | 'L' } | undefined;
-      if (expansion?.preset) {
-        setPurchasedPreset(expansion.preset);
-      }
-    }).catch(() => {});
+    // Office expansion: disabled until 6-room preset + multi-floor ready
   }, []);
-
-  // Auto-migrate existing large offices (roles > 12 without expansion record)
-  useEffect(() => {
-    if (roles.length <= 12) return;
-    api.getPreferences().then((prefs: Record<string, unknown>) => {
-      if (prefs.officeExpansion) return; // already has expansion record
-      const expansion = { preset: 'L' as const, purchaseHistory: [{ type: 'migration-L', cost: 0, ts: new Date().toISOString() }] };
-      setPurchasedPreset('L');
-      api.updatePreferences({ officeExpansion: expansion });
-    }).catch(() => {});
-  }, [roles.length]);
 
   // Detect new project creation for quest trigger
   useEffect(() => {
@@ -623,109 +606,6 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
     api.getCostSummary().then((s) => updateRoleLevels(computeRoleLevels(s.byRole))).catch(() => {});
   };
 
-  /** Connect SSE stream for a wave job → update virtual terminal session */
-  const connectWaveStream = (serverSessionId: string, _roleId: string, jobId?: string) => {
-    const virtualSessionId = `wave-${jobId ?? serverSessionId}`;
-    const controller = new AbortController();
-    waveStreamsRef.current.set(serverSessionId, controller);
-
-    // Create initial role message (streaming)
-    const roleMsg: Message = {
-      id: `msg-wave-${serverSessionId}-role`,
-      from: 'role',
-      content: '',
-      type: 'conversation',
-      status: 'streaming',
-      timestamp: new Date().toISOString(),
-      streamEvents: [],
-    };
-    setSessions((prev) => prev.map((s) =>
-      s.id === virtualSessionId ? { ...s, messages: [...s.messages, roleMsg] } : s,
-    ));
-
-    const streamUrl = `/api/sessions/${serverSessionId}/stream?from=0`;
-    fetch(streamUrl, { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok || !response.body) return;
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() ?? '';
-
-          let currentEvent = '';
-          for (const line of lines) {
-            if (line.startsWith('event: ')) {
-              currentEvent = line.slice(7).trim();
-            } else if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                if (currentEvent === 'activity') {
-                  const evt = data as ActivityEvent;
-                  setSessions((prev) => prev.map((s) => {
-                    if (s.id !== virtualSessionId) return s;
-                    const msgs = [...s.messages];
-                    const lastMsg = msgs[msgs.length - 1];
-                    if (!lastMsg || lastMsg.from !== 'role') return s;
-
-                    const updated = { ...lastMsg };
-
-                    if (evt.type === 'text') {
-                      updated.content = (updated.content ?? '') + ((evt.data.text as string) ?? '');
-                    } else if (evt.type === 'thinking') {
-                      updated.thinking = (updated.thinking ?? '') + ((evt.data.text as string) ?? '');
-                      updated.streamEvents = [...(updated.streamEvents ?? []), { type: 'thinking', timestamp: Date.now(), text: evt.data.text as string }];
-                    } else if (evt.type === 'tool:start') {
-                      updated.streamEvents = [...(updated.streamEvents ?? []), { type: 'tool', timestamp: Date.now(), toolName: evt.data.name as string, toolInput: evt.data.input as Record<string, unknown> }];
-                    } else if (evt.type === 'dispatch:start') {
-                      updated.streamEvents = [...(updated.streamEvents ?? []), { type: 'dispatch', timestamp: Date.now(), roleId: evt.data.targetRoleId as string, task: evt.data.task as string }];
-                    } else if (evt.type === 'turn:complete') {
-                      updated.streamEvents = [...(updated.streamEvents ?? []), { type: 'turn', timestamp: Date.now(), turn: evt.data.turn as number }];
-                    } else if (evt.type === 'job:done') {
-                      updated.status = 'done';
-                      msgs[msgs.length - 1] = updated;
-                      return { ...s, messages: msgs, status: 'closed' as const };
-                    } else if (evt.type === 'job:error') {
-                      updated.status = 'error';
-                      if (evt.data.message) updated.content = updated.content || (evt.data.message as string);
-                      msgs[msgs.length - 1] = updated;
-                      return { ...s, messages: msgs, status: 'closed' as const };
-                    }
-
-                    msgs[msgs.length - 1] = updated;
-                    return { ...s, messages: msgs };
-                  }));
-                } else if (currentEvent === 'stream:end') {
-                  setSessions((prev) => prev.map((s) => {
-                    if (s.id !== virtualSessionId) return s;
-                    const msgs = s.messages.map((m) =>
-                      m.status === 'streaming' ? { ...m, status: 'done' as const } : m,
-                    );
-                    return { ...s, messages: msgs, status: 'closed' as const };
-                  }));
-                }
-              } catch { /* skip malformed */ }
-              currentEvent = '';
-            }
-          }
-        }
-      })
-      .catch((err) => {
-        if (err.name === 'AbortError') return;
-        setSessions((prev) => prev.map((s) => {
-          if (s.id !== virtualSessionId) return s;
-          const msgs = s.messages.map((m) =>
-            m.status === 'streaming' ? { ...m, status: 'error' as const } : m,
-          );
-          return { ...s, messages: msgs, status: 'closed' as const };
-        }));
-      });
-  };
 
   const handleWaveDispatch = async (directive: string, targetRoles?: string[]) => {
     setShowWaveModal(false);
@@ -820,10 +700,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
         openTerminal();
       }
 
-      // Connect SSE streams for each wave session
-      for (const w of wj) {
-        connectWaveStream(w.sessionId, w.roleId, w.jobId);
-      }
+      // SSE streams are managed by WaveCenter's useWaveTree hook — no duplicate connections here
     } catch (err) {
       addToast(`Failed to start wave: ${err instanceof Error ? err.message : 'unknown'}`, '#C62828');
     }
@@ -1521,15 +1398,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
                 fireQuestTrigger({ type: 'furniture_placed' });
                 if (price > 0) fireQuestTrigger({ type: 'furniture_purchased' });
               }}
-              purchasedPreset={purchasedPreset}
-              onExpansionPurchased={(preset) => {
-                setPurchasedPreset(preset);
-                const expansion = {
-                  preset,
-                  purchaseHistory: [{ type: 'preset-L', cost: 15000, ts: new Date().toISOString() }],
-                };
-                api.updatePreferences({ officeExpansion: expansion });
-              }}
+              /* purchasedPreset / onExpansionPurchased — disabled until 6-room preset + multi-floor ready */
             />
           ) : (
           <div className={`${terminalOpen ? 'max-w-full' : 'max-w-[1100px]'} mx-auto h-full p-4 flex flex-col gap-3 relative z-[1]`}>
