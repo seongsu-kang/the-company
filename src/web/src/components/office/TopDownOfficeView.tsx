@@ -962,22 +962,6 @@ function spawnHearts(cx: number, cy: number) {
   }
 }
 
-/* ── Spawn sweat particles (employee click) ── */
-function spawnSweat(cx: number, cy: number) {
-  for (let i = 0; i < 3; i++) {
-    _particles.push({
-      x: cx + (Math.random() - 0.5) * 6,
-      y: cy - 2,
-      vx: (Math.random() - 0.5) * 0.2,
-      vy: 0.2 + Math.random() * 0.15,  // drip downward
-      life: 45 + Math.floor(Math.random() * 20),
-      maxLife: 60,
-      char: '💧',
-      color: '#60A5FA',
-    });
-  }
-}
-
 /* ═══════════════════════════════════════════
    REACT COMPONENT
    ═══════════════════════════════════════════ */
