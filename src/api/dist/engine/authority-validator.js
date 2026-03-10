@@ -1,4 +1,4 @@
-import { canDispatchTo, getChainOfCommand } from './org-tree.js';
+import { canDispatchTo, canConsult, getChainOfCommand } from './org-tree.js';
 /* ─── Validation ─────────────────────────────── */
 /**
  * Validate whether a source role can dispatch a task to a target role.
@@ -28,6 +28,28 @@ export function validateDispatch(orgTree, sourceRole, targetRole) {
         };
     }
     return { allowed: true, reason: 'Dispatch authorized' };
+}
+/**
+ * Validate whether a source role can consult (ask a question to) a target role.
+ * Allowed: peers (same parent), direct manager, or subordinates.
+ */
+export function validateConsult(orgTree, sourceRole, targetRole) {
+    if (sourceRole === targetRole) {
+        return { allowed: false, reason: `Cannot consult self (${sourceRole})` };
+    }
+    if (!orgTree.nodes.has(sourceRole) && sourceRole !== 'ceo') {
+        return { allowed: false, reason: `Source role not found: ${sourceRole}` };
+    }
+    if (!orgTree.nodes.has(targetRole)) {
+        return { allowed: false, reason: `Target role not found: ${targetRole}` };
+    }
+    if (!canConsult(orgTree, sourceRole, targetRole)) {
+        return {
+            allowed: false,
+            reason: `${sourceRole} cannot consult ${targetRole}. Only peers (same manager), direct manager, or subordinates are allowed.`,
+        };
+    }
+    return { allowed: true, reason: 'Consult authorized' };
 }
 /**
  * Validate whether a role can perform a write operation to a given path.

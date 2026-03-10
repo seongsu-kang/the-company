@@ -21,6 +21,13 @@ export type MessageContent = {
     id: string;
     name: string;
     input: Record<string, unknown>;
+} | {
+    type: 'image';
+    source: {
+        type: 'base64';
+        media_type: string;
+        data: string;
+    };
 };
 export interface LLMResponse {
     content: MessageContent[];
@@ -46,8 +53,11 @@ export interface StreamCallbacks {
  *   - AnthropicProvider: @anthropic-ai/sdk 기반 (기본)
  *   - (향후) OpenAIProvider, OllamaProvider, MockProvider
  */
+export interface ChatOptions {
+    maxTokens?: number;
+}
 export interface LLMProvider {
-    chat(systemPrompt: string, messages: LLMMessage[], tools?: ToolDefinition[], signal?: AbortSignal): Promise<LLMResponse>;
+    chat(systemPrompt: string, messages: LLMMessage[], tools?: ToolDefinition[], signal?: AbortSignal, options?: ChatOptions): Promise<LLMResponse>;
     chatStream?(systemPrompt: string, messages: LLMMessage[], tools: ToolDefinition[] | undefined, callbacks: StreamCallbacks): Promise<LLMResponse>;
 }
 export declare class AnthropicProvider implements LLMProvider {
@@ -60,12 +70,24 @@ export declare class AnthropicProvider implements LLMProvider {
     /**
      * Send a message and get a complete response (non-streaming)
      */
-    chat(systemPrompt: string, messages: LLMMessage[], tools?: ToolDefinition[], signal?: AbortSignal): Promise<LLMResponse>;
+    chat(systemPrompt: string, messages: LLMMessage[], tools?: ToolDefinition[], signal?: AbortSignal, options?: ChatOptions): Promise<LLMResponse>;
     /**
      * Send a message with streaming (for SSE)
      */
     chatStream(systemPrompt: string, messages: LLMMessage[], tools: ToolDefinition[] | undefined, callbacks: StreamCallbacks): Promise<LLMResponse>;
     private mapContent;
+}
+/**
+ * Claude CLI (`claude -p`)를 LLMProvider로 사용.
+ * Claude Max 구독 기반 — API 키 불필요.
+ * Chat pipeline (speech) 등 간단한 텍스트 생성에 사용.
+ */
+export declare class ClaudeCliProvider implements LLMProvider {
+    private model;
+    constructor(options?: {
+        model?: string;
+    });
+    chat(systemPrompt: string, messages: LLMMessage[], tools?: ToolDefinition[], signal?: AbortSignal): Promise<LLMResponse>;
 }
 /** @deprecated Use AnthropicProvider instead */
 export declare const LLMAdapter: typeof AnthropicProvider;

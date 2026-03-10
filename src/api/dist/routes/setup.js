@@ -9,11 +9,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 import os from 'node:os';
-import { scaffold, getAvailableTeams, loadTeam } from '../services/scaffold.js';
+import { scaffold, getAvailableTeams, loadTeam, getRequiredTools, installSkillTools } from '../services/scaffold.js';
 import { importKnowledge } from '../services/knowledge-importer.js';
+import { gitInit } from '../services/git-save.js';
 import { AnthropicProvider } from '../engine/llm-adapter.js';
 import { jobManager } from '../services/job-manager.js';
-import { applyConfig, readConfig } from '../services/company-config.js';
+import { applyConfig, readConfig, writeConfig } from '../services/company-config.js';
+import { mergePreferences } from '../services/preferences.js';
+import { setCompanyRoot } from '../services/file-reader.js';
 export const setupRouter = Router();
 /**
  * POST /api/setup/detect-engine
@@ -68,12 +71,31 @@ setupRouter.post('/validate-path', (req, res) => {
  * POST /api/setup/scaffold
  */
 setupRouter.post('/scaffold', (req, res) => {
-    const { companyName, description, apiKey, team, existingProjectPath, knowledgePaths } = req.body;
+    const { companyName, description, apiKey, team, existingProjectPath, knowledgePaths, codeRoot, language, location } = req.body;
     if (!companyName || typeof companyName !== 'string') {
         res.status(400).json({ error: 'companyName is required' });
         return;
     }
-    const projectRoot = process.env.COMPANY_ROOT || process.cwd();
+    // Determine project root: explicit location from wizard > fallback to CWD with safety check
+    let projectRoot;
+    if (location && typeof location === 'string') {
+        projectRoot = path.resolve(location);
+    }
+    else {
+        const baseRoot = process.env.COMPANY_ROOT || process.cwd();
+        const dangerousPaths = new Set(['/', os.homedir(), os.tmpdir()]);
+        const isDangerous = dangerousPaths.has(baseRoot) || baseRoot === '/tmp';
+        if (isDangerous) {
+            const slug = companyName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'my-company';
+            projectRoot = path.join(baseRoot, slug);
+        }
+        else {
+            projectRoot = baseRoot;
+        }
+    }
+    if (!fs.existsSync(projectRoot)) {
+        fs.mkdirSync(projectRoot, { recursive: true });
+    }
     const config = {
         companyName,
         description: description || 'An AI-powered organization',
@@ -85,11 +107,21 @@ setupRouter.post('/scaffold', (req, res) => {
     };
     try {
         const created = scaffold(config);
-        process.env.COMPANY_ROOT = projectRoot;
+        setCompanyRoot(projectRoot);
         // Load config.json written by scaffold and apply to process.env
-        applyConfig(projectRoot);
+        const scaffoldConfig = applyConfig(projectRoot);
+        // Save codeRoot if provided
+        if (codeRoot && typeof codeRoot === 'string') {
+            writeConfig(projectRoot, { ...scaffoldConfig, codeRoot });
+        }
+        // Save language preference
+        if (language && typeof language === 'string') {
+            mergePreferences(projectRoot, { language });
+        }
         jobManager.refreshRunner();
-        res.json({ ok: true, companyName, projectRoot, created });
+        // Auto git init (graceful — skip if git not installed)
+        const gitResult = gitInit(projectRoot);
+        res.json({ ok: true, companyName, projectRoot, created, git: gitResult });
     }
     catch (err) {
         const message = err instanceof Error ? err.message : 'Scaffold failed';
@@ -134,6 +166,32 @@ setupRouter.post('/browse', (req, res) => {
     }
 });
 /**
+ * POST /api/setup/mkdir
+ * Create a new directory inside the browsed location.
+ */
+setupRouter.post('/mkdir', (req, res) => {
+    const { path: parentPath, name } = req.body;
+    if (!parentPath || !name || typeof parentPath !== 'string' || typeof name !== 'string') {
+        res.status(400).json({ error: 'path and name are required' });
+        return;
+    }
+    // Sanitize name — no path separators or dots-only
+    const sanitized = name.trim().replace(/[/\\]/g, '');
+    if (!sanitized || sanitized === '.' || sanitized === '..') {
+        res.status(400).json({ error: 'Invalid folder name' });
+        return;
+    }
+    const target = path.join(path.resolve(parentPath), sanitized);
+    try {
+        fs.mkdirSync(target, { recursive: true });
+        res.json({ ok: true, path: target });
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        res.status(500).json({ error: msg });
+    }
+});
+/**
  * POST /api/setup/connect-akb
  * Connect an existing AKB directory.
  */
@@ -162,12 +220,12 @@ setupRouter.post('/connect-akb', (req, res) => {
             companyName = match[1].trim();
     }
     catch { /* ignore */ }
-    process.env.COMPANY_ROOT = resolved;
+    setCompanyRoot(resolved);
     // Load existing config.json if present
     const config = readConfig(resolved);
     applyConfig(resolved);
     jobManager.refreshRunner();
-    res.json({ ok: true, companyName, companyRoot: resolved, engine: config.engine });
+    res.json({ ok: true, companyName, companyRoot: resolved, engine: config.engine, codeRoot: config.codeRoot || null });
 });
 /**
  * POST /api/setup/import-knowledge (SSE)
@@ -213,6 +271,48 @@ setupRouter.post('/import-knowledge', (req, res) => {
     });
 });
 /**
+ * GET /api/setup/code-root
+ * Get the current codeRoot config value.
+ */
+setupRouter.get('/code-root', (_req, res) => {
+    const companyRoot = process.env.COMPANY_ROOT || process.cwd();
+    const config = readConfig(companyRoot);
+    res.json({ codeRoot: config.codeRoot || null });
+});
+/**
+ * POST /api/setup/code-root
+ * Set or update the codeRoot config field.
+ */
+setupRouter.post('/code-root', (req, res) => {
+    const { codeRoot: newCodeRoot } = req.body;
+    const companyRoot = process.env.COMPANY_ROOT || process.cwd();
+    if (!newCodeRoot || typeof newCodeRoot !== 'string') {
+        res.status(400).json({ ok: false, error: 'codeRoot path is required' });
+        return;
+    }
+    const resolved = path.resolve(newCodeRoot);
+    if (!fs.existsSync(resolved)) {
+        res.status(400).json({ ok: false, error: 'Path does not exist' });
+        return;
+    }
+    if (!fs.statSync(resolved).isDirectory()) {
+        res.status(400).json({ ok: false, error: 'Path is not a directory' });
+        return;
+    }
+    // Check if it's a git repository
+    let isGitRepo = false;
+    try {
+        execSync('git rev-parse --git-dir', { cwd: resolved, timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] });
+        isGitRepo = true;
+    }
+    catch {
+        // Not a git repo — still allow, but inform
+    }
+    const config = readConfig(companyRoot);
+    writeConfig(companyRoot, { ...config, codeRoot: resolved });
+    res.json({ ok: true, codeRoot: resolved, isGitRepo });
+});
+/**
  * GET /api/setup/teams
  */
 setupRouter.get('/teams', (_req, res) => {
@@ -222,4 +322,65 @@ setupRouter.get('/teams', (_req, res) => {
         roles: loadTeam(t).map(r => ({ id: r.id, name: r.name, level: r.level })),
     }));
     res.json(result);
+});
+/**
+ * POST /api/setup/required-tools
+ * Check which tools are needed for a team's skills.
+ */
+setupRouter.post('/required-tools', (req, res) => {
+    const { team } = req.body;
+    if (!team || typeof team !== 'string') {
+        res.json({ tools: [] });
+        return;
+    }
+    const roles = loadTeam(team);
+    const skillIds = new Set();
+    for (const role of roles) {
+        if (role.defaultSkills) {
+            for (const s of role.defaultSkills)
+                skillIds.add(s);
+        }
+    }
+    const tools = getRequiredTools(Array.from(skillIds));
+    res.json({ tools });
+});
+/**
+ * POST /api/setup/install-tools (SSE)
+ * Install CLI tools required by team skills with progress streaming.
+ */
+setupRouter.post('/install-tools', (req, res) => {
+    const { team } = req.body;
+    if (!team || typeof team !== 'string') {
+        res.status(400).json({ error: 'team is required' });
+        return;
+    }
+    const roles = loadTeam(team);
+    const skillIds = new Set();
+    for (const role of roles) {
+        if (role.defaultSkills) {
+            for (const s of role.defaultSkills)
+                skillIds.add(s);
+        }
+    }
+    // SSE headers
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
+    });
+    const sendSSE = (event, data) => {
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    installSkillTools(Array.from(skillIds), {
+        onChecking: (tool) => sendSSE('checking', { tool }),
+        onInstalling: (tool) => sendSSE('installing', { tool }),
+        onInstalled: (tool) => sendSSE('installed', { tool }),
+        onSkipped: (tool, reason) => sendSSE('skipped', { tool, reason }),
+        onError: (tool, error) => sendSSE('error', { tool, error }),
+        onDone: (stats) => {
+            sendSSE('done', stats);
+            res.end();
+        },
+    });
 });

@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { Router } from 'express';
 import { COMPANY_ROOT } from '../services/file-reader.js';
 import { readPreferences, writePreferences, mergePreferences } from '../services/preferences.js';
@@ -19,11 +20,26 @@ preferencesRouter.put('/', (req, res, next) => {
             res.status(400).json({ error: 'Invalid preferences body' });
             return;
         }
+        const existing = readPreferences(COMPANY_ROOT);
         writePreferences(COMPANY_ROOT, {
+            instanceId: existing.instanceId, // preserve — never overwrite from client
             appearances: prefs.appearances ?? {},
             theme: prefs.theme ?? 'default',
         });
         res.json({ ok: true, ...readPreferences(COMPANY_ROOT) });
+    }
+    catch (err) {
+        next(err);
+    }
+});
+// POST /api/preferences/regenerate-token — regenerate instanceId
+preferencesRouter.post('/regenerate-token', (_req, res, next) => {
+    try {
+        const current = readPreferences(COMPANY_ROOT);
+        const oldId = current.instanceId;
+        current.instanceId = crypto.randomUUID();
+        writePreferences(COMPANY_ROOT, current);
+        res.json({ ok: true, oldInstanceId: oldId, newInstanceId: current.instanceId });
     }
     catch (err) {
         next(err);

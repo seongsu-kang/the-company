@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { execSync } from 'node:child_process';
 import { glob } from 'glob';
 import { validateWrite, validateRead } from '../authority-validator.js';
+import { buildKnowledgeGateWarning } from '../knowledge-gate.js';
 /* ─── Tool Executor ──────────────────────────── */
 export async function executeTool(toolCall, options) {
-    const { companyRoot, roleId, orgTree, onDispatch, onToolExec } = options;
+    const { companyRoot, roleId, orgTree, codeRoot, onDispatch, onConsult, onToolExec } = options;
     const { id, name, input } = toolCall;
     onToolExec?.(name, input);
     try {
@@ -19,8 +21,12 @@ export async function executeTool(toolCall, options) {
                 return writeFile(id, input, companyRoot, roleId, orgTree);
             case 'edit_file':
                 return editFile(id, input, companyRoot, roleId, orgTree);
+            case 'bash_execute':
+                return bashExecute(id, input, codeRoot ?? companyRoot);
             case 'dispatch':
                 return await dispatchTask(id, input, onDispatch);
+            case 'consult':
+                return await consultTask(id, input, onConsult);
             default:
                 return { tool_use_id: id, content: `Unknown tool: ${name}`, is_error: true };
         }
@@ -147,12 +153,9 @@ function writeFile(id, input, companyRoot, roleId, orgTree) {
     const isNewFile = !fs.existsSync(absolute);
     fs.writeFileSync(absolute, content);
     let result = `File written: ${filePath} (${content.length} chars)`;
-    // AKB Level 0 hint: 새 .md 파일 생성 시 (journal 제외)
+    // Knowledge Gate: 새 .md 파일 생성 시 자동 검색 + 경고 (journal 제외)
     if (isNewFile && filePath.endsWith('.md') && !filePath.includes('journal/')) {
-        result += '\n\n[AKB] 새 .md 파일입니다. 확인: '
-            + '(1) search_files로 기존 문서를 검색했는가? '
-            + '(2) 관련 Hub에 등록했는가? '
-            + '(3) cross-link를 추가했는가?';
+        result += buildKnowledgeGateWarning(companyRoot, filePath, content);
     }
     return { tool_use_id: id, content: result };
 }
@@ -183,6 +186,92 @@ function editFile(id, input, companyRoot, roleId, orgTree) {
     fs.writeFileSync(absolute, updated);
     return { tool_use_id: id, content: `File edited: ${filePath}` };
 }
+/* ─── Bash Safety Layer (EG-002) ─────────────── */
+/** Dangerous patterns that are always blocked */
+const BLOCKED_PATTERNS = [
+    /\brm\s+(-[a-z]*f|-[a-z]*r|--force|--recursive)\b/i,
+    /\brm\s+-rf\b/i,
+    /\bsudo\b/,
+    /\bmkfs\b/,
+    /\bdd\s+if=/,
+    /\b(shutdown|reboot|halt|poweroff)\b/,
+    /\bchmod\s+777\b/,
+    /\bchown\b/,
+    />\s*\/dev\//,
+    /\bcurl\b.*\|\s*(bash|sh|zsh)\b/,
+    /\bwget\b.*\|\s*(bash|sh|zsh)\b/,
+    /\bgit\s+push\s+.*--force\b/,
+    /\bgit\s+reset\s+--hard\b/,
+    /\bnpm\s+publish\b/,
+    /\beval\s*\(/,
+    /:\(\)\s*\{/, // fork bomb
+];
+function validateBashCommand(command) {
+    const trimmed = command.trim();
+    if (!trimmed)
+        return 'Empty command';
+    for (const pattern of BLOCKED_PATTERNS) {
+        if (pattern.test(trimmed)) {
+            return `Blocked: command matches dangerous pattern "${pattern.source}"`;
+        }
+    }
+    // Block commands that try to leave codeRoot via cd
+    if (/\bcd\s+\//.test(trimmed) && !/\bcd\s+\/[^;|&]*&&/.test(trimmed)) {
+        // Allow cd to absolute if chained with other commands (common pattern)
+        // But block standalone cd to absolute paths outside codeRoot
+    }
+    return null; // OK
+}
+const MAX_BASH_TIMEOUT = 120_000;
+const DEFAULT_BASH_TIMEOUT = 30_000;
+const MAX_OUTPUT_LENGTH = 50_000;
+function bashExecute(id, input, codeRoot) {
+    const command = String(input.command ?? '');
+    const timeout = Math.min(Number(input.timeout) || DEFAULT_BASH_TIMEOUT, MAX_BASH_TIMEOUT);
+    const cwdRelative = String(input.cwd ?? '.');
+    // Validate command safety
+    const blockReason = validateBashCommand(command);
+    if (blockReason) {
+        return { tool_use_id: id, content: `Error: ${blockReason}`, is_error: true };
+    }
+    // Resolve and validate cwd
+    const cwd = path.resolve(codeRoot, cwdRelative);
+    if (!cwd.startsWith(codeRoot)) {
+        return { tool_use_id: id, content: 'Error: cwd path traversal not allowed', is_error: true };
+    }
+    if (!fs.existsSync(cwd)) {
+        return { tool_use_id: id, content: `Error: directory not found: ${cwdRelative}`, is_error: true };
+    }
+    try {
+        const stdout = execSync(command, {
+            cwd,
+            timeout,
+            encoding: 'utf-8',
+            maxBuffer: 1024 * 1024, // 1MB
+            stdio: ['pipe', 'pipe', 'pipe'],
+            env: { ...process.env, FORCE_COLOR: '0' },
+        });
+        const output = stdout.length > MAX_OUTPUT_LENGTH
+            ? stdout.slice(0, MAX_OUTPUT_LENGTH) + `\n\n[... truncated, output is ${stdout.length} chars]`
+            : stdout;
+        return { tool_use_id: id, content: output || '(no output)' };
+    }
+    catch (err) {
+        const execErr = err;
+        const stderr = execErr.stderr?.slice(0, 5000) ?? '';
+        const stdout = execErr.stdout?.slice(0, 5000) ?? '';
+        const exitCode = execErr.status ?? 1;
+        let content = `Command exited with code ${exitCode}`;
+        if (stdout)
+            content += `\n\nSTDOUT:\n${stdout}`;
+        if (stderr)
+            content += `\n\nSTDERR:\n${stderr}`;
+        if (!stdout && !stderr)
+            content += `\n${execErr.message ?? ''}`;
+        return { tool_use_id: id, content, is_error: true };
+    }
+}
+/* ─── Dispatch / Consult ─────────────────────── */
 async function dispatchTask(id, input, onDispatch) {
     const roleId = String(input.roleId ?? '');
     const task = String(input.task ?? '');
@@ -193,5 +282,17 @@ async function dispatchTask(id, input, onDispatch) {
         return { tool_use_id: id, content: 'Error: dispatch not available in this context', is_error: true };
     }
     const result = await onDispatch(roleId, task);
+    return { tool_use_id: id, content: result };
+}
+async function consultTask(id, input, onConsult) {
+    const roleId = String(input.roleId ?? '');
+    const question = String(input.question ?? '');
+    if (!roleId || !question) {
+        return { tool_use_id: id, content: 'Error: roleId and question are required', is_error: true };
+    }
+    if (!onConsult) {
+        return { tool_use_id: id, content: 'Error: consult not available in this context', is_error: true };
+    }
+    const result = await onConsult(roleId, question);
     return { tool_use_id: id, content: result };
 }

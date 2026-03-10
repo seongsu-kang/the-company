@@ -8,13 +8,27 @@ rolesRouter.get('/', (_req, res, next) => {
     try {
         const content = readFile('roles/roles.md');
         const rows = parseMarkdownTable(content);
-        const roles = rows.map(row => ({
-            id: row.id ?? '',
-            name: row.role ?? row.name ?? '',
-            level: row.level ?? '',
-            reportsTo: row.reports_to ?? '',
-            status: row.상태 ?? row.status ?? '',
-        }));
+        const roles = rows.map(row => {
+            const id = row.id ?? '';
+            let name = row.role ?? row.name ?? '';
+            // role.yaml의 name이 있으면 우선 사용 (rename 반영)
+            const yamlPath = `roles/${id}/role.yaml`;
+            if (id && fileExists(yamlPath)) {
+                try {
+                    const raw = YAML.parse(readFile(yamlPath));
+                    if (raw.name)
+                        name = raw.name;
+                }
+                catch { /* fallback to roles.md name */ }
+            }
+            return {
+                id,
+                name,
+                level: row.level ?? '',
+                reportsTo: row.reports_to ?? '',
+                status: row.상태 ?? row.status ?? '',
+            };
+        });
         res.json(roles);
     }
     catch (err) {
@@ -43,18 +57,39 @@ rolesRouter.get('/:id', (req, res, next) => {
             authority: { autonomous: [], needsApproval: [] },
             journal: '',
         };
-        // role.yaml에서 persona + authority 읽기
+        // role.yaml에서 name + persona + authority + skills 읽기
         const yamlPath = `roles/${id}/role.yaml`;
         if (fileExists(yamlPath)) {
             const raw = YAML.parse(readFile(yamlPath));
+            if (raw.name)
+                role.name = raw.name;
             if (raw.persona)
                 role.persona = raw.persona;
+            if (Array.isArray(raw.skills))
+                role.skills = raw.skills;
             const auth = raw.authority;
             if (auth) {
                 role.authority = {
                     autonomous: auth.autonomous ?? [],
                     needsApproval: auth.needs_approval ?? [],
                 };
+            }
+        }
+        // SKILL.md에서 스킬 메타 자동 추출
+        const skillMdPath = `.claude/skills/${id}/SKILL.md`;
+        if (fileExists(skillMdPath)) {
+            const skillContent = readFile(skillMdPath);
+            const fmMatch = skillContent.match(/^---\n([\s\S]*?)\n---/);
+            if (fmMatch) {
+                try {
+                    const meta = YAML.parse(fmMatch[1]);
+                    role.skillMeta = {
+                        name: meta.name || id,
+                        description: meta.description || '',
+                        ...(meta.allowedTools ? { allowedTools: meta.allowedTools } : {}),
+                    };
+                }
+                catch { /* ignore parse errors */ }
             }
         }
         // 오늘 저널 읽기

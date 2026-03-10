@@ -25,9 +25,17 @@ import { knowledgeRouter } from './routes/knowledge.js';
 import { preferencesRouter } from './routes/preferences.js';
 import { saveRouter } from './routes/save.js';
 import { speechRouter } from './routes/speech.js';
+import { costRouter } from './routes/cost.js';
+import { syncRouter } from './routes/sync.js';
+import { gitRouter } from './routes/git.js';
+import { skillsRouter } from './routes/skills.js';
+import { questsRouter } from './routes/quests.js';
+import { coinsRouter } from './routes/coins.js';
+import { activeSessionsRouter } from './routes/active-sessions.js';
 import { importKnowledge } from './services/knowledge-importer.js';
 import { AnthropicProvider } from './engine/llm-adapter.js';
 import { readConfig } from './services/company-config.js';
+import { ensureClaudeMd } from './services/claude-md-manager.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const isProd = process.env.NODE_ENV === 'production';
@@ -92,70 +100,17 @@ function handleImportKnowledge(req, res) {
     });
 }
 export function createHttpServer() {
-    cleanupStaleActivities();
-    const app = express();
-    app.use(cors({ origin: corsOrigin }));
-    app.use(express.json());
-    // Setup / onboarding
-    app.use('/api/setup', setupRouter);
-    // Status — frontend checks this to decide wizard vs office
-    app.get('/api/status', (_req, res) => {
-        const config = readConfig(COMPANY_ROOT);
-        const tyconoDir = path.join(COMPANY_ROOT, '.tycono', 'config.json');
-        const initialized = fs.existsSync(tyconoDir);
-        let companyName = null;
-        if (initialized) {
-            try {
-                const claudeMdPath = path.join(COMPANY_ROOT, 'CLAUDE.md');
-                const content = fs.readFileSync(claudeMdPath, 'utf-8');
-                const match = content.match(/^#\s+(.+)/m);
-                if (match)
-                    companyName = match[1].trim();
-            }
-            catch { /* ignore */ }
-        }
-        res.json({ initialized, companyName, engine: config.engine || process.env.EXECUTION_ENGINE || 'none', companyRoot: COMPANY_ROOT, hasApiKey: !!process.env.ANTHROPIC_API_KEY });
-    });
-    app.use('/api/roles', rolesRouter);
-    app.use('/api/projects', projectsRouter);
-    app.use('/api/operations', operationsRouter);
-    app.use('/api/company', companyRouter);
-    app.use('/api/engine', engineRouter);
-    app.use('/api/sessions', sessionsRouter);
-    app.use('/api/knowledge', knowledgeRouter);
-    app.use('/api/preferences', preferencesRouter);
-    app.use('/api/speech', speechRouter);
-    app.use('/api/save', saveRouter);
-    app.get('/api/health', (_req, res) => {
-        res.json({ status: 'ok', companyRoot: COMPANY_ROOT });
-    });
-    // Production: serve web build as static files (SPA fallback)
-    if (isProd) {
-        const distPath = path.resolve(__dirname, '../../web/dist');
-        app.use(express.static(distPath));
-        app.use((_req, res) => {
-            res.sendFile(path.join(distPath, 'index.html'));
-        });
+    // Only cleanup/ensure if a company is already initialized (avoid creating dirs in CWD)
+    if (COMPANY_ROOT && fs.existsSync(path.join(COMPANY_ROOT, 'CLAUDE.md'))) {
+        cleanupStaleActivities();
+        ensureClaudeMd(COMPANY_ROOT);
     }
-    app.use((err, _req, res, _next) => {
-        console.error(`[ERROR] ${err.message}`);
-        const status = err.name === 'FileNotFoundError' ? 404 : 500;
-        res.status(status).json({ error: err.message });
-    });
-    function setExecCors(req, res) {
-        const origin = req.headers.origin;
-        if (!origin)
-            return;
-        if (isProd || /^http:\/\/localhost:\d+$/.test(origin)) {
-            res.setHeader('Access-Control-Allow-Origin', origin);
-            res.setHeader('Access-Control-Allow-Credentials', 'true');
-        }
-    }
+    const app = createExpressApp();
     const server = http.createServer((req, res) => {
         const url = req.url ?? '';
         const method = req.method ?? '';
         // SSE 엔드포인트: Express 우회하여 raw HTTP로 처리
-        if ((url.startsWith('/api/exec/') || url.startsWith('/api/jobs') || url === '/api/setup/import-knowledge') && method === 'POST') {
+        if ((url.startsWith('/api/exec/') || url.startsWith('/api/jobs') || url === '/api/waves/save' || url === '/api/setup/import-knowledge') && method === 'POST') {
             setExecCors(req, res);
             if (url === '/api/setup/import-knowledge') {
                 handleImportKnowledge(req, res);
@@ -185,5 +140,75 @@ export function createHttpServer() {
     });
     server.timeout = 0;
     server.requestTimeout = 0;
+    server.headersTimeout = 0;
     return server;
+}
+export function createExpressApp() {
+    const app = express();
+    app.use(cors({ origin: corsOrigin }));
+    app.use(express.json());
+    // Setup / onboarding
+    app.use('/api/setup', setupRouter);
+    // Status — frontend checks this to decide wizard vs office
+    app.get('/api/status', (_req, res) => {
+        const config = readConfig(COMPANY_ROOT);
+        const tyconoDir = path.join(COMPANY_ROOT, '.tycono', 'config.json');
+        const initialized = fs.existsSync(tyconoDir);
+        let companyName = null;
+        if (initialized) {
+            try {
+                // Read company name from company/company.md (user-owned data)
+                const companyMdPath = path.join(COMPANY_ROOT, 'company', 'company.md');
+                const content = fs.readFileSync(companyMdPath, 'utf-8');
+                const match = content.match(/^#\s+(.+)/m);
+                if (match)
+                    companyName = match[1].trim();
+            }
+            catch { /* ignore */ }
+        }
+        res.json({ initialized, companyName, engine: config.engine || process.env.EXECUTION_ENGINE || 'none', companyRoot: COMPANY_ROOT, codeRoot: config.codeRoot || null, hasApiKey: !!process.env.ANTHROPIC_API_KEY });
+    });
+    app.use('/api/roles', rolesRouter);
+    app.use('/api/projects', projectsRouter);
+    app.use('/api/operations', operationsRouter);
+    app.use('/api/company', companyRouter);
+    app.use('/api/engine', engineRouter);
+    app.use('/api/sessions', sessionsRouter);
+    app.use('/api/knowledge', knowledgeRouter);
+    app.use('/api/preferences', preferencesRouter);
+    app.use('/api/speech', speechRouter);
+    app.use('/api/save', saveRouter);
+    app.use('/api/cost', costRouter);
+    app.use('/api/sync', syncRouter);
+    app.use('/api/git', gitRouter);
+    app.use('/api/skills', skillsRouter);
+    app.use('/api/quests', questsRouter);
+    app.use('/api/coins', coinsRouter);
+    app.use('/api/active-sessions', activeSessionsRouter);
+    app.get('/api/health', (_req, res) => {
+        res.json({ status: 'ok', companyRoot: COMPANY_ROOT });
+    });
+    // Production: serve web build as static files (SPA fallback)
+    if (isProd) {
+        const distPath = path.resolve(__dirname, '../../web/dist');
+        app.use(express.static(distPath));
+        app.use((_req, res) => {
+            res.sendFile(path.join(distPath, 'index.html'));
+        });
+    }
+    app.use((err, req, res, _next) => {
+        console.error(`[ERROR] ${req.method} ${req.url} — ${err.message}`);
+        const status = err.name === 'FileNotFoundError' ? 404 : 500;
+        res.status(status).json({ error: err.message });
+    });
+    return app;
+}
+function setExecCors(req, res) {
+    const origin = req.headers.origin;
+    if (!origin)
+        return;
+    if (isProd || /^http:\/\/localhost:\d+$/.test(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
 }

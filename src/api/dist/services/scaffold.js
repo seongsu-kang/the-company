@@ -1,15 +1,27 @@
 /**
  * scaffold.ts — AKB scaffolding service
  *
- * Extracted from bin/init.ts for reuse by the web onboarding wizard.
+ * AKB scaffolding used by the web onboarding wizard.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
 import { writeConfig } from './company-config.js';
+import { mergePreferences } from './preferences.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const TEMPLATES_DIR = path.resolve(__dirname, '../../../../templates');
+function getPackageVersion() {
+    const pkgPath = path.resolve(__dirname, '../../../../package.json');
+    try {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+        return pkg.version || '0.0.0';
+    }
+    catch {
+        return '0.0.0';
+    }
+}
 function loadTemplate(name) {
     return fs.readFileSync(path.join(TEMPLATES_DIR, name), 'utf-8');
 }
@@ -43,6 +55,73 @@ export function getAvailableSkills() {
         }
     }
     return skills;
+}
+/**
+ * Check if a CLI binary is available on the system
+ */
+function isBinaryInstalled(binary) {
+    try {
+        execSync(`which ${binary}`, { stdio: 'ignore', timeout: 5000 });
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+/**
+ * Collect all tools required by a set of skills
+ */
+export function getRequiredTools(skillIds) {
+    const tools = [];
+    const seen = new Set();
+    for (const skillId of skillIds) {
+        const metaPath = path.join(TEMPLATES_DIR, 'skills', skillId, 'meta.json');
+        if (!fs.existsSync(metaPath))
+            continue;
+        const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+        if (!meta.tools?.length)
+            continue;
+        for (const tool of meta.tools) {
+            if (seen.has(tool.package))
+                continue;
+            seen.add(tool.package);
+            tools.push({
+                ...tool,
+                skillId,
+                installed: isBinaryInstalled(tool.binary),
+            });
+        }
+    }
+    return tools;
+}
+/**
+ * Install CLI tools required by skills
+ */
+export function installSkillTools(skillIds, callbacks) {
+    const tools = getRequiredTools(skillIds);
+    let installed = 0;
+    let skipped = 0;
+    let failed = 0;
+    for (const tool of tools) {
+        callbacks?.onChecking?.(tool.package);
+        if (tool.installed) {
+            callbacks?.onSkipped?.(tool.package, 'already installed');
+            skipped++;
+            continue;
+        }
+        callbacks?.onInstalling?.(tool.package);
+        try {
+            execSync(tool.installCmd, { stdio: 'ignore', timeout: 120000 });
+            callbacks?.onInstalled?.(tool.package);
+            installed++;
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : 'install failed';
+            callbacks?.onError?.(tool.package, msg);
+            failed++;
+        }
+    }
+    callbacks?.onDone?.({ installed, skipped, failed });
 }
 function renderTemplate(template, vars) {
     let result = template;
@@ -105,10 +184,20 @@ export function scaffold(config) {
         fs.mkdirSync(path.join(root, dir), { recursive: true });
         created.push(dir + '/');
     }
-    // Write CLAUDE.md
+    // Write CLAUDE.md (no variable substitution — 100% Tycono managed)
     const claudeTmpl = loadTemplate('CLAUDE.md.tmpl');
-    fs.writeFileSync(path.join(root, 'CLAUDE.md'), renderTemplate(claudeTmpl, vars));
+    const pkgVersion = getPackageVersion();
+    fs.writeFileSync(path.join(root, 'CLAUDE.md'), claudeTmpl.replaceAll('{{VERSION}}', pkgVersion));
     created.push('CLAUDE.md');
+    // Write .tycono/rules-version
+    fs.writeFileSync(path.join(root, '.tycono', 'rules-version'), pkgVersion);
+    created.push('.tycono/rules-version');
+    // Write .tycono/custom-rules.md (empty stub — user owned)
+    const customRulesPath = path.join(root, '.tycono', 'custom-rules.md');
+    if (!fs.existsSync(customRulesPath)) {
+        fs.writeFileSync(customRulesPath, `# Custom Rules\n\n> Company-specific rules, constraints, and processes.\n> This file is owned by you — Tycono will never overwrite it.\n\n<!-- Add your custom rules below -->\n`);
+        created.push('.tycono/custom-rules.md');
+    }
     // Write company/company.md
     const companyTmpl = loadTemplate('company.md.tmpl');
     fs.writeFileSync(path.join(root, 'company', 'company.md'), renderTemplate(companyTmpl, vars));
@@ -141,6 +230,8 @@ export function scaffold(config) {
         writeConfig(root, companyConfig);
         created.push('.tycono/config.json');
     }
+    // Save language preference (default: English)
+    mergePreferences(root, { language: config.language || 'en' });
     // Create team roles + install skills
     if (config.team !== 'custom') {
         const roles = loadTeam(config.team);
@@ -222,17 +313,5 @@ function createRole(root, role) {
         const hubContent = fs.readFileSync(rolesHubPath, 'utf-8');
         const row = `| ${role.name} | ${role.id} | ${role.level} | ${role.reportsTo} | Active |`;
         fs.writeFileSync(rolesHubPath, hubContent.trimEnd() + '\n' + row + '\n');
-    }
-    // Append to CLAUDE.md org table
-    const claudeMdPath = path.join(root, 'CLAUDE.md');
-    if (fs.existsSync(claudeMdPath)) {
-        const claudeContent = fs.readFileSync(claudeMdPath, 'utf-8');
-        const orgRow = `| **${role.name}** | AI (${role.id}) | ${role.level} | ${role.reportsTo} | Active |`;
-        const orgMatch = claudeContent.match(/(## Organization[\s\S]*?\n(\|[^\n]*\n)+)/);
-        if (orgMatch) {
-            const insertPos = (orgMatch.index ?? 0) + orgMatch[0].length;
-            const updated = claudeContent.slice(0, insertPos) + orgRow + '\n' + claudeContent.slice(insertPos);
-            fs.writeFileSync(claudeMdPath, updated);
-        }
     }
 }

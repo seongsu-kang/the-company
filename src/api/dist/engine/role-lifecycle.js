@@ -30,10 +30,24 @@ export class RoleLifecycleManager {
         const orgNode = this.defToOrgNode(def);
         const skillContent = generateSkillMd(orgNode);
         fs.writeFileSync(path.join(skillDir, 'SKILL.md'), skillContent);
+        // 4b. Store에서 온 skillContent가 있으면 덮어쓰기
+        if (def.skillContent?.primary) {
+            const content = serializeSkillMd(def.skillContent.primary);
+            fs.writeFileSync(path.join(skillDir, 'SKILL.md'), content);
+        }
+        // 4c. Shared skills 설치 (이미 있으면 건너뜀)
+        if (def.skillContent?.shared) {
+            for (const shared of def.skillContent.shared) {
+                const sharedDir = path.join(this.companyRoot, '.claude', 'skills', '_shared', shared.id);
+                const sharedSkillPath = path.join(sharedDir, 'SKILL.md');
+                if (!fs.existsSync(sharedSkillPath)) {
+                    fs.mkdirSync(sharedDir, { recursive: true });
+                    fs.writeFileSync(sharedSkillPath, serializeSkillMd(shared));
+                }
+            }
+        }
         // 5. Update roles.md Hub
         this.addToRolesHub(def);
-        // 6. Update CLAUDE.md org table
-        this.addToClaudeMdOrgTable(def);
     }
     /**
      * Update an existing Role's definition
@@ -71,6 +85,9 @@ export class RoleLifecycleManager {
         if (changes.reports !== undefined) {
             current.reports = changes.reports;
         }
+        if (changes.source !== undefined) {
+            current.source = changes.source;
+        }
         fs.writeFileSync(yamlPath, YAML.stringify(current));
     }
     /**
@@ -87,8 +104,6 @@ export class RoleLifecycleManager {
         }
         // Remove from roles.md Hub
         this.removeFromRolesHub(id);
-        // Remove from CLAUDE.md org table
-        this.removeFromClaudeMdOrgTable(id);
     }
     /**
      * Regenerate SKILL.md from role.yaml (Level 1 template)
@@ -184,6 +199,7 @@ export class RoleLifecycleManager {
             },
             reports: def.reports,
             skills: def.skills,
+            source: def.source,
         };
     }
     buildRoleYaml(def) {
@@ -196,6 +212,9 @@ export class RoleLifecycleManager {
         };
         if (def.skills?.length) {
             obj.skills = def.skills;
+        }
+        if (def.source) {
+            obj.source = def.source;
         }
         obj.authority = {
             autonomous: def.authority.autonomous,
@@ -246,22 +265,6 @@ ${def.authority.needsApproval.map((a) => `- ${a}`).join('\n')}
         const updatedContent = content.trimEnd() + '\n' + row + '\n';
         fs.writeFileSync(hubPath, updatedContent);
     }
-    addToClaudeMdOrgTable(def) {
-        const claudeMdPath = path.join(this.companyRoot, 'CLAUDE.md');
-        if (!fs.existsSync(claudeMdPath))
-            return;
-        const content = fs.readFileSync(claudeMdPath, 'utf-8');
-        if (content.includes(`| **${def.name}**`)) {
-            return; // Already exists
-        }
-        const row = `| **${def.name}** | AI (${def.id}) | ${def.level} | ${def.reportsTo.toUpperCase()} | Active |`;
-        const orgSectionMatch = content.match(/## (?:조직|Organization)[\s\S]*?\n(\|[^\n]*\n)+/);
-        if (orgSectionMatch) {
-            const insertPos = (orgSectionMatch.index ?? 0) + orgSectionMatch[0].length;
-            const updated = content.slice(0, insertPos) + row + '\n' + content.slice(insertPos);
-            fs.writeFileSync(claudeMdPath, updated);
-        }
-    }
     removeFromRolesHub(id) {
         const hubPath = path.join(this.companyRoot, 'roles', 'roles.md');
         if (!fs.existsSync(hubPath))
@@ -275,14 +278,25 @@ ${def.authority.needsApproval.map((a) => `- ${a}`).join('\n')}
         });
         fs.writeFileSync(hubPath, lines.join('\n'));
     }
-    removeFromClaudeMdOrgTable(id) {
-        const claudeMdPath = path.join(this.companyRoot, 'CLAUDE.md');
-        if (!fs.existsSync(claudeMdPath))
-            return;
-        const content = fs.readFileSync(claudeMdPath, 'utf-8');
-        const lines = content.split('\n').filter((line) => {
-            return !line.includes(`(${id})`) || !line.startsWith('|');
-        });
-        fs.writeFileSync(claudeMdPath, lines.join('\n'));
+}
+/* ─── Helpers ──────────────────────────────── */
+function serializeSkillMd(skill) {
+    const fm = skill.frontmatter;
+    const yamlLines = [];
+    if (fm.name)
+        yamlLines.push(`name: ${fm.name}`);
+    if (fm.description)
+        yamlLines.push(`description: ${JSON.stringify(fm.description)}`);
+    if (fm.allowedTools && Array.isArray(fm.allowedTools)) {
+        yamlLines.push(`allowedTools:\n${fm.allowedTools.map(t => `  - ${t}`).join('\n')}`);
     }
+    if (fm.model)
+        yamlLines.push(`model: ${fm.model}`);
+    if (fm.tags && Array.isArray(fm.tags)) {
+        yamlLines.push(`tags:\n${fm.tags.map(t => `  - ${t}`).join('\n')}`);
+    }
+    if (yamlLines.length === 0) {
+        return skill.body;
+    }
+    return `---\n${yamlLines.join('\n')}\n---\n\n${skill.body}`;
 }

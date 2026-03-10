@@ -30,4 +30,5 @@ export type TeamStatus = Record<string, {
 }>;
 export declare function assembleContext(companyRoot: string, roleId: string, task: string, sourceRole: string, orgTree: OrgTree, options?: {
     teamStatus?: TeamStatus;
+    targetRoles?: string[];
 }): AssembledContext;

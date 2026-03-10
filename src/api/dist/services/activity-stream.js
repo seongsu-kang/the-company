@@ -2,14 +2,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { COMPANY_ROOT } from './file-reader.js';
 /* ─── Constants ──────────────────────────── */
-const STREAMS_DIR = path.join(COMPANY_ROOT, 'operations', 'activity-streams');
+function streamsDir() {
+    return path.join(COMPANY_ROOT, 'operations', 'activity-streams');
+}
 function ensureDir() {
-    if (!fs.existsSync(STREAMS_DIR)) {
-        fs.mkdirSync(STREAMS_DIR, { recursive: true });
+    const dir = streamsDir();
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
     }
 }
 function streamPath(jobId) {
-    return path.join(STREAMS_DIR, `${jobId}.jsonl`);
+    return path.join(streamsDir(), `${jobId}.jsonl`);
 }
 /* ─── ActivityStream ─────────────────────── */
 export class ActivityStream {
@@ -104,8 +107,12 @@ export class ActivityStream {
     /** List all stream files (job IDs) */
     static listAll() {
         ensureDir();
-        return fs.readdirSync(STREAMS_DIR)
+        return fs.readdirSync(streamsDir())
             .filter(f => f.endsWith('.jsonl'))
             .map(f => f.replace('.jsonl', ''));
+    }
+    /** Get the streams directory path */
+    static getStreamDir() {
+        return streamsDir();
     }
 }

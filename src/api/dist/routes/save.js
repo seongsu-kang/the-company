@@ -1,21 +1,26 @@
 import { Router } from 'express';
 import { COMPANY_ROOT } from '../services/file-reader.js';
-import { getGitStatus, gitSave, gitHistory, gitRestore } from '../services/git-save.js';
+import { getGitStatus, gitSave, gitHistory, gitRestore, gitInit, gitFetchStatus, gitPull, githubStatus, githubCreateRepo, gitAddRemote } from '../services/git-save.js';
 export const saveRouter = Router();
-// GET /api/save/status
-saveRouter.get('/status', (_req, res, next) => {
+/** Extract repo type from query param, default 'akb' */
+function getRepo(req) {
+    const repo = req.query.repo;
+    return repo === 'code' ? 'code' : 'akb';
+}
+// GET /api/save/status?repo=akb|code
+saveRouter.get('/status', (req, res, next) => {
     try {
-        res.json(getGitStatus(COMPANY_ROOT));
+        res.json(getGitStatus(COMPANY_ROOT, getRepo(req)));
     }
     catch (err) {
         next(err);
     }
 });
-// POST /api/save — commit + push
+// POST /api/save?repo=akb|code — commit + push
 saveRouter.post('/', (req, res, next) => {
     try {
         const { message } = req.body ?? {};
-        const result = gitSave(COMPANY_ROOT, message);
+        const result = gitSave(COMPANY_ROOT, message, getRepo(req));
         res.json({ ok: true, ...result });
     }
     catch (err) {
@@ -26,11 +31,25 @@ saveRouter.post('/', (req, res, next) => {
         next(err);
     }
 });
-// GET /api/save/history
+// GET /api/save/history?repo=akb|code
 saveRouter.get('/history', (req, res, next) => {
     try {
         const limit = Math.min(Number(req.query.limit) || 20, 100);
-        res.json(gitHistory(COMPANY_ROOT, limit));
+        res.json(gitHistory(COMPANY_ROOT, limit, getRepo(req)));
+    }
+    catch (err) {
+        next(err);
+    }
+});
+// POST /api/save/init — initialize git repo
+saveRouter.post('/init', (_req, res, next) => {
+    try {
+        const result = gitInit(COMPANY_ROOT);
+        if (!result.ok) {
+            res.status(500).json({ error: result.message });
+            return;
+        }
+        res.json(result);
     }
     catch (err) {
         next(err);
@@ -46,6 +65,68 @@ saveRouter.post('/restore', (req, res, next) => {
         }
         const result = gitRestore(COMPANY_ROOT, sha, paths);
         res.json({ ok: true, ...result });
+    }
+    catch (err) {
+        next(err);
+    }
+});
+// GET /api/save/sync-status?repo=akb|code — fetch + ahead/behind
+saveRouter.get('/sync-status', (req, res, next) => {
+    try {
+        res.json(gitFetchStatus(COMPANY_ROOT, getRepo(req)));
+    }
+    catch (err) {
+        next(err);
+    }
+});
+// POST /api/save/pull?repo=akb|code — safe pull (ff-only)
+saveRouter.post('/pull', (req, res, next) => {
+    try {
+        const result = gitPull(COMPANY_ROOT, getRepo(req));
+        const statusCode = result.status === 'ok' || result.status === 'up-to-date' ? 200
+            : result.status === 'dirty' || result.status === 'diverged' ? 409
+                : result.status === 'no-remote' ? 404
+                    : 500;
+        res.status(statusCode).json(result);
+    }
+    catch (err) {
+        next(err);
+    }
+});
+// GET /api/save/github-status?repo=akb|code — check gh CLI + auth + remote
+saveRouter.get('/github-status', (req, res, next) => {
+    try {
+        res.json(githubStatus(COMPANY_ROOT, getRepo(req)));
+    }
+    catch (err) {
+        next(err);
+    }
+});
+// POST /api/save/github-create-repo?repo=akb|code — create GitHub repo + push
+saveRouter.post('/github-create-repo', (req, res, next) => {
+    try {
+        const { name, visibility } = req.body ?? {};
+        if (!name || typeof name !== 'string') {
+            res.status(400).json({ ok: false, message: 'Repository name is required' });
+            return;
+        }
+        const result = githubCreateRepo(COMPANY_ROOT, name, visibility || 'private', getRepo(req));
+        res.status(result.ok ? 200 : 400).json(result);
+    }
+    catch (err) {
+        next(err);
+    }
+});
+// POST /api/save/remote?repo=akb|code — manually add git remote
+saveRouter.post('/remote', (req, res, next) => {
+    try {
+        const { url } = req.body ?? {};
+        if (!url || typeof url !== 'string') {
+            res.status(400).json({ ok: false, message: 'Remote URL is required' });
+            return;
+        }
+        const result = gitAddRemote(COMPANY_ROOT, url, getRepo(req));
+        res.status(result.ok ? 200 : 400).json(result);
     }
     catch (err) {
         next(err);

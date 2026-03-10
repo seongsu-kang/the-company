@@ -6,6 +6,12 @@ export interface KnowledgeAccess {
     reads: string[];
     writes: string[];
 }
+export interface RoleSource {
+    id: string;
+    sync: 'auto' | 'manual' | 'off';
+    forked_at?: string;
+    upstream_version?: string;
+}
 export interface OrgNode {
     id: string;
     name: string;
@@ -21,6 +27,7 @@ export interface OrgNode {
     };
     skills?: string[];
     model?: string;
+    source?: RoleSource;
 }
 export interface OrgTree {
     root: string;
@@ -35,6 +42,8 @@ export declare function getDescendants(tree: OrgTree, roleId: string): string[];
 export declare function getChainOfCommand(tree: OrgTree, roleId: string): string[];
 /** Can source dispatch a task to target? */
 export declare function canDispatchTo(tree: OrgTree, source: string, target: string): boolean;
+/** Can source consult (ask a question to) target? Peers, direct manager, or subordinates. */
+export declare function canConsult(tree: OrgTree, source: string, target: string): boolean;
 /** Refresh tree (re-read all role.yaml files) */
 export declare function refreshOrgTree(companyRoot: string): OrgTree;
 /** Get a human-readable org chart string for context injection */

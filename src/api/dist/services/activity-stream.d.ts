@@ -1,4 +1,4 @@
-export type ActivityEventType = 'job:start' | 'job:done' | 'job:error' | 'text' | 'thinking' | 'tool:start' | 'tool:result' | 'dispatch:start' | 'dispatch:done' | 'turn:complete' | 'import:scan' | 'import:process' | 'import:created' | 'stderr';
+export type ActivityEventType = 'job:start' | 'job:done' | 'job:error' | 'job:awaiting_input' | 'job:reply' | 'text' | 'thinking' | 'tool:start' | 'tool:result' | 'dispatch:start' | 'dispatch:done' | 'turn:complete' | 'turn:warning' | 'turn:limit' | 'import:scan' | 'import:process' | 'import:created' | 'stderr';
 export interface ActivityEvent {
     seq: number;
     ts: string;
@@ -33,4 +33,6 @@ export declare class ActivityStream {
     static exists(jobId: string): boolean;
     /** List all stream files (job IDs) */
     static listAll(): string[];
+    /** Get the streams directory path */
+    static getStreamDir(): string;
 }

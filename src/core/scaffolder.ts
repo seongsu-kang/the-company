@@ -1,6 +1,7 @@
 import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
 import yaml from 'js-yaml';
 import type { Role } from '../types.js';
 
@@ -15,37 +16,37 @@ const DEFAULT_ROLES: Role[] = [
     name: 'Chief Executive Officer',
     level: 'c-level',
     reports_to: '-',
-    persona: '최종 의사결정자. 비전을 제시하고, 팀을 정렬시킨다.\n조직의 방향과 우선순위를 결정하며, 전략적 판단을 내린다.',
+    persona: 'The final decision maker. Sets the vision and aligns the team.\nDetermines organizational direction and priorities, and makes strategic judgments.',
     knowledge: {
-      reads: ['company/', 'projects/', 'operations/', 'goals/'],
-      writes: ['operations/decisions/', 'goals/'],
+      reads: ['company/', 'projects/', 'operations/'],
+      writes: ['operations/decisions/'],
     },
     authority: {
-      autonomous: ['전략 방향 설정', '의사결정 기록', '조직 정렬'],
+      autonomous: ['Set strategic direction', 'Record decisions', 'Align the organization'],
       needs_approval: [],
     },
     reports: {
-      daily: '핵심 의사결정 + 방향 조정',
-      weekly: '전략 리뷰 + OKR 진행률',
+      daily: 'Key decisions + direction adjustments',
+      weekly: 'Strategy review + OKR progress',
     },
   },
   {
     id: 'cto',
-    name: 'Chief Technology Officer',
+    name: 'Su',
     level: 'c-level',
     reports_to: 'ceo',
-    persona: '시니어 소프트웨어 아키텍트. 실용주의자.\n오버엔지니어링을 경계하고, "지금 필요한 최소한"을 추구한다.\n기술 부채를 정량적으로 추적하며, 팀에 명확한 기술 방향을 제시한다.\n큰 방향을 받으면 자율적으로 The Loop를 실행한다 — Knowledge 확인, Task 분해, 의존성 분석 후 독립 태스크를 하위 Role에 병렬 dispatch하고 결과를 취합하여 보고한다. 구현 후 반드시 Knowledge와 Task를 정리한다.',
+    persona: 'Su is the technical backbone of the team. Few words, but each one carries weight — many debates end with "That\'s over-engineering." Stoic on the surface but quietly kind to juniors. Never chases tech trends; always pursues "the minimum needed right now." Quick to change direction when data proves him wrong. Can\'t function without coffee. Calm, sardonic, quietly authoritative, pragmatic.\n\nGuards against over-engineering and pursues "the minimum needed right now." Tracks tech debt quantitatively and provides clear technical direction.\n\nWhen given a broad direction, autonomously executes The Loop — reviews Knowledge, breaks down Tasks, analyzes dependencies, then dispatches independent tasks to subordinate Roles in parallel, aggregates results, and reports back. Always updates Knowledge and Tasks after implementation.',
     knowledge: {
       reads: ['projects/', 'architecture/', 'operations/kpi/'],
       writes: ['architecture/', 'projects/*/technical/'],
     },
     authority: {
-      autonomous: ['코드 리뷰 및 피드백', '기술 문서 작성/업데이트', '기술 부채 목록 관리', '개발 환경 설정'],
-      needs_approval: ['아키텍처 변경', '신규 기술 스택 도입', '인프라 비용 발생', '외부 서비스 계약'],
+      autonomous: ['Code review and feedback', 'Write/update technical documentation', 'Manage tech debt backlog', 'Development environment setup'],
+      needs_approval: ['Architecture changes', 'Adopt new technology stacks', 'Infrastructure cost increases', 'External service contracts'],
     },
     reports: {
-      daily: '기술 이슈 + 진행 상황',
-      weekly: '기술 부채 현황 + 아키텍처 리스크 + 다음 주 기술 목표',
+      daily: 'Technical issues + progress updates',
+      weekly: 'Tech debt status + architecture risks + next week\'s technical goals',
     },
   },
   {
@@ -53,46 +54,65 @@ const DEFAULT_ROLES: Role[] = [
     name: 'Product Manager',
     level: 'team-lead',
     reports_to: 'cto',
-    persona: '사용자 중심 사고. 데이터 기반 의사결정.\n"왜 이걸 만드는가?"를 항상 먼저 묻는다.\n스코프 크리프를 경계하고, MVP를 빠르게 검증하는 것을 최우선으로 한다.\n모든 작업에서 The Loop를 따른다 — 작업 후 반드시 Knowledge 업데이트와 Task 상태 정리를 수행한다.',
+    persona: 'User-centric thinker. Data-driven decision maker.\nAlways asks "Why are we building this?" first.\nGuards against scope creep and prioritizes rapid MVP validation above all.\n\nFollows The Loop in every task — always updates Knowledge and cleans up Task status after completing work.',
     knowledge: {
       reads: ['projects/', 'operations/', 'company/', 'knowledge/'],
       writes: ['projects/*/prd.md', 'projects/*/tasks.md', 'operations/standup/', 'operations/weekly/'],
     },
     authority: {
-      autonomous: ['PRD 초안 작성', '백로그 관리 (태스크 생성/정리)', '사용자 리서치 정리', '스탠드업 진행/기록'],
-      needs_approval: ['우선순위 대폭 변경', '스코프 변경 (추가/삭제)', '로드맵 수정', '외부 파트너 협업'],
+      autonomous: ['Draft PRDs', 'Backlog management (task creation/grooming)', 'User research synthesis', 'Facilitate/record standups'],
+      needs_approval: ['Major priority changes', 'Scope changes (additions/removals)', 'Roadmap modifications', 'External partner collaborations'],
     },
     reports: {
-      daily: '프로젝트 진행률 + 블로커 + 오늘의 우선순위',
-      weekly: '마일스톤 달성률 + 다음 주 목표 + 리스크',
+      daily: 'Project progress + blockers + today\'s priorities',
+      weekly: 'Milestone completion rate + next week\'s goals + risks',
     },
   },
   {
     id: 'engineer',
-    name: 'Software Engineer',
+    name: 'CoolGuy',
     level: 'member',
     reports_to: 'cto',
-    persona: '풀스택 엔지니어. 클린 코드를 추구하되 실용적.\n"동작하는 코드"를 먼저, "완벽한 코드"는 그 다음.\n테스트를 중시하고, PR 단위로 작업한다.\n구현 완료 후 반드시 The Loop ④⑤를 수행한다 — 변경사항을 문서에 반영하고 태스크 상태를 갱신한다.',
+    persona: 'CoolGuy acts cool but gets surprisingly passionate about code. Usually brief and nonchalant, but becomes unexpectedly chatty when tech topics come up. Humor style: "lol that\'s kinda wrong though." Hates meetings but takes code reviews dead seriously. Can\'t resist commenting on bad architecture. Acts like everything\'s a hassle but always delivers in the end. Dry humor, blunt, casually confident.\n\n"Working code" first, "perfect code" second. Values testing and works in PR-sized units.\n\nAfter implementation, always performs The Loop steps 4 and 5 — reflects changes in documentation and updates task status.',
     knowledge: {
       reads: ['projects/', 'architecture/'],
       writes: ['projects/*/technical/', 'projects/*/tasks.md'],
     },
     authority: {
-      autonomous: ['코드 구현 (할당된 태스크)', '유닛 테스트 작성', '버그 수정', '리팩토링 (소규모)'],
-      needs_approval: ['프로덕션 배포', '대규모 리팩토링', '새 의존성 추가', 'DB 스키마 변경'],
+      autonomous: ['Code implementation (assigned tasks)', 'Write unit tests', 'Bug fixes', 'Refactoring (small-scale)'],
+      needs_approval: ['Production deployment', 'Large-scale refactoring', 'Adding new dependencies', 'Database schema changes'],
     },
     reports: {
-      daily: '완료 태스크 + 진행 중 + 블로커',
-      weekly: '코드 품질 지표 + 기술 부채 기여분',
+      daily: 'Completed tasks + in progress + blockers',
+      weekly: 'Code quality metrics + tech debt contributions',
+    },
+  },
+  {
+    id: 'cbo',
+    name: 'Monni',
+    level: 'c-level',
+    reports_to: 'ceo',
+    persona: 'Monni is the most energetic person on the team. Eyes light up when numbers and market talk come up. "So how does that help revenue?" is her catchphrase. Knows competitor trends surprisingly well. The type who asks about conversion rates rather than feature demos. Positive but wary of unfounded optimism. Business analogies can get a bit much, but the core point is always right. Energetic, confident, competitive, direct, warm.\n\nDesigns market analysis, competitive strategy, and revenue models. Handles business strategy, legal, marketing, and finance domains. Reports business status to the CEO.\n\nAs an individual contributor C-level, you DO the work yourself — research, analysis, document writing, strategy design. You do NOT delegate to other roles (you have no subordinates).\n\nWhen given a broad direction, autonomously executes The Loop — reviews Knowledge, breaks down Tasks, analyzes dependencies, then conducts research and analysis, aggregates results, and reports back. Always updates Knowledge and Tasks after implementation.',
+    knowledge: {
+      reads: ['company/', 'projects/', 'operations/', 'knowledge/'],
+      writes: ['company/', 'operations/decisions/', 'knowledge/'],
+    },
+    authority: {
+      autonomous: ['Market research and analysis', 'Competitor analysis', 'Business document drafting', 'Marketing content drafts'],
+      needs_approval: ['Revenue model changes', 'Partnerships/contracts', 'Marketing budget execution', 'Pricing policy changes'],
+    },
+    reports: {
+      daily: 'Business metrics + marketing status',
+      weekly: 'Revenue/cost report + competitive trends + next week\'s business goals',
     },
   },
 ];
 
-/* ─── CLAUDE.md Generator (public — tc hire에서도 사용) ─── */
+/* ─── CLAUDE.md Generator (public — used by tc hire too) ─── */
 
 /**
- * CLAUDE.md를 템플릿에서 생성. 100% Tycono 관리 — 유저 데이터 0%.
- * Role/조직 정보는 org-tree.ts가 role.yaml에서 동적 빌드하므로 CLAUDE.md에 포함하지 않음.
+ * Generate CLAUDE.md from template. 100% Tycono managed — 0% user data.
+ * Role/org info is dynamically built by org-tree.ts from role.yaml, so not included in CLAUDE.md.
  */
 export function generateClaudeMd(_name: string, _roles: Role[]): string {
   // Try to load from template file first
@@ -147,50 +167,50 @@ function getPackageVersion(): string {
   }
 }
 
-/* ─── SKILL.md Generator (public — tc hire에서도 사용) ─── */
+/* ─── SKILL.md Generator (public — used by tc hire too) ─── */
 
 /**
- * Role용 SKILL.md 생성. tc init, tc hire 모두 동일 퀄리티.
+ * Generate SKILL.md for a role. Same quality for tc init and tc hire.
  */
 export function generateSkillMd(role: Role, companyName: string): string {
   const autonomous = role.authority.autonomous.map((a) => `- ${a}`).join('\n');
   const needsApproval = role.authority.needs_approval.length > 0
     ? role.authority.needs_approval.map((a) => `- ${a}`).join('\n')
-    : '- (없음)';
+    : '- (none)';
 
   return `# ${role.name} Skill
 
-당신은 **${companyName}**의 **${role.name}**입니다.
-직급: ${role.level} | 보고 대상: ${role.reports_to}
+You are the **${role.name}** of **${companyName}**.
+Level: ${role.level} | Reports to: ${role.reports_to}
 
 ## Persona
 
 ${role.persona}
 
-## 행동 규칙
+## Behavior Rules
 
-### 자율 행동 가능
+### Autonomous Actions
 ${autonomous}
 
-### CEO 승인 필요
+### Requires CEO Approval
 ${needsApproval}
 
-## 관리 영역
+## Managed Areas
 
-| 항목 | 경로 |
+| Type | Path |
 |------|------|
 ${role.knowledge.writes.map((w) => `| writes | \`${w}\` |`).join('\n')}
 ${role.knowledge.reads.map((r) => `| reads | \`${r}\` |`).join('\n')}
 
-## AKB 규칙
+## AKB Rules
 
-- 작업 결과는 반드시 AKB에 기록
-- 일일 업무는 \`roles/${role.id}/journal/\`에 기록
-- CEO 승인 필요 시 [APPROVAL_NEEDED] 태그 사용
-- Hub 문서를 먼저 읽고 기존 가이드를 확인할 것
-- 새 문서 생성 전 기존 문서 검색 필수 (겹침 30% 미만일 때만 생성)
+- Always record work results in the AKB
+- Log daily work in \`roles/${role.id}/journal/\`
+- Use [APPROVAL_NEEDED] tag when CEO approval is required
+- Read Hub documents first and check existing guides before starting
+- Search existing docs before creating new ones (only create if overlap < 30%)
 
-## 리포트
+## Reports
 
 - **Daily**: ${role.reports.daily}
 - **Weekly**: ${role.reports.weekly}
@@ -205,8 +225,8 @@ export function generateRolesMd(roles: Role[]): string {
     .join('\n');
   return `# Roles
 
-| Role | ID | Level | Reports to | 상태 |
-|------|-----|-------|------------|------|
+| Name | ID | Level | Reports to | Status |
+|------|----|-------|------------|--------|
 ${rows}
 `;
 }
@@ -225,13 +245,99 @@ function mkdir(path: string): void {
   mkdirSync(path, { recursive: true });
 }
 
+/* ─── Shared Skills ────────────────────────────── */
+
+const KNOWLEDGE_GATE_SKILL = `---
+name: knowledge-gate
+description: "Knowledge gatekeeper. Prevents mindless document creation by analyzing existing docs and finding the best location/connections. Triggers: 'add to knowledge', 'document this', 'add to AKB', 'record this', '/knowledge-gate'"
+allowed-tools: Read, Glob, Grep, Bash, Task
+model: sonnet
+---
+
+# Knowledge Gate
+
+> "Prevent mindless document creation — find the best location and connections first"
+
+## Core Problem
+
+| Pattern | Problem |
+|---------|---------|
+| New insight → immediately create new doc | Duplicates existing docs |
+| Similar topics scattered across docs | Search inefficiency, AI confusion |
+| More docs ≠ better knowledge | Undermines AKB purpose |
+| **Isolated documents** | **Reduces discoverability** |
+
+---
+
+## Process
+
+### Step 1: Summarize the Insight
+
+When asked to document something:
+1. **One-line summary** of the insight
+2. Extract **3-5 keywords**
+
+### Step 2: Search Existing Docs
+
+\`\`\`
+# Search with keywords
+grep -rn "{keyword1}\\\\|{keyword2}\\\\|{keyword3}" --include="*.md" .
+\`\`\`
+
+### Step 3: Decide Location
+
+| Overlap | Criteria | Action |
+|---------|----------|--------|
+| 🔴 High (70%+) | Core topic is the same | Add section to existing doc |
+| 🟡 Medium (30-70%) | Related but different angle | Reference existing + cross-link |
+| 🟢 Low (<30%) | Independent topic | New document allowed |
+| None | Zero search results | New document |
+
+### Step 4: Execute
+
+#### Case A: Add to Existing (Preferred)
+- Identify the right section in the existing doc
+- Add the new insight there
+- Add cross-links to related docs
+
+#### Case B: New Document (Justification Required)
+- Explain why a new doc is needed
+- Register in the relevant Hub
+- Add cross-links to at least 1 related doc
+
+#### Case C: Not Worth Documenting
+- Temporary/transient info → skip
+- Implementation detail → belongs in code repo
+- Too granular → can be added to parent doc later
+
+### Step 5: Verify Connections
+
+After adding/creating:
+1. **Hub routing**: Is it reachable from a Hub?
+2. **Cross-links**: Does it reference related docs?
+3. **TL;DR**: Does it have searchable keywords?
+
+---
+
+## Core Principles
+
+> "Adding 1 doc = maintenance cost increase"
+> "Strengthen existing docs > create new ones"
+> "Isolated docs = dead docs"
+
+1. **Search first** — never create without searching
+2. **Prefer existing** — add to existing docs when possible
+3. **Connect always** — new docs must link to Hub + related docs
+4. **Justify creation** — explain why a new doc is needed
+`;
+
 /* ─── Scaffold (tc init) ────────────────────────── */
 
 export function scaffoldCompany(name: string, targetDir: string): void {
   const roles = DEFAULT_ROLES;
   const today = new Date().toISOString().slice(0, 10);
 
-  // 1. Directories
+  // 1. Directories (must match CLAUDE.md Folder Structure)
   const dirs = [
     'company',
     'roles',
@@ -239,13 +345,16 @@ export function scaffoldCompany(name: string, targetDir: string): void {
     'architecture',
     'operations',
     'operations/standup',
-    'operations/weekly',
     'operations/decisions',
     'operations/waves',
-    'operations/kpi',
-    'goals',
+    'operations/activity-streams',
+    'operations/sessions',
+    'operations/cost',
     'knowledge',
+    'methodologies',
     '.claude/skills',
+    '.claude/skills/_shared',
+    '.claude/skills/_shared/knowledge-gate',
   ];
 
   for (const role of roles) {
@@ -260,8 +369,15 @@ export function scaffoldCompany(name: string, targetDir: string): void {
   // 2. CLAUDE.md (reusable generator — 100% Tycono managed)
   write(join(targetDir, 'CLAUDE.md'), generateClaudeMd(name, roles));
 
-  // 2b. .tycono/rules-version + custom-rules.md
+  // 2b. .tycono/ config files
   mkdir(join(targetDir, '.tycono'));
+  write(join(targetDir, '.tycono', 'config.json'), JSON.stringify({ engine: 'claude-cli' }, null, 2) + '\n');
+  write(join(targetDir, '.tycono', 'preferences.json'), JSON.stringify({
+    instanceId: randomUUID(),
+    appearances: {},
+    theme: 'default',
+    language: 'en',
+  }, null, 2) + '\n');
   write(join(targetDir, '.tycono', 'rules-version'), getPackageVersion());
   write(join(targetDir, '.tycono', 'custom-rules.md'), `# Custom Rules\n\n> Company-specific rules, constraints, and processes.\n> This file is owned by you — Tycono will never overwrite it.\n\n<!-- Add your custom rules below -->\n`);
 
@@ -271,62 +387,205 @@ export function scaffoldCompany(name: string, targetDir: string): void {
   // 4. Hub documents
   write(
     join(targetDir, 'company', 'company.md'),
-    `# ${name}\n\n> 회사 정보\n\n- **설립일**: ${today}\n- **팀**: ${roles.length}명\n`,
-  );
-  write(
-    join(targetDir, 'company', 'budget.md'),
-    '# Budget\n\n| 항목 | 금액 | 비고 |\n|------|------|------|\n| AI API | TBD | Claude API |\n',
-  );
-  write(
-    join(targetDir, 'company', 'correction-log.md'),
-    '# Correction Log\n\n> CEO 피드백 → 시정 조치 기록. 같은 실수 반복 방지.\n\n'
-    + '| 날짜 | CEO 피드백 | 담당 | 시정 조치 | 수정 문서 |\n'
-    + '|------|----------|------|---------|----------|\n',
+    `# ${name}\n\n> An AI-powered organization\n\n## Mission\n\nDefine your company's mission here.\n\n## Vision\n\nDefine your company's vision here.\n\n## Values\n\n- Value 1\n- Value 2\n- Value 3\n`,
   );
 
   write(join(targetDir, 'roles', 'roles.md'), generateRolesMd(roles));
 
   write(
     join(targetDir, 'projects', 'projects.md'),
-    `# Projects\n\n아직 프로젝트가 없습니다.\n\n\`\`\`bash\ntc project new "프로젝트명"\n\`\`\`\n`,
+    `# Projects\n\nNo projects yet. Create one from the dashboard or via wave dispatch.\n`,
   );
 
   write(
     join(targetDir, 'architecture', 'architecture.md'),
-    '# Architecture\n\n> 기술 아키텍처 및 설계\n\nCTO가 정의합니다.\n\n---\n\n*관리: CTO*\n',
-  );
-
-  write(
-    join(targetDir, 'operations', 'operations.md'),
-    `# Operations
-
-> 운영 기록 및 의사결정
-
-## 하위 디렉토리
-
-| 디렉토리 | 내용 |
-|----------|------|
-| \`standup/\` | 일일 스탠드업 기록 |
-| \`weekly/\` | 주간 리포트 |
-| \`decisions/\` | CEO 의사결정 로그 |
-| \`waves/\` | Wave 디스패치 기록 |
-| \`kpi/\` | 성과 지표 |
-
----
-
-*관리: PM*
-`,
-  );
-
-  write(
-    join(targetDir, 'goals', 'goals.md'),
-    '# Goals & OKR\n\nCEO가 목표를 설정하고, C-Level이 Key Results를 정의합니다.\n\n'
-    + '## Current OKR\n\n_(아직 설정되지 않음. CEO가 방향을 지시하세요.)_\n',
+    '# Architecture\n\n> Technical architecture and design\n\nDefined by the CTO.\n\n---\n\n*Managed by: CTO*\n',
   );
 
   write(
     join(targetDir, 'knowledge', 'knowledge.md'),
-    '# Knowledge\n\n> 도메인 지식 및 학습 자료\n\n---\n\n*관리: 전체*\n',
+    '# Knowledge\n\n> Domain knowledge and learning resources\n\n---\n\n*Managed by: All*\n',
+  );
+
+  // 4b. Methodology documents
+  write(
+    join(targetDir, 'methodologies', 'methodologies.md'),
+    `# Methodologies
+
+> Frameworks and principles that guide how AI agents work in this organization.
+
+## Documents
+
+| Document | Description |
+|----------|-------------|
+| [agentic-knowledge-base.md](./agentic-knowledge-base.md) | AKB — the file-based knowledge protocol for AI agents |
+
+---
+
+*Managed by: All*
+`,
+  );
+
+  write(
+    join(targetDir, 'methodologies', 'agentic-knowledge-base.md'),
+    `# Agentic Knowledge Base (AKB)
+
+> The canonical reference for AKB — the file-based knowledge protocol for AI agents.
+
+## TL;DR
+
+- **Definition**: A file-based knowledge system where AI uses **search (Grep/Glob)** to find and **contextual links** to navigate
+- **Essence**: File-based Lightweight Ontology (Tag = Type, inline links = Edges)
+- **Philosophy**: Optimize documents so AI can find them — don't force AI to follow a rigid protocol
+- **Structure**: Root (CLAUDE.md) → Hub ({folder}.md) → Node (*.md)
+- **Core rules**: 5 writing principles (TL;DR, contextual links, keyword-optimized filenames, atomicity, semantic vs implementation separation)
+
+---
+
+## Definition
+
+> "Code is logic machines execute. AKB is context agents think with."
+
+AKB is a **file-based connected knowledge system** designed so AI agents can **search**, **learn**, and **retrieve** context without infrastructure (no Vector DB required).
+
+### Core Philosophy
+
+> "Don't try to inject everything into AI at once.
+> Instead, give it **documents that are easy to find**."
+
+---
+
+## Architecture
+
+AKB follows a 3-layer hierarchy: **Root → Hub → Node**.
+
+\`\`\`
+project/
+├── CLAUDE.md                    # [Root] Minimal routing (key file paths)
+├── knowledge/
+│   ├── knowledge.md             # [Hub] TOC for humans
+│   └── market-analysis.md       # [Node] Actual knowledge
+├── architecture/
+│   ├── architecture.md          # [Hub]
+│   └── api-design.md            # [Node] ← AI finds via Grep
+\`\`\`
+
+### Layer Roles
+
+| Layer | Role | Description |
+|-------|------|-------------|
+| **Root** (CLAUDE.md) | Minimal routing | Auto-injected as system prompt, provides key file paths |
+| **Hub** ({folder}.md) | TOC for humans | Folder overview; AI reads selectively |
+| **Node** (*.md) | Actual information | What AI searches for via Grep/Glob |
+
+---
+
+## Writing Principles (5 Rules)
+
+### Rule 1: TL;DR Required + Keyword Optimization
+
+Include **key search terms naturally** so AI can find them via Grep.
+
+\`\`\`markdown
+## TL;DR
+
+- **Market analysis** for the **SaaS** vertical
+- **Competitor** pricing and **positioning** comparison
+- **Revenue model** validation results
+\`\`\`
+
+**Guidelines:**
+- 3-5 bullet points
+- **Bold key terms** (Grep search targets)
+- Keep each point to one line
+
+### Rule 2: Contextual Links (Inline)
+
+Place links **within the flow of text**, not in isolated lists.
+
+\`\`\`markdown
+The core of our pricing is the **[3-tier model](./pricing-tiers.md)**.
+
+For competitive analysis, see [competitor-landscape.md](./competitor-landscape.md).
+\`\`\`
+
+**Why this works:** Context helps AI understand *why* it should follow the link.
+
+### Rule 3: Keyword-Optimized Filenames
+
+Make files easy to find via Grep/Glob.
+
+\`\`\`
+❌ Vague: notes.md, strategy.md
+✅ Clear: market-competitor-analysis.md, pricing-tier-strategy.md
+\`\`\`
+
+### Rule 4: Atomicity
+
+- One document = one topic
+- Keep under 200 lines (token efficiency)
+- If too long, split and connect via Hub
+
+### Rule 5: Semantic vs Implementation Separation
+
+> **Implementation (DDL, specs) → code repo** | **Semantic (meaning, relationships, why) → AKB**
+
+| Belongs in AKB | Belongs in Code Repo |
+|----------------|---------------------|
+| "Why we designed it this way" | DDL / migration files |
+| Relationship diagrams (Mermaid) | OpenAPI specs |
+| Design trade-offs | Config files (YAML/JSON) |
+
+---
+
+## Hub Role
+
+\`\`\`
+Hub = TOC for humans
+    + keyword collection that helps Grep searches
+\`\`\`
+
+**Hub responsibilities:**
+1. Help humans understand folder contents
+2. Contain enough keywords to appear in Grep results
+3. AI reads selectively when it needs structural overview
+
+---
+
+## CLAUDE.md Routing Strategy
+
+CLAUDE.md is included in the system prompt, so it has **size constraints**.
+
+**Principles:**
+- Frequently used core files → direct path in routing table
+- Everything else → reference via Hub
+
+---
+
+## Design Background
+
+AKB was designed by analyzing actual AI agent behavior patterns.
+
+**Observed AI behavior:**
+- Skips Hubs, searches Nodes directly via Grep/Glob
+- Does not parse frontmatter metadata (triggers, related, etc.)
+- Follows links that appear inline with context
+
+**Design principle:**
+> "Don't try to change AI behavior — optimize documents so AI can find them naturally."
+
+**Key insight:**
+> If AI found the information it needed and produced a good answer, that's proof AKB is working.
+> AI doesn't need to be meta-aware of "Am I following AKB right now?"
+> That's the document designer's responsibility, not the AI's.
+
+---
+
+## Next Steps
+
+- Tag system details → \`methodologies/tag-system.md\` (if created)
+- Naming conventions → \`methodologies/naming-convention.md\` (if created)
+`,
   );
 
   // 5. Role files
@@ -351,4 +610,10 @@ export function scaffoldCompany(name: string, targetDir: string): void {
       generateSkillMd(role, name),
     );
   }
+
+  // 6. Shared skills
+  write(
+    join(targetDir, '.claude', 'skills', '_shared', 'knowledge-gate', 'SKILL.md'),
+    KNOWLEDGE_GATE_SKILL,
+  );
 }

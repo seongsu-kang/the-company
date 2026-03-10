@@ -1,16 +1,19 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { getSubordinates, getChainOfCommand, formatOrgChart, } from './org-tree.js';
+import { readPreferences } from '../services/preferences.js';
+import { readConfig } from '../services/company-config.js';
+import { getSubordinates, getChainOfCommand, formatOrgChart, canConsult, } from './org-tree.js';
+import { extractKeywords, searchRelatedDocs } from './knowledge-gate.js';
 export function assembleContext(companyRoot, roleId, task, sourceRole, orgTree, options) {
     const node = orgTree.nodes.get(roleId);
     if (!node) {
         throw new Error(`Role not found in org tree: ${roleId}`);
     }
     const sections = [];
-    // 1. CLAUDE.md (전사 규칙 — 축약)
+    // 1. Company Rules (CLAUDE.md + custom-rules.md + company.md)
     const companyRules = loadCompanyRules(companyRoot);
     if (companyRules) {
-        sections.push('# Company Rules\n\n' + companyRules);
+        sections.push(companyRules);
     }
     // 2. Org Context
     sections.push(buildOrgContextSection(orgTree, node));
@@ -40,12 +43,111 @@ export function assembleContext(companyRoot, roleId, task, sourceRole, orgTree, 
     if (ceoDecisions) {
         sections.push('# CEO Decisions (전사 공지)\n\n' + ceoDecisions);
     }
-    // 9. Task는 별도 필드로 분리
-    const subordinates = getSubordinates(orgTree, roleId);
+    // 9. Code Root (코드 프로젝트 경로)
+    const config = readConfig(companyRoot);
+    if (config.codeRoot) {
+        sections.push(`# Code Project
+
+The code repository is located at: \`${config.codeRoot}\` (env: $TYCONO_CODE_ROOT)
+The AKB (knowledge) directory is at: \`${companyRoot}\` (env: $TYCONO_AKB_ROOT)
+
+Use the code repository path for all source code work (reading, writing, building, testing).
+
+## Git Worktree Rules (CRITICAL)
+- Your cwd is already set to the code repository. When creating worktrees, use relative paths or \`$TYCONO_CODE_ROOT\`.
+- **NEVER run \`git worktree add\` in \`$TYCONO_AKB_ROOT\`** — the AKB directory is not a code repository.
+- Recommended worktree path: \`$TYCONO_CODE_ROOT/.worktrees/{branch-name}\`
+- Example: \`git worktree add .worktrees/feature-xyz -b feature/xyz\` (from cwd, which is already code repo)`);
+    }
+    // 10. Pre-Knowledging: 작업 관련 문서 자동 탐색
+    const preKSection = buildPreKnowledgingSection(companyRoot, task);
+    if (preKSection) {
+        sections.push(preKSection);
+    }
+    // Task는 별도 필드로 분리
+    let subordinates = getSubordinates(orgTree, roleId);
+    // Filter subordinates by targetRoles ONLY for CEO (wave dispatch scope)
+    // C-Level roles should always see their own subordinates regardless of targetRoles
+    if (options?.targetRoles && options.targetRoles.length > 0 && roleId === 'ceo') {
+        subordinates = subordinates.filter(id => options.targetRoles.includes(id));
+    }
     // Dispatch 도구 안내 (하위 Role이 있는 경우)
     if (subordinates.length > 0) {
         sections.push(buildDispatchSection(orgTree, roleId, subordinates, options?.teamStatus));
     }
+    else if (node.level === 'c-level') {
+        // C-level with no subordinates — clarify authority boundaries
+        sections.push(`# Team Structure
+
+⚠️ **You have no direct reports.** You are an individual contributor at the C-level.
+
+- You CANNOT dispatch tasks to other roles (no subordinates)
+- You CAN consult other roles for information (see Consult section below)
+- You MUST do the work yourself — research, analyze, write, decide
+- If implementation requires another role (e.g., engineering work), recommend it to CEO
+- Make decisions within your authority autonomously — do NOT ask CEO for decisions you can make yourself`);
+    }
+    // Consult 도구 안내 (상담 가능한 Role이 있는 경우)
+    const consultSection = buildConsultSection(orgTree, roleId);
+    if (consultSection) {
+        sections.push(consultSection);
+    }
+    // Language preference (default: English)
+    const prefs = readPreferences(companyRoot);
+    const lang = prefs.language && prefs.language !== 'auto' ? prefs.language : 'en';
+    const langNames = { en: 'English', ko: 'Korean (한국어)', ja: 'Japanese (日本語)' };
+    const langName = langNames[lang] ?? lang;
+    sections.push(`# Language (CRITICAL)
+
+You MUST respond in **${langName}**.
+
+This applies to ALL output without exception:
+- Status updates, reports, and analysis
+- Journal entries and standup notes
+- Decision logs and knowledge documents
+- User-facing messages and explanations
+- Git commit messages and PR descriptions
+
+Code (variable names, comments in code) may remain in English for readability.
+Everything else MUST be in ${langName}.`);
+    // Execution behavior rules (prevents infinite exploration loops in -p mode)
+    sections.push(`# Execution Rules (CRITICAL)
+
+## Interpreting Tasks
+- A [CEO Wave] is a directive from the CEO. Interpret it based on your role's expertise.
+- If the directive is vague, focus on what YOUR ROLE can contribute. Don't try to cover everything.
+- Break ambiguous directives into concrete actions within your authority scope.
+- If you truly cannot determine what to do, state your interpretation and proceed with it.
+- **If you have subordinates, your FIRST action should be decomposing the task and dispatching.** Do NOT attempt implementation yourself — delegate to the appropriate team member.
+- Review the "Available Team Members" section to understand each subordinate's capabilities before dispatching.
+
+## Efficiency
+- Read ONLY files directly relevant to your task. Do NOT explore the codebase broadly.
+- If a file doesn't exist at the expected path, try at most 2 alternatives, then move on.
+- Do NOT use \`find\` or \`ls\` to scan entire directory trees. Use the Project Structure above.
+- Never \`sleep\` or poll in loops. If something isn't ready, report it and move on.
+
+## When Stuck
+- If you cannot find what you need after 3 search attempts, STOP searching immediately.
+- Do NOT retry the same failing command or approach.
+- Summarize what you found, what you couldn't find, and deliver your best answer with what you have.
+
+## Output
+- Always produce a concrete deliverable: code change, report, analysis, or clear status update.
+- End with a brief summary of what you did and any unresolved items.
+
+## Sub-task Efficiency (when dispatched by a superior)
+- Focus ONLY on the assigned task — nothing else.
+- Do NOT update journals, knowledge docs, or tasks.md — your superior handles that.
+- Do NOT read CLAUDE.md or explore unrelated files — go straight to the target file.
+- If tsc/tests fail, fix the specific error. Do NOT refactor surrounding code.
+
+## Commit Rule (when you modify code files)
+- After completing code changes, you MUST commit your work.
+- Use a descriptive commit message: \`git commit -m "type(scope): description"\`
+- Common types: feat, fix, refactor, test, chore
+- This ensures your work is not lost in uncommitted changes.
+- Do NOT push — just commit locally. Your superior or the system handles push/PR.`);
     const systemPrompt = sections.join('\n\n---\n\n');
     return {
         systemPrompt,
@@ -61,25 +163,49 @@ export function assembleContext(companyRoot, roleId, task, sourceRole, orgTree, 
     };
 }
 /* ─── Section Builders ───────────────────────── */
-function loadCompanyRules(companyRoot) {
-    const claudeMdPath = path.join(companyRoot, 'CLAUDE.md');
-    if (!fs.existsSync(claudeMdPath))
+function buildPreKnowledgingSection(companyRoot, task) {
+    // Extract keywords from the task directive
+    const keywords = extractKeywords(task);
+    if (keywords.length < 2)
+        return null; // Too few keywords to be meaningful
+    const related = searchRelatedDocs(companyRoot, keywords);
+    if (related.length === 0)
         return null;
-    const content = fs.readFileSync(claudeMdPath, 'utf-8');
-    // Extract key sections: AI 작업 규칙, AKB 관리
-    // We keep it focused on operational rules, not the full CLAUDE.md
-    const sections = [];
-    // Extract AKB rules section
-    const akbMatch = content.match(/### AKB 관리 의무[\s\S]*?(?=\n---|\n## [^#])/);
-    if (akbMatch) {
-        sections.push(akbMatch[0].trim());
+    const docList = related
+        .map(doc => `- \`${doc.path}\` — ${doc.preview} (relevance: ${doc.matches})`)
+        .join('\n');
+    return `# 📚 Pre-Knowledging: Related Documents
+
+The following existing documents are related to this task. **Read relevant ones before starting work** to avoid duplicating knowledge or missing existing context.
+
+${docList}
+
+> **Knowledging Rule**: Check these documents first. If your work produces new knowledge, update existing docs or create new ones with cross-links.`;
+}
+function loadCompanyRules(companyRoot) {
+    const parts = [];
+    // 1. System rules (CLAUDE.md — Tycono managed)
+    const claudeMdPath = path.join(companyRoot, 'CLAUDE.md');
+    if (fs.existsSync(claudeMdPath)) {
+        parts.push(fs.readFileSync(claudeMdPath, 'utf-8'));
     }
-    // Extract Git rules
-    const gitMatch = content.match(/### Git 규칙[\s\S]*?(?=\n###|\n---|\n## [^#])/);
-    if (gitMatch) {
-        sections.push(gitMatch[0].trim());
+    // 2. User custom rules (.tycono/custom-rules.md — user owned)
+    const customPath = path.join(companyRoot, '.tycono', 'custom-rules.md');
+    if (fs.existsSync(customPath)) {
+        const custom = fs.readFileSync(customPath, 'utf-8').trim();
+        if (custom) {
+            parts.push('---\n\n## Company Custom Rules\n\n' + custom);
+        }
     }
-    return sections.length > 0 ? sections.join('\n\n') : content.slice(0, 2000);
+    // 3. Company info (company/company.md — user owned)
+    const companyMdPath = path.join(companyRoot, 'company', 'company.md');
+    if (fs.existsSync(companyMdPath)) {
+        const companyInfo = fs.readFileSync(companyMdPath, 'utf-8').trim();
+        if (companyInfo) {
+            parts.push('---\n\n## Company Info\n\n' + companyInfo);
+        }
+    }
+    return parts.length > 0 ? parts.join('\n\n') : null;
 }
 function buildOrgContextSection(orgTree, node) {
     const chart = formatOrgChart(orgTree, node.id);
@@ -230,57 +356,280 @@ function loadCeoDecisions(companyRoot) {
     return `아래는 CEO가 승인한 전사 결정 사항입니다. 모든 Role은 이 결정을 인지하고 준수해야 합니다.\n\n${summaries.join('\n')}`;
 }
 function buildDispatchSection(orgTree, roleId, subordinates, teamStatus) {
+    const node = orgTree.nodes.get(roleId);
+    const isCLevel = node?.level === 'c-level';
     const subInfo = subordinates.map((id) => {
         const sub = orgTree.nodes.get(id);
-        const base = sub ? `- **${sub.name}** (\`${id}\`): ${sub.persona.split('\n')[0]}` : `- ${id}`;
+        if (!sub)
+            return `- ${id} — (unknown role)`;
+        const lines = [];
+        // Header: name, id, persona summary
         const st = teamStatus?.[id];
-        if (st && st.status === 'working') {
-            const taskHint = st.task ? `: "${st.task.slice(0, 60)}"` : '';
-            return `${base} — **Working**${taskHint}`;
+        const status = st?.status === 'working'
+            ? `🔴 Working${st.task ? ` — "${st.task.slice(0, 60)}"` : ''}`
+            : '🟢 Idle';
+        lines.push(`### ${sub.name} (\`${id}\`) — ${status}`);
+        lines.push(`> ${sub.persona.split('\n')[0]}`);
+        // Level & model
+        lines.push(`- **Level**: ${sub.level} | **Model**: ${sub.model ?? 'default'}`);
+        // Skills
+        if (sub.skills && sub.skills.length > 0) {
+            lines.push(`- **Skills**: ${sub.skills.join(', ')}`);
         }
-        return `${base} — Idle`;
-    }).join('\n');
+        // Authority — what they can do autonomously
+        if (sub.authority.autonomous.length > 0) {
+            lines.push(`- **Can do**: ${sub.authority.autonomous.join(', ')}`);
+        }
+        // Knowledge scope — what they can read/write
+        if (sub.knowledge.reads.length > 0) {
+            lines.push(`- **Reads**: ${sub.knowledge.reads.join(', ')}`);
+        }
+        if (sub.knowledge.writes.length > 0) {
+            lines.push(`- **Writes**: ${sub.knowledge.writes.join(', ')}`);
+        }
+        // Their own subordinates (for chain delegation visibility)
+        const grandchildren = orgTree.nodes.get(id)?.children ?? [];
+        if (grandchildren.length > 0) {
+            const gcNames = grandchildren.map(gc => {
+                const gcNode = orgTree.nodes.get(gc);
+                return gcNode ? `${gcNode.name} (${gc})` : gc;
+            });
+            lines.push(`- **Their reports**: ${gcNames.join(', ')}`);
+        }
+        return lines.join('\n');
+    }).join('\n\n');
     const exampleSubId = subordinates[0] ?? 'engineer';
-    return `# Dispatch (Team Management)
+    let section = `# Dispatch (Team Management)
 
-You can assign tasks to your direct reports. They will execute independently and return results.
+⛔ **YOU HAVE SUBORDINATES. YOU MUST USE THEM.**
+⛔ **For ANY directive — whether it's "do X", "review Y", or even "what do you think about Z" — dispatch to your team first, THEN synthesize their input into your response.**
+⛔ **Reading files and giving your own opinion WITHOUT dispatching is NEVER acceptable when you have a team.**
+
+Even for opinion/analysis requests:
+- Dispatch to relevant subordinates: "Analyze X from your perspective and report findings"
+- Poll for results → Synthesize their input with your own analysis
+- Your value is ORCHESTRATION, not solo work
 
 ## Available Team Members
 ${subInfo}
 
 ## How to Dispatch
 
-**Use Bash to run the dispatch command:**
+**Dispatch is async: start a job → poll for result → review → next task.**
 
 \`\`\`bash
+# Step 1: Dispatch (returns immediately with job ID)
 python3 "$DISPATCH_CMD" ${exampleSubId} "Task description here"
-\`\`\`
 
-**IMPORTANT**: Always use \`python3 "$DISPATCH_CMD"\` — this is the ONLY way to dispatch tasks to subordinates.
-
-The command will:
-1. Start a job for the subordinate
-2. Wait up to ~100 seconds for completion
-3. Return the subordinate's output if done, or a job ID to check later
-
-If the subordinate takes longer than 100s, you'll get a job ID. Check the result with:
-\`\`\`bash
+# Step 2: Poll for result (repeat every 10-30s until DONE)
 python3 "$DISPATCH_CMD" --check <jobId>
 \`\`\`
 
-## Examples
+⛔ **NEVER use the Agent tool or Task tool to spawn sub-agents.** Those bypass the job tracking system. Use ONLY the dispatch command.
+
+### The Pattern: Dispatch → Poll → Review → Next
 
 \`\`\`bash
-# Assign a task and wait for result
-python3 "$DISPATCH_CMD" ${exampleSubId} "프로젝트 현황을 확인하고 보고서를 작성해"
+# 1. Dispatch first task (returns job ID immediately)
+python3 "$DISPATCH_CMD" ${exampleSubId} "Task A"
+# Output includes: Job ID: job-xxx
 
-# Check a previously dispatched job result
-python3 "$DISPATCH_CMD" --check job-xxx-123
+# 2. Poll for result (repeat until status is DONE)
+python3 "$DISPATCH_CMD" --check job-xxx
+# If RUNNING → wait 10-30s → --check again
+# If DONE → read the result → proceed to next task
+
+# 3. Dispatch next task
+python3 "$DISPATCH_CMD" ${subordinates.length > 1 ? subordinates[1] : exampleSubId} "Task B"
+python3 "$DISPATCH_CMD" --check job-yyy
+# ... repeat
+
+# 4. Continue until ALL tasks are done
 \`\`\`
 
+### --check Status Values
+- **RUNNING** — Subordinate still working → poll again in 10-30s
+- **DONE** — Task completed, result is printed
+- **ERROR** — Task failed (re-dispatch with different instructions or report)
+- **AWAITING_INPUT** — Subordinate has a question for you
+
+### ⛔ CRITICAL Rules
+- **NEVER re-dispatch the same task.** If --check shows RUNNING, just keep polling.
+- **NEVER dispatch and immediately finish.** The dispatch→check→review loop must continue until ALL work is complete.
+- **Save the job ID** from each dispatch to use with --check.`;
+    // C-level roles get mandatory delegation rules
+    if (isCLevel) {
+        section += `
+
+## C-Level Delegation Protocol (MANDATORY)
+
+⛔ **You are a MANAGER. You do NOT write code, tests, or implementation yourself.**
+⛔ **Your job is to PLAN, DELEGATE, REVIEW, and UPDATE KNOWLEDGE.**
+
+### Core Rule: Always Delegate Down
+
+When you receive a directive:
+1. **Analyze** — Break it into sub-tasks appropriate for each subordinate
+2. **Dispatch** — Assign tasks to subordinates with clear acceptance criteria
+3. **Monitor** — Poll for results, review quality
+4. **Verify** — Check git status: did subordinate commit? What files changed?
+5. **Follow up** — If output doesn't meet criteria, dispatch back with feedback
+6. **Report** — Synthesize results with change summary (files, commits, branch)
+
+### What You Do vs What Subordinates Do
+
+| YOU (C-Level) | SUBORDINATES (Members) |
+|---------------|----------------------|
+| Plan & decompose tasks | Implement code/design/tests |
+| Dispatch with clear specs | Execute and return results |
+| Review output quality | Fix issues when told |
+| Update knowledge & tasks | Update their own journals |
+| Report to superior | Report to you |
+
+### The Supervision Loop (CRITICAL — DO NOT SKIP)
+
+⛔ **You MUST keep running until ALL planned tasks are dispatched, reviewed, and completed.**
+⛔ **NEVER dispatch once and stop. That leaves work half-done.**
+
+The loop:
+\`\`\`
+PLAN TASKS → DISPATCH → POLL (--check) → REVIEW RESULT → DECIDE
+                                                           ├── PASS → Next DIFFERENT Task
+                                                           └── FAIL → Re-dispatch with SPECIFIC fix
+                                                           └── ALL DONE → Update knowledge → Report
+\`\`\`
+
+### ⛔ CRITICAL: No Duplicate Dispatch
+
+**NEVER dispatch the same or similar task to the same role twice.**
+- If --check shows RUNNING, keep polling — do NOT re-dispatch
+- If a subordinate completed a task, accept the result — do NOT re-dispatch
+- If the result is unsatisfactory, re-dispatch with SPECIFIC different instructions
+- Track dispatched job IDs — never repeat the same task
+- After 2 dispatches to the same role, accept the result or report to CEO
+
+**Example: Full supervision session**
+\`\`\`bash
+# Task 1: Dispatch to engineer
+python3 "$DISPATCH_CMD" engineer "Implement feature X. Read tasks.md first."
+# → Job ID: job-001
+
+# Poll until done
+python3 "$DISPATCH_CMD" --check job-001
+# → Status: RUNNING — check again in 10-30s
+python3 "$DISPATCH_CMD" --check job-001
+# → Status: DONE (result printed)
+
+# Review result... looks good. Task 2 (QA):
+python3 "$DISPATCH_CMD" qa "Test feature X that engineer just implemented."
+# → Job ID: job-002
+python3 "$DISPATCH_CMD" --check job-002
+# → Status: DONE — found bugs
+
+# Re-dispatch with SPECIFIC fix:
+python3 "$DISPATCH_CMD" engineer "Fix BUG: null check missing in auth.ts line 42"
+# → Job ID: job-003
+python3 "$DISPATCH_CMD" --check job-003
+# → Status: DONE — all good. Update knowledge and report.
+\`\`\`
+
+⚠️ Do NOT use curl or other methods to create jobs — always use the dispatch command.
+
+### Dispatch Quality Requirements
+
+Every dispatch MUST include:
+- **Context**: What documents/files to read first (CLAUDE.md + relevant Hub + SKILL.md)
+- **Task**: Specific deliverable with acceptance criteria
+- **Constraints**: File paths, standards, what NOT to do
+- **AKB instruction**: "⛔ AKB Rule: Read CLAUDE.md before starting work."
+
+### Anti-Patterns (NEVER do these)
+
+- ❌ **Dispatching once and stopping** — you MUST keep working until directive is complete
+- ❌ **Dispatching and NOT polling with --check** — you must poll for results
+- ❌ **Re-dispatching when --check shows RUNNING** — just poll again
+- ❌ Writing code yourself instead of dispatching to engineer
+- ❌ Dispatching without acceptance criteria
+- ❌ Accepting output without reviewing it
+- ❌ Forgetting to update knowledge/tasks after work completes
+- ❌ Doing only 1 dispatch when you should chain multiple (Engineer → QA)
+- ❌ Reporting to superior without synthesizing subordinate outputs
+
+### Post-Dispatch Verification (CRITICAL)
+
+After a subordinate completes a code task, you MUST verify the work is preserved:
+
+\`\`\`bash
+# 1. Check if subordinate committed their work
+git log --oneline -3
+
+# 2. If NOT committed (changes are unstaged), commit on their behalf
+git add -A && git commit -m "feat(scope): description of subordinate's work"
+
+# 3. Include in your report to CEO:
+#    - What files were changed
+#    - Commit hash (if committed)
+#    - Whether the changes compile (tsc --noEmit)
+\`\`\`
+
+⛔ **Uncommitted work = lost work.** If the subordinate didn't commit, YOU must commit before reporting.
+Your final report MUST include a **Change Summary** with files changed and commit status.`;
+    }
+    else {
+        section += `
+
+## Delegation Rules (MANDATORY)
+
+⛔ **You have subordinates — USE THEM before doing work yourself.**
+
+- **Always dispatch first.** Break the directive into sub-tasks and assign to your team.
+- Only do work yourself if NO subordinate can handle it (e.g., cross-cutting decisions).
+- Include clear task description, acceptance criteria, and relevant file paths in every dispatch.
+- After receiving results, synthesize and report back.
+- Your output should reference subordinate findings, not just your own file reads.`;
+    }
+    return section;
+}
+function buildConsultSection(orgTree, roleId) {
+    // Build list of roles this agent can consult
+    const consultable = [];
+    for (const [id] of orgTree.nodes) {
+        if (id !== roleId && canConsult(orgTree, roleId, id)) {
+            consultable.push(id);
+        }
+    }
+    if (consultable.length === 0)
+        return null;
+    const roleList = consultable.map((id) => {
+        const n = orgTree.nodes.get(id);
+        if (!n)
+            return `- \`${id}\``;
+        const firstLine = n.persona.split('\n')[0] || n.name;
+        return `- **${n.name}** (\`${id}\`): ${firstLine}`;
+    }).join('\n');
+    return `# Consult (Ask Colleagues)
+
+You can ask questions to other roles using the \`consult\` tool:
+
+${roleList}
+
+## How to Consult
+
+Use the \`consult\` tool:
+\`\`\`json
+{ "roleId": "designer", "question": "What color scheme are you using for the dashboard?" }
+\`\`\`
+
+The consulted role will answer your question in read-only mode and return the response to you.
+
+## When to Use
+- Need technical decisions or clarifications from your manager
+- Need design/implementation details from a peer
+- Need domain expertise from another team member
+- Unsure about architecture or conventions — ask before guessing
+
 ## Rules
-- Only dispatch to your direct reports listed above
-- Include clear task description, acceptance criteria, and relevant file paths
-- The dispatched agent will work independently and return results to you
-- After receiving results, synthesize and report back`;
+- The consulted role answers in **read-only mode** (no file modifications)
+- Keep questions specific and concise for better answers
+- Don't consult for tasks that should be dispatched (use dispatch for work assignments)`;
 }

@@ -12,6 +12,14 @@ export declare const WRITE_TOOLS: ToolDefinition[];
  */
 export declare const DISPATCH_TOOL: ToolDefinition;
 /**
+ * Bash 실행 도구 — 코드 프로젝트에서 시스템 명령 실행 (EG-001)
+ */
+export declare const BASH_TOOL: ToolDefinition;
+/**
+ * 상담 도구 — 모든 Role에게 제공 (동료/상관/부하에게 질문)
+ */
+export declare const CONSULT_TOOL: ToolDefinition;
+/**
  * Role에 따른 도구 목록 반환
  */
-export declare function getToolsForRole(hasSubordinates: boolean, readOnly: boolean): ToolDefinition[];
+export declare function getToolsForRole(hasSubordinates: boolean, readOnly: boolean, hasBash?: boolean): ToolDefinition[];

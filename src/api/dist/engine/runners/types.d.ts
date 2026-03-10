@@ -8,6 +8,12 @@ import type { OrgTree } from '../org-tree.js';
  *
  * EXECUTION_ENGINE 환경변수로 전환 (기본값: claude-cli)
  */
+export interface ImageAttachment {
+    type: 'image';
+    data: string;
+    name: string;
+    mediaType: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
+}
 export type TeamStatus = Record<string, {
     status: string;
     task?: string;
@@ -23,12 +29,20 @@ export interface RunnerConfig {
     model?: string;
     jobId?: string;
     teamStatus?: TeamStatus;
+    attachments?: ImageAttachment[];
+    /** Selective dispatch scope — only these roles can be dispatched to */
+    targetRoles?: string[];
+    /** EG-001: Code project root for bash_execute tool */
+    codeRoot?: string;
+    /** PSM-004: Environment variables to inject (e.g., port assignments) */
+    env?: Record<string, string>;
 }
 export interface RunnerCallbacks {
     onText?: (text: string) => void;
     onThinking?: (text: string) => void;
     onToolUse?: (tool: string, input?: Record<string, unknown>) => void;
     onDispatch?: (roleId: string, task: string) => void;
+    onConsult?: (roleId: string, question: string) => void;
     onTurnComplete?: (turn: number) => void;
     onError?: (error: string) => void;
 }

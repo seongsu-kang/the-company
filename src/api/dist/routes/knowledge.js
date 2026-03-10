@@ -10,8 +10,10 @@ import path from 'node:path';
 import matter from 'gray-matter';
 import { glob } from 'glob';
 import { COMPANY_ROOT } from '../services/file-reader.js';
+import { detectDecay, searchRelatedDocs, extractKeywords } from '../engine/knowledge-gate.js';
 export const knowledgeRouter = Router();
-const knowledgeDir = path.join(COMPANY_ROOT, 'knowledge');
+function knowledgeDir() { return path.join(COMPANY_ROOT, 'knowledge'); }
+function companyRoot() { return COMPANY_ROOT; }
 /* ─── Helpers ─────────────────────────────────────── */
 function extractTldr(content) {
     // Try > blockquote on the first few lines
@@ -52,15 +54,27 @@ function inferCategory(filePath, tags) {
 /* ─── List endpoint ───────────────────────────────── */
 knowledgeRouter.get('/', (_req, res, next) => {
     try {
-        if (!fs.existsSync(knowledgeDir)) {
+        if (!fs.existsSync(companyRoot())) {
             res.json([]);
             return;
         }
-        const files = glob.sync('**/*.{md,html}', { cwd: knowledgeDir })
-            .filter((f) => f !== 'knowledge.md')
+        const files = glob.sync('**/*.{md,html}', {
+            cwd: companyRoot(),
+            ignore: [
+                'node_modules/**', '.claude/**', '.obsidian/**', '.tycono/**', '.git/**',
+                '**/node_modules/**',
+            ],
+        })
+            .filter((f) => {
+            const base = path.basename(f);
+            // Exclude hub files (folder-name.md pattern) and CLAUDE.md
+            if (base === 'CLAUDE.md')
+                return false;
+            return true;
+        })
             .sort();
         const docs = files.map((f) => {
-            const absPath = path.join(knowledgeDir, f);
+            const absPath = path.join(companyRoot(), f);
             let raw = '';
             try {
                 raw = fs.readFileSync(absPath, 'utf-8');
@@ -118,6 +132,32 @@ knowledgeRouter.get('/', (_req, res, next) => {
         next(err);
     }
 });
+/* ─── Knowledge Health endpoint ──────────────────── */
+knowledgeRouter.get('/health', (_req, res, next) => {
+    try {
+        const report = detectDecay(companyRoot());
+        res.json(report);
+    }
+    catch (err) {
+        next(err);
+    }
+});
+/* ─── Related docs search endpoint ──────────────── */
+knowledgeRouter.get('/related', (req, res, next) => {
+    try {
+        const query = String(req.query.q ?? '');
+        if (!query) {
+            res.status(400).json({ error: 'q parameter required' });
+            return;
+        }
+        const keywords = extractKeywords(query);
+        const docs = searchRelatedDocs(companyRoot(), keywords);
+        res.json({ keywords, docs });
+    }
+    catch (err) {
+        next(err);
+    }
+});
 /* ─── Single document endpoint ────────────────────── */
 /* ─── Create document endpoint ───────────────────── */
 knowledgeRouter.post('/', (req, res, next) => {
@@ -130,8 +170,8 @@ knowledgeRouter.post('/', (req, res, next) => {
         // Sanitize filename
         const safeName = filename.replace(/[^a-zA-Z0-9가-힣_\-. ]/g, '').replace(/\s+/g, '-');
         const fullName = safeName.endsWith('.md') ? safeName : `${safeName}.md`;
-        const absPath = path.join(knowledgeDir, fullName);
-        if (!absPath.startsWith(knowledgeDir)) {
+        const absPath = path.join(knowledgeDir(), fullName);
+        if (!absPath.startsWith(knowledgeDir())) {
             res.status(403).json({ error: 'Forbidden' });
             return;
         }
@@ -164,8 +204,8 @@ knowledgeRouter.put('/{*path}', (req, res, next) => {
             res.status(400).json({ error: 'Document ID required' });
             return;
         }
-        const absPath = path.join(knowledgeDir, docId);
-        if (!absPath.startsWith(knowledgeDir)) {
+        const absPath = path.resolve(companyRoot(), docId);
+        if (!absPath.startsWith(companyRoot() + path.sep) && absPath !== companyRoot()) {
             res.status(403).json({ error: 'Forbidden' });
             return;
         }
@@ -199,8 +239,8 @@ knowledgeRouter.delete('/{*path}', (req, res, next) => {
             res.status(400).json({ error: 'Document ID required' });
             return;
         }
-        const absPath = path.join(knowledgeDir, docId);
-        if (!absPath.startsWith(knowledgeDir)) {
+        const absPath = path.resolve(companyRoot(), docId);
+        if (!absPath.startsWith(companyRoot() + path.sep) && absPath !== companyRoot()) {
             res.status(403).json({ error: 'Forbidden' });
             return;
         }
@@ -224,9 +264,9 @@ knowledgeRouter.get('/{*path}', (req, res, next) => {
             res.status(400).json({ error: 'Document ID required' });
             return;
         }
-        const absPath = path.join(knowledgeDir, docId);
-        // Security: ensure path stays within knowledgeDir
-        if (!absPath.startsWith(knowledgeDir)) {
+        const absPath = path.resolve(companyRoot(), docId);
+        // Security: ensure path stays within companyRoot
+        if (!absPath.startsWith(companyRoot() + path.sep) && absPath !== companyRoot()) {
             res.status(403).json({ error: 'Forbidden' });
             return;
         }

@@ -1,4 +1,6 @@
-export declare const COMPANY_ROOT: string;
+export declare let COMPANY_ROOT: string;
+/** Update COMPANY_ROOT at runtime (e.g. after scaffold picks a new location) */
+export declare function setCompanyRoot(root: string): void;
 /**
  * Markdown 파일을 읽고 frontmatter와 content를 분리하여 반환한다.
  */

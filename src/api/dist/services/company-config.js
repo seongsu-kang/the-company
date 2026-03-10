@@ -9,7 +9,18 @@ import path from 'node:path';
 export const TYCONO_DIR = '.tycono';
 const CONFIG_DIR = TYCONO_DIR;
 const CONFIG_FILE = 'config.json';
+const DEFAULT_CONVERSATION_LIMITS = {
+    softLimit: 50,
+    hardLimit: 200,
+};
 const DEFAULT_CONFIG = { engine: 'claude-cli' };
+/** Resolve conversation limits with defaults. */
+export function getConversationLimits(config) {
+    return {
+        ...DEFAULT_CONVERSATION_LIMITS,
+        ...config.conversationLimits,
+    };
+}
 function configPath(companyRoot) {
     return path.join(companyRoot, CONFIG_DIR, CONFIG_FILE);
 }

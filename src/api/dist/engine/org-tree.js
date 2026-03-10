@@ -50,6 +50,12 @@ export function buildOrgTree(companyRoot) {
                 },
                 skills: raw.skills,
                 model: raw.model,
+                source: raw.source ? {
+                    id: raw.source.id || '',
+                    sync: raw.source.sync || 'manual',
+                    forked_at: raw.source.forked_at,
+                    upstream_version: raw.source.upstream_version,
+                } : undefined,
             };
             tree.nodes.set(node.id, node);
         }
@@ -108,6 +114,24 @@ export function canDispatchTo(tree, source, target) {
         return tree.nodes.get(target)?.reportsTo === 'ceo';
     }
     // Others can dispatch to anyone in their subtree
+    const descendants = getDescendants(tree, source);
+    return descendants.includes(target);
+}
+/** Can source consult (ask a question to) target? Peers, direct manager, or subordinates. */
+export function canConsult(tree, source, target) {
+    if (source === target)
+        return false;
+    const sourceNode = tree.nodes.get(source);
+    const targetNode = tree.nodes.get(target);
+    if (!sourceNode || !targetNode)
+        return false;
+    // 1. Peers — same parent
+    if (sourceNode.reportsTo === targetNode.reportsTo)
+        return true;
+    // 2. Direct manager
+    if (sourceNode.reportsTo === target)
+        return true;
+    // 3. Subordinates (same as dispatch scope)
     const descendants = getDescendants(tree, source);
     return descendants.includes(target);
 }

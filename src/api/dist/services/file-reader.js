@@ -14,7 +14,12 @@ function findCompanyRoot() {
     }
     return process.cwd();
 }
-export const COMPANY_ROOT = findCompanyRoot();
+export let COMPANY_ROOT = findCompanyRoot();
+/** Update COMPANY_ROOT at runtime (e.g. after scaffold picks a new location) */
+export function setCompanyRoot(root) {
+    COMPANY_ROOT = root;
+    process.env.COMPANY_ROOT = root;
+}
 function resolve(...segments) {
     return path.resolve(COMPANY_ROOT, ...segments);
 }

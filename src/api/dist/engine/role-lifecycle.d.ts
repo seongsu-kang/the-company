@@ -1,3 +1,14 @@
+import { type RoleSource } from './org-tree.js';
+export interface SkillContentDef {
+    frontmatter: Record<string, unknown>;
+    body: string;
+}
+export interface SkillExportDef {
+    primary: SkillContentDef | null;
+    shared: Array<{
+        id: string;
+    } & SkillContentDef>;
+}
 export interface RoleDefinition {
     id: string;
     name: string;
@@ -5,6 +16,8 @@ export interface RoleDefinition {
     reportsTo: string;
     persona: string;
     skills?: string[];
+    source?: RoleSource;
+    skillContent?: SkillExportDef;
     authority: {
         autonomous: string[];
         needsApproval: string[];
@@ -57,7 +70,5 @@ export declare class RoleLifecycleManager {
     private buildRoleYaml;
     private buildProfile;
     private addToRolesHub;
-    private addToClaudeMdOrgTable;
     private removeFromRolesHub;
-    private removeFromClaudeMdOrgTable;
 }

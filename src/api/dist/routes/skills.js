@@ -43,7 +43,108 @@ skillsRouter.get('/', (_req, res, next) => {
         next(err);
     }
 });
-// GET /api/skills/:id — Skill detail
+// GET /api/skills/registry — Browse external skill registries
+skillsRouter.get('/registry', async (_req, res, next) => {
+    try {
+        // Known skill registries (curated list of quality skills)
+        const REGISTRIES = [
+            {
+                source: 'anthropics/skills',
+                label: 'Anthropic Official',
+                skills: [
+                    { id: 'frontend-design', name: 'Frontend Design', description: 'Create distinctive, production-grade frontend interfaces with high design quality', category: 'design', url: 'https://raw.githubusercontent.com/anthropics/skills/main/skills/frontend-design/SKILL.md' },
+                    { id: 'webapp-testing', name: 'Web App Testing', description: 'Playwright-based toolkit for testing local web applications', category: 'testing', url: 'https://raw.githubusercontent.com/anthropics/skills/main/skills/webapp-testing/SKILL.md' },
+                    { id: 'mcp-builder', name: 'MCP Builder', description: 'Guide for creating high-quality MCP servers for LLM tool integration', category: 'development', url: 'https://raw.githubusercontent.com/anthropics/skills/main/skills/mcp-builder/SKILL.md' },
+                    { id: 'internal-comms', name: 'Internal Comms', description: 'Write internal communications: status reports, newsletters, 3P updates', category: 'operations', url: 'https://raw.githubusercontent.com/anthropics/skills/main/skills/internal-comms/SKILL.md' },
+                    { id: 'web-artifacts-builder', name: 'Web Artifacts Builder', description: 'React + Tailwind + shadcn/ui component development and bundling', category: 'development', url: 'https://raw.githubusercontent.com/anthropics/skills/main/skills/web-artifacts-builder/SKILL.md' },
+                    { id: 'skill-creator', name: 'Skill Creator', description: 'Interactive guide for building new Claude Code skills', category: 'meta', url: 'https://raw.githubusercontent.com/anthropics/skills/main/skills/skill-creator/SKILL.md' },
+                    { id: 'algorithmic-art', name: 'Algorithmic Art', description: 'Generative art using p5.js with flow fields and particle systems', category: 'creative', url: 'https://raw.githubusercontent.com/anthropics/skills/main/skills/algorithmic-art/SKILL.md' },
+                    { id: 'canvas-design', name: 'Canvas Design', description: 'Visual art creation in PNG and PDF formats', category: 'creative', url: 'https://raw.githubusercontent.com/anthropics/skills/main/skills/canvas-design/SKILL.md' },
+                ],
+            },
+            {
+                source: 'community',
+                label: 'Community',
+                skills: [
+                    { id: 'tdd-superpowers', name: 'TDD (Test-Driven Dev)', description: 'Test-first development with Red-Green-Refactor cycle', category: 'development', url: 'https://raw.githubusercontent.com/obra/superpowers/main/skills/tdd/SKILL.md' },
+                ],
+            },
+        ];
+        // Mark which ones are already installed
+        const result = REGISTRIES.map(registry => ({
+            ...registry,
+            skills: registry.skills.map(skill => ({
+                ...skill,
+                installed: isSkillInstalled(skill.id),
+            })),
+        }));
+        res.json(result);
+    }
+    catch (err) {
+        next(err);
+    }
+});
+// POST /api/skills/registry/install — Install a skill from external registry
+skillsRouter.post('/registry/install', async (req, res, next) => {
+    try {
+        const { skillId, url } = req.body;
+        if (!skillId || !url) {
+            res.status(400).json({ error: 'skillId and url are required' });
+            return;
+        }
+        // Already installed?
+        if (isSkillInstalled(skillId)) {
+            res.json({ ok: true, message: 'Already installed', skillId });
+            return;
+        }
+        // Fetch SKILL.md from URL
+        const response = await fetch(url);
+        if (!response.ok) {
+            res.status(502).json({ error: `Failed to fetch skill: ${response.status}` });
+            return;
+        }
+        const content = await response.text();
+        // Install to .claude/skills/_shared/{skillId}/SKILL.md
+        const destDir = path.join(COMPANY_ROOT, '.claude', 'skills', '_shared', skillId);
+        fs.mkdirSync(destDir, { recursive: true });
+        fs.writeFileSync(path.join(destDir, 'SKILL.md'), content);
+        res.json({ ok: true, skillId, installed: true });
+    }
+    catch (err) {
+        next(err);
+    }
+});
+/* ─── Skill Export (for Store publish) ──── */
+// GET /api/skills/export/:roleId — Export full SKILL.md content for publishing
+// NOTE: Must be registered BEFORE /:id to avoid "export" matching as an id
+skillsRouter.get('/export/:roleId', (req, res, next) => {
+    try {
+        const roleId = req.params.roleId;
+        // 1. Primary skill: .claude/skills/{roleId}/SKILL.md
+        let primary = null;
+        const primaryPath = path.join(COMPANY_ROOT, '.claude', 'skills', roleId, 'SKILL.md');
+        if (fs.existsSync(primaryPath)) {
+            const content = fs.readFileSync(primaryPath, 'utf-8');
+            primary = parseSkillContent(content, roleId);
+        }
+        // 2. Shared skills from role.yaml skills[] array
+        const sharedIds = getRoleSkills(roleId);
+        const shared = [];
+        for (const sharedId of sharedIds) {
+            const sharedPath = path.join(COMPANY_ROOT, '.claude', 'skills', '_shared', sharedId, 'SKILL.md');
+            if (fs.existsSync(sharedPath)) {
+                const content = fs.readFileSync(sharedPath, 'utf-8');
+                const parsed = parseSkillContent(content, sharedId);
+                shared.push({ id: sharedId, ...parsed });
+            }
+        }
+        res.json({ primary, shared });
+    }
+    catch (err) {
+        next(err);
+    }
+});
+// GET /api/skills/:id — Skill detail (wildcard — must be LAST among GET routes)
 skillsRouter.get('/:id', (req, res, next) => {
     try {
         const id = req.params.id;
@@ -186,5 +287,27 @@ function extractSkillMeta(content, id) {
     }
     catch {
         return { id, name: id, description: '' };
+    }
+}
+function parseSkillContent(content, id) {
+    const fmMatch = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)/);
+    if (!fmMatch) {
+        return { frontmatter: { name: id, description: '' }, body: content };
+    }
+    try {
+        const meta = YAML.parse(fmMatch[1]);
+        return {
+            frontmatter: {
+                name: meta.name || id,
+                description: meta.description || '',
+                ...(meta.allowedTools ? { allowedTools: meta.allowedTools } : {}),
+                ...(meta.model ? { model: meta.model } : {}),
+                ...(meta.tags ? { tags: meta.tags } : {}),
+            },
+            body: fmMatch[2].trim(),
+        };
+    }
+    catch {
+        return { frontmatter: { name: id, description: '' }, body: content };
     }
 }
