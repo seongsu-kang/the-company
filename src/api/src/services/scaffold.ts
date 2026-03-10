@@ -15,6 +15,56 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const TEMPLATES_DIR = path.resolve(__dirname, '../../../../templates');
 
+/* ─── Default Appearances ─── */
+
+const DEFAULT_ROLE_APPEARANCES: Record<string, { skinColor: string; hairColor: string; shirtColor: string; pantsColor: string; shoeColor: string; hairStyle: string; outfitStyle: string; accessory: string }> = {
+  cto:       { skinColor: '#F5CBA7', hairColor: '#2C1810', shirtColor: '#1565C0', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'short', outfitStyle: 'tshirt', accessory: 'glasses' },
+  cbo:       { skinColor: '#FDEBD0', hairColor: '#1A0A00', shirtColor: '#E65100', pantsColor: '#37474F', shoeColor: '#1A1A1A', hairStyle: 'slicked', outfitStyle: 'suit', accessory: 'lapels' },
+  pm:        { skinColor: '#FDEBD0', hairColor: '#6D4C41', shirtColor: '#2E7D32', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'bun', outfitStyle: 'tshirt', accessory: 'blush' },
+  engineer:  { skinColor: '#F5CBA7', hairColor: '#1A1A1A', shirtColor: '#4A148C', pantsColor: '#37474F', shoeColor: '#7B1FA2', hairStyle: 'messy', outfitStyle: 'hoodie', accessory: 'headphones' },
+  designer:  { skinColor: '#FDEBD0', hairColor: '#AD1457', shirtColor: '#AD1457', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'bob', outfitStyle: 'tshirt', accessory: 'beret' },
+  qa:        { skinColor: '#F5CBA7', hairColor: '#4E342E', shirtColor: '#00695C', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'short', outfitStyle: 'tshirt', accessory: 'badge' },
+};
+
+const AKB_METHODOLOGY_CONTENT = `# Agentic Knowledge Base (AKB)
+
+> The canonical reference for AKB — the file-based knowledge protocol for AI agents.
+
+## TL;DR
+
+- **Definition**: A file-based knowledge system where AI uses **search (Grep/Glob)** to find and **contextual links** to navigate
+- **Essence**: File-based Lightweight Ontology (Tag = Type, inline links = Edges)
+- **Philosophy**: Optimize documents so AI can find them — don't force AI to follow a rigid protocol
+- **Structure**: Root (CLAUDE.md) → Hub ({folder}.md) → Node (*.md)
+- **Core rules**: 5 writing principles (TL;DR, contextual links, keyword-optimized filenames, atomicity, semantic vs implementation separation)
+
+---
+
+## Architecture
+
+AKB follows a 3-layer hierarchy: **Root → Hub → Node**.
+
+| Layer | Role | Description |
+|-------|------|-------------|
+| **Root** (CLAUDE.md) | Minimal routing | Auto-injected as system prompt, provides key file paths |
+| **Hub** ({folder}.md) | TOC for humans | Folder overview; AI reads selectively |
+| **Node** (*.md) | Actual information | What AI searches for via Grep/Glob |
+
+## Writing Principles
+
+1. **TL;DR Required** — 3-5 bullet points with bold keywords for Grep search
+2. **Contextual Links** — Place links inline with context, not in isolated lists
+3. **Keyword Filenames** — Use descriptive filenames (not notes.md, use market-analysis.md)
+4. **Atomicity** — One topic per doc, under 200 lines
+5. **Semantic vs Implementation** — AKB holds "why" and relationships; code repo holds specs and configs
+
+## Design Principle
+
+> "Don't try to change AI behavior — optimize documents so AI can find them naturally."
+
+If AI found the information it needed and produced a good answer, that's proof AKB is working.
+`;
+
 function getPackageVersion(): string {
   const pkgPath = path.resolve(__dirname, '../../../../package.json');
   try {
@@ -248,7 +298,9 @@ export function scaffold(config: ScaffoldConfig): string[] {
   const dirs = [
     'company', 'roles', 'projects', 'architecture',
     'operations', 'operations/standup', 'operations/waves',
-    'operations/decisions', 'knowledge', '.claude/skills',
+    'operations/decisions', 'operations/activity-streams',
+    'operations/sessions', 'operations/cost',
+    'knowledge', 'methodologies', '.claude/skills',
     '.claude/skills/_shared', '.tycono',
   ];
   for (const dir of dirs) {
@@ -342,6 +394,31 @@ export function scaffold(config: ScaffoldConfig): string[] {
     }
   }
 
+  // Methodology documents
+  const methodologiesHub = path.join(root, 'methodologies', 'methodologies.md');
+  if (!fs.existsSync(methodologiesHub)) {
+    fs.writeFileSync(methodologiesHub, `# Methodologies\n\n> Frameworks and principles that guide how AI agents work in this organization.\n\n## Documents\n\n| Document | Description |\n|----------|-------------|\n| [agentic-knowledge-base.md](./agentic-knowledge-base.md) | AKB — the file-based knowledge protocol for AI agents |\n\n---\n\n*Managed by: All*\n`);
+    created.push('methodologies/methodologies.md');
+  }
+  const akbDoc = path.join(root, 'methodologies', 'agentic-knowledge-base.md');
+  if (!fs.existsSync(akbDoc)) {
+    fs.writeFileSync(akbDoc, AKB_METHODOLOGY_CONTENT);
+    created.push('methodologies/agentic-knowledge-base.md');
+  }
+
+  // Set default appearances for team roles
+  if (config.team !== 'custom') {
+    const roles = loadTeam(config.team);
+    const appearances: Record<string, unknown> = {};
+    for (const role of roles) {
+      const def = DEFAULT_ROLE_APPEARANCES[role.id];
+      if (def) appearances[role.id] = def;
+    }
+    if (Object.keys(appearances).length > 0) {
+      mergePreferences(root, { appearances });
+    }
+  }
+
   // Brownfield: note existing project path
   if (config.existingProjectPath) {
     const targetDir = path.join(root, 'projects', 'existing');
@@ -379,12 +456,15 @@ function createRole(root: string, role: TeamRole): void {
   fs.mkdirSync(skillDir, { recursive: true });
 
   // Build role.yaml with skills field
+  // Use block scalar (|-) for persona to safely handle embedded quotes
+  const personaLines = role.persona.split('\n').map((l, i) => i === 0 ? `  ${l}` : `  ${l}`).join('\n');
   const yamlLines = [
     `id: ${role.id}`,
     `name: "${role.name}"`,
     `level: ${role.level}`,
     `reports_to: ${role.reportsTo}`,
-    `persona: "${role.persona}"`,
+    `persona: |-`,
+    personaLines,
   ];
 
   if (role.defaultSkills?.length) {
