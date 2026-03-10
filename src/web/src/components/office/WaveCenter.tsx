@@ -656,8 +656,17 @@ export default function WaveCenter({
                   </div>
                 )}
 
-                {/* Events */}
-                <div ref={outputRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-1 text-xs font-mono select-text">
+                {/* Hidden file input (shared) */}
+                <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple onChange={(e) => { if (e.target.files?.length) handleFiles(e.target.files); e.target.value = ''; }} className="hidden" />
+
+                {/* Events (drag-drop zone) */}
+                <div
+                  ref={outputRef}
+                  className={`flex-1 min-h-0 overflow-y-auto p-4 space-y-1 text-xs font-mono select-text transition-colors ${isDragging ? 'bg-amber-500/5 ring-1 ring-inset ring-amber-500/30' : ''}`}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                >
                   {/* CEO directive message */}
                   {selectedNode && currentDirective && selectedNode.status !== 'waiting' && selectedNode.status !== 'not-dispatched' && (
                     <div className="flex items-start gap-2 mb-3 pb-2 border-b" style={{ borderColor: 'var(--terminal-border)' }}>
@@ -726,6 +735,25 @@ export default function WaveCenter({
                   )}
                 </div>
 
+                {/* Shared attachment previews + error (shown above any input) */}
+                {(selectedNode?.status === 'awaiting_input' || selectedNode?.status === 'done' || selectedNode?.status === 'not-dispatched') && (attachments.length > 0 || attachError || isDragging) && (
+                  <div className="px-4 pt-2 border-t shrink-0" style={{ borderColor: 'var(--terminal-border)' }}>
+                    {attachError && <div className="text-[10px] text-red-400 mb-1">{attachError}</div>}
+                    {isDragging && <div className="text-[11px] text-amber-400 text-center mb-1">Drop image here</div>}
+                    {attachments.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-1">
+                        {attachments.map((att, idx) => (
+                          <div key={idx} className="relative group w-14 h-14 rounded-lg overflow-hidden border border-[var(--terminal-border)] bg-[var(--terminal-inline-bg)]">
+                            <img src={`data:${att.mediaType};base64,${att.data}`} alt={att.name} className="w-full h-full object-cover" />
+                            <button onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))} className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/70 text-white text-[9px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">x</button>
+                            <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[7px] text-white truncate px-1">{att.name}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Reply / Follow-up input for selected role */}
                 {selectedNode?.status === 'awaiting_input' && (
                   <div className="px-4 py-3 border-t shrink-0" style={{ borderColor: 'var(--terminal-border)', background: '#F59E0B0A' }}>
@@ -736,11 +764,15 @@ export default function WaveCenter({
                       </span>
                     </div>
                     <div className="flex gap-2">
+                      <button onClick={() => fileInputRef.current?.click()} disabled={replying} className="w-7 h-7 rounded bg-[var(--terminal-inline-bg)] border border-[var(--terminal-border)] text-[var(--terminal-text-muted)] flex items-center justify-center shrink-0 cursor-pointer hover:text-[var(--terminal-text-secondary)] disabled:opacity-30 transition-colors" title="Attach image">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
+                      </button>
                       <input
                         type="text"
                         value={replyText}
                         onChange={(e) => setReplyText(e.target.value)}
                         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleReply(); } }}
+                        onPaste={handlePaste}
                         placeholder="Type your response..."
                         disabled={replying}
                         className="flex-1 px-3 py-1.5 text-xs rounded border bg-[var(--terminal-bg)] text-[var(--terminal-text)] outline-none"
@@ -749,7 +781,7 @@ export default function WaveCenter({
                       />
                       <button
                         onClick={handleReply}
-                        disabled={replying || !replyText.trim()}
+                        disabled={replying || (!replyText.trim() && attachments.length === 0)}
                         className="px-4 py-1.5 text-xs rounded font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                         style={{ background: '#F59E0B', color: '#000' }}
                       >
@@ -768,11 +800,15 @@ export default function WaveCenter({
                       </span>
                     </div>
                     <div className="flex gap-2">
+                      <button onClick={() => fileInputRef.current?.click()} disabled={replying} className="w-7 h-7 rounded bg-[var(--terminal-inline-bg)] border border-[var(--terminal-border)] text-[var(--terminal-text-muted)] flex items-center justify-center shrink-0 cursor-pointer hover:text-[var(--terminal-text-secondary)] disabled:opacity-30 transition-colors" title="Attach image">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
+                      </button>
                       <input
                         type="text"
                         value={replyText}
                         onChange={(e) => setReplyText(e.target.value)}
                         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleReply(); } }}
+                        onPaste={handlePaste}
                         placeholder="Send a follow-up directive..."
                         disabled={replying}
                         className="flex-1 px-3 py-1.5 text-xs rounded border bg-[var(--terminal-bg)] text-[var(--terminal-text)] outline-none"
@@ -780,7 +816,7 @@ export default function WaveCenter({
                       />
                       <button
                         onClick={handleReply}
-                        disabled={replying || !replyText.trim()}
+                        disabled={replying || (!replyText.trim() && attachments.length === 0)}
                         className="px-4 py-1.5 text-xs rounded font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                         style={{ background: '#1565C0', color: '#fff' }}
                       >
