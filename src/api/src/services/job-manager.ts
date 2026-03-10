@@ -9,7 +9,7 @@ import type { RunnerResult } from '../engine/runners/types.js';
 import { estimateCost } from './pricing.js';
 import { readConfig, getConversationLimits } from './company-config.js';
 import { postKnowledgingCheck, type KnowledgeDebtItem } from '../engine/knowledge-gate.js';
-import { getSession, updateMessage as updateSessionMessage } from './session-store.js';
+import { getSession, updateMessage as updateSessionMessage, appendMessageEvent } from './session-store.js';
 
 /* ─── Types ──────────────────────────────── */
 
@@ -242,12 +242,23 @@ class JobManager {
         },
         onThinking: (text) => {
           stream.emit('thinking', params.roleId, { text });
+          // D-014 SCA-010: Embed thinking event in session message
+          if (job.sessionId) {
+            this.embedSessionEvent(job, 'thinking', { text: text.slice(0, 200) });
+          }
         },
         onToolUse: (name, input) => {
           stream.emit('tool:start', params.roleId, {
             name,
             input: input ? summarizeInput(input) : undefined,
           });
+          // D-014 SCA-010: Embed tool event in session message
+          if (job.sessionId) {
+            this.embedSessionEvent(job, 'tool:start', {
+              name,
+              input: input ? summarizeInput(input) : undefined,
+            });
+          }
         },
         onDispatch: (subRoleId, subTask) => {
           // 2-layer defense: block dispatch to roles outside targetRoles scope
@@ -263,7 +274,7 @@ class JobManager {
           // Create child job — startJob() auto-emits dispatch:start
           // on parent stream when parentJobId is set.
           // Propagate targetRoles to child jobs for cascading enforcement
-          this.startJob({
+          const childJob = this.startJob({
             type: 'assign',
             roleId: subRoleId,
             task: subTask,
@@ -271,6 +282,14 @@ class JobManager {
             parentJobId: jobId,
             targetRoles: params.targetRoles,
           });
+          // D-014 SCA-010: Embed dispatch event in session message
+          if (job.sessionId) {
+            this.embedSessionEvent(job, 'dispatch:start', {
+              roleId: subRoleId,
+              task: subTask,
+              childJobId: childJob.id,
+            });
+          }
         },
         onConsult: (subRoleId, question) => {
           // Create child job in read-only mode for consultation
@@ -472,6 +491,25 @@ class JobManager {
     this.sessionMsgContent.set(key, current);
 
     updateSessionMessage(job.sessionId, roleMsg.id, { content: current });
+  }
+
+  /** Embed an activity event into the session message linked to this job (SCA-010) */
+  private embedSessionEvent(job: Job, type: string, data: Record<string, unknown>): void {
+    if (!job.sessionId) return;
+    const session = getSession(job.sessionId);
+    if (!session) return;
+
+    const roleMsg = session.messages.find(m => m.jobId === job.id && m.from === 'role');
+    if (!roleMsg) return;
+
+    const event: ActivityEvent = {
+      seq: (roleMsg.events?.length ?? 0) + 1,
+      ts: new Date().toISOString(),
+      type: type as ActivityEvent['type'],
+      roleId: job.roleId,
+      data,
+    };
+    appendMessageEvent(job.sessionId, roleMsg.id, event);
   }
 
   /** Finalize session message when job completes or errors */
