@@ -336,7 +336,12 @@ export function getQuestStatus(quest: Quest, progress: QuestProgress): 'active' 
 }
 
 export function getActiveQuests(progress: QuestProgress): Quest[] {
-  return QUESTS.filter(q => getQuestStatus(q, progress) === 'active');
+  // Only return quests from the current active chapter (prevent future-chapter completion)
+  const chapter = CHAPTERS.find(ch => ch.num === progress.activeChapter);
+  if (!chapter) return [];
+  return QUESTS.filter(q =>
+    chapter.questIds.includes(q.id) && getQuestStatus(q, progress) === 'active',
+  );
 }
 
 /** Get first active quest (for hint bar / spotlight) */

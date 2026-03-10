@@ -47,7 +47,8 @@ export interface AddedFurniture {
 }
 
 export interface OfficeExpansion {
-  preset: 'M' | 'L';
+  /** Each entry = one floor. floors[0] = 1F, floors[1] = 2F, etc. Max 3 floors. */
+  floors: Array<{ rooms: 4 | 6 }>;
   purchaseHistory: Array<{ type: string; cost: number; ts: string }>;
 }
 

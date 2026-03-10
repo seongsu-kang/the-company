@@ -377,13 +377,15 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   }, [projects.length]);
 
   // Retroactive quest completion — auto-complete role_hired quests already satisfied
+  // Only fire once after quest data is loaded (not on every chapter/completion change)
+  const retroactiveFiredRef = useRef(false);
   useEffect(() => {
-    if (!questLoadedRef.current || roles.length === 0) return;
-    // Fire synthetic role_hired for each existing role so all matching quests complete
+    if (!questLoadedRef.current || roles.length === 0 || retroactiveFiredRef.current) return;
+    retroactiveFiredRef.current = true;
     for (const r of roles) {
       fireQuestTrigger({ type: 'role_hired', condition: { roleId: r.id, roleCount: roles.length } });
     }
-  }, [roles.length, questProgress.activeChapter, questProgress.completedQuests.length]);
+  }, [roles.length]);
 
   /* Load sessions on mount — restore existing sessions (metadata only) */
   useEffect(() => {
@@ -514,6 +516,8 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
       completed.push(quest.title);
     }
     if (completed.length === 0) return;
+    // Advance chapter if current chapter is fully complete
+    progress = recalcActiveChapter(progress);
     questProgressRef.current = progress;
     setQuestProgress(progress);
     const coinMsg = totalCoins > 0 ? ` 💰 +${totalCoins.toLocaleString()}` : '';

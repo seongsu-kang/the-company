@@ -25,7 +25,7 @@ export async function hireCharacter(
   const input: CreateRoleInput = {
     id: roleId,
     name: overrides?.name ?? character.name,
-    level: character.level,
+    level: character.level === 'c-level' ? 'c-level' : 'member',
     reportsTo,
     persona: character.persona,
     authority: character.authority,

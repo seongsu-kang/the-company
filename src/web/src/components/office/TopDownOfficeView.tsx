@@ -1110,35 +1110,27 @@ export default function TopDownOfficeView({
   useEffect(() => { _placingType = placingType; _placingZone = placingZone; }, [placingType, placingZone]);
 
   // Load all edit overrides from preferences on mount
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
   useEffect(() => {
     api.getPreferences().then((prefs: Record<string, unknown>) => {
       const ov = prefs.furnitureOverrides as Record<string, { offsetX: number; offsetY: number }> | undefined;
       if (ov && Object.keys(ov).length > 0) {
         overridesRef.current = ov;
-        _layout = applyFurnitureOverrides(_layout, ov);
       }
       const dov = prefs.deskOverrides as Record<string, { dx: number; dy: number }> | undefined;
       if (dov && Object.keys(dov).length > 0) {
         deskOverridesRef.current = dov;
-        applyDeskOverrides(DESKS, dov);
-        // Update character home positions
-        for (const [roleId, d] of Object.entries(DESKS)) {
-          const ch = charsRef.current[roleId];
-          if (ch) { ch.homeX = d.dx + 8; ch.homeY = d.dy + 34; }
-        }
       }
       const rem = prefs.removedFurniture as string[] | undefined;
       if (rem && rem.length > 0) {
         removedRef.current = rem;
-        _layout = applyFurnitureRemovals(_layout, rem);
       }
       const added = prefs.addedFurniture as FurnitureDef[] | undefined;
       if (added && added.length > 0) {
         addedRef.current = added;
-        _layout = applyAddedFurniture(_layout, added);
       }
-      _facilityZones = buildFacilityZonesFromFurniture(_layout);
-    }).catch(() => { /* ignore */ });
+      setPrefsLoaded(true);
+    }).catch(() => { setPrefsLoaded(true); });
   }, []);
 
   // Mutable refs for data the animation loop reads
@@ -1156,9 +1148,10 @@ export default function TopDownOfficeView({
   // All role IDs — layout adapts to count
   const assignedRoleIds = useMemo(() => roles.map(r => r.id), [roles]);
 
-  // Generate layout + assign desks when role count changes
+  // Generate layout + assign desks when role count changes or prefs finish loading
   const layoutRef = useRef<FloorLayout>(_layout);
   useEffect(() => {
+    if (!prefsLoaded) return; // wait for furniture overrides to load first
     const count = assignedRoleIds.length;
     const newPreset = selectPreset(count, layoutRef.current.preset, purchasedPreset);
     const presetChanged = layoutRef.current.preset !== newPreset;
@@ -1188,7 +1181,7 @@ export default function TopDownOfficeView({
       }
     }
     updateZoom();
-  }, [assignedRoleIds, purchasedPreset]);
+  }, [assignedRoleIds, purchasedPreset, prefsLoaded]);
 
   // Get appearance helper
   const getAp = useCallback((roleId: string): CharacterAppearance => {
@@ -1856,58 +1849,32 @@ export default function TopDownOfficeView({
         <span className="td-edit-btn__icon">{editMode ? '✓' : '✎'}</span>
         <span className="td-edit-btn__label">{editMode ? 'DONE' : 'EDIT'}</span>
       </button>
+      {/* EXPAND tab hidden until 6-room preset + multi-floor implementation is ready */}
       {editMode && (
-        <>
-          <div className="td-edit-tabs">
-            <button className={`td-edit-tabs__btn${editTab === 'furniture' ? ' td-edit-tabs__btn--active' : ''}`} onClick={() => { setEditTab('furniture'); setPlacingType(null); setPlacingZone(null); }}>FURNITURE</button>
-            <button className={`td-edit-tabs__btn${editTab === 'expand' ? ' td-edit-tabs__btn--active' : ''}`} onClick={() => { setEditTab('expand'); setPlacingType(null); setPlacingZone(null); }}>EXPAND</button>
-          </div>
-          {editTab === 'furniture' ? (
-            <div className="td-palette">
-              {FURNITURE_CATALOG.map(entry => {
-                const canAfford = entry.price === 0 || coinBalance >= entry.price;
-                const priceLabel = entry.price === 0 ? 'Free' : `${entry.price >= 1000 ? `${(entry.price / 1000).toFixed(entry.price % 1000 === 0 ? 0 : 1)}K` : entry.price}`;
-                return (
-                  <button
-                    key={entry.type}
-                    className={`td-palette__item${placingType === entry.type ? ' td-palette__item--active' : ''}${!canAfford ? ' td-palette__item--locked' : ''}`}
-                    onClick={() => {
-                      if (!canAfford) return;
-                      if (placingType === entry.type) { setPlacingType(null); setPlacingZone(null); }
-                      else { setPlacingType(entry.type); setPlacingZone(entry.zone); }
-                    }}
-                    title={`${entry.label} — ${priceLabel}`}
-                    style={!canAfford ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-                  >
-                    <span>{entry.icon}</span>
-                    <span className="td-palette__price" style={{ fontSize: '7px', color: entry.price === 0 ? '#4CAF50' : canAfford ? '#FFD54F' : '#EF5350' }}>
-                      {priceLabel}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="td-expand-panel">
-              {purchasedPreset === 'L' ? (
-                <div className="td-expand-item td-expand-item--purchased">
-                  <span>&#x2713; Large Office</span>
-                  <span className="td-expand-item__status">Purchased</span>
-                </div>
-              ) : (
-                <div className={`td-expand-item${(coinBalance ?? 0) < 15000 ? ' td-expand-item--locked' : ''}`}>
-                  <span>Large Office</span>
-                  <span className="td-expand-item__price">15K</span>
-                  <button
-                    className="td-expand-item__btn"
-                    disabled={(coinBalance ?? 0) < 15000}
-                    onClick={handleExpansionPurchase}
-                  >UPGRADE</button>
-                </div>
-              )}
-            </div>
-          )}
-        </>
+        <div className="td-palette">
+          {FURNITURE_CATALOG.map(entry => {
+            const canAfford = entry.price === 0 || coinBalance >= entry.price;
+            const priceLabel = entry.price === 0 ? 'Free' : `${entry.price >= 1000 ? `${(entry.price / 1000).toFixed(entry.price % 1000 === 0 ? 0 : 1)}K` : entry.price}`;
+            return (
+              <button
+                key={entry.type}
+                className={`td-palette__item${placingType === entry.type ? ' td-palette__item--active' : ''}${!canAfford ? ' td-palette__item--locked' : ''}`}
+                onClick={() => {
+                  if (!canAfford) return;
+                  if (placingType === entry.type) { setPlacingType(null); setPlacingZone(null); }
+                  else { setPlacingType(entry.type); setPlacingZone(entry.zone); }
+                }}
+                title={`${entry.label} — ${priceLabel}`}
+                style={!canAfford ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+              >
+                <span>{entry.icon}</span>
+                <span className="td-palette__price" style={{ fontSize: '7px', color: entry.price === 0 ? '#4CAF50' : canAfford ? '#FFD54F' : '#EF5350' }}>
+                  {priceLabel}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       )}
       {onHireClick && (
         <button className="td-hire-btn" data-quest-target="hire-btn" onClick={onHireClick} title="Hire New Role">

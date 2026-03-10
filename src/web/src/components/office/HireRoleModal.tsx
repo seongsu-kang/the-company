@@ -8,7 +8,7 @@ import { api } from '../../api/client';
 import { cloudApi, type CloudCharacterSummary, type StoreSortOption } from '../../api/cloud';
 
 interface Props {
-  existingRoles: { id: string; name: string }[];
+  existingRoles: { id: string; name: string; level: string }[];
   onClose: () => void;
   onHire: (input: CreateRoleInput, appearance: CharacterAppearance) => Promise<void>;
   onStoreVisit?: () => void;
@@ -17,7 +17,6 @@ interface Props {
 
 const LEVEL_OPTIONS: { value: CreateRoleInput['level']; label: string }[] = [
   { value: 'c-level', label: 'C-Level' },
-  { value: 'team-lead', label: 'Team Lead' },
   { value: 'member', label: 'Member' },
 ];
 
@@ -31,12 +30,6 @@ function defaultsForLevel(level: CreateRoleInput['level']) {
       return {
         authority: { autonomous: ['Strategic decisions within domain', 'Task delegation to reports'], needsApproval: ['Budget over $5K', 'External commitments'] },
         knowledge: { reads: ['company/', 'operations/', 'projects/'], writes: ['operations/', 'knowledge/'] },
-        reports: { daily: 'standup', weekly: 'summary' },
-      };
-    case 'team-lead':
-      return {
-        authority: { autonomous: ['Task planning', 'Sprint management'], needsApproval: ['Architecture changes', 'New tool adoption'] },
-        knowledge: { reads: ['projects/', 'architecture/'], writes: ['projects/'] },
         reports: { daily: 'standup', weekly: 'summary' },
       };
     default:
@@ -109,8 +102,7 @@ function parseBulkLine(line: string, existingIds: Set<string>, seenIds: Set<stri
   const id = slugify(name);
   const levelRaw = (parts[1] || 'member').toLowerCase();
   const level: CreateRoleInput['level'] =
-    levelRaw === 'c-level' ? 'c-level' :
-    levelRaw === 'team-lead' ? 'team-lead' : 'member';
+    levelRaw === 'c-level' ? 'c-level' : 'member';
   const reportsTo = parts[2] || 'ceo';
   let error: string | undefined;
   if (existingIds.has(id)) error = 'ID already exists';
@@ -142,7 +134,10 @@ export default function HireRoleModal({ existingRoles, onClose, onHire, onStoreV
   const [id, setId] = useState('');
   const [idEdited, setIdEdited] = useState(false);
   const [level, setLevel] = useState<CreateRoleInput['level']>('member');
-  const [reportsTo, setReportsTo] = useState('ceo');
+  const [reportsTo, setReportsTo] = useState(() => {
+    const firstCLevel = existingRoles.find((r) => r.level === 'c-level');
+    return firstCLevel?.id ?? 'ceo';
+  });
   const [persona, setPersona] = useState('');
   const [appearance, setAppearance] = useState<CharacterAppearance>(randomAppearance);
   const [busy, setBusy] = useState(false);
@@ -186,7 +181,7 @@ export default function HireRoleModal({ existingRoles, onClose, onHire, onStoreV
     try {
       const data = await cloudApi.getCharacters({ sort: storeSort, instanceId: storeToken ?? undefined });
       setStoreChars(data.characters);
-    } catch { setStoreError('Failed to load store'); }
+    } catch { setStoreError('Failed to load job board'); }
     setStoreLoading(false);
   };
 
@@ -321,7 +316,7 @@ export default function HireRoleModal({ existingRoles, onClose, onHire, onStoreV
     setBusy(true);
     setError('');
     const ch = storeCharacter;
-    const lvl = (ch.level === 'c-level' || ch.level === 'team-lead') ? ch.level : 'member' as const;
+    const lvl = ch.level === 'c-level' ? 'c-level' as const : 'member' as const;
     const defaults = defaultsForLevel(lvl);
 
     const isSkillExp = ch.skills != null && typeof ch.skills === 'object' && !Array.isArray(ch.skills) && 'primary' in ch.skills;
@@ -332,7 +327,7 @@ export default function HireRoleModal({ existingRoles, onClose, onHire, onStoreV
         name: storeName.trim(),
         level: lvl,
         reportsTo: storeReportsTo,
-        persona: ch.persona || `${storeName}. Imported from Tycono Store.`,
+        persona: ch.persona || `${storeName}. Imported from Job Board.`,
         authority: ch.authority || defaults.authority,
         knowledge: defaults.knowledge,
         reports: defaults.reports,
@@ -401,7 +396,7 @@ export default function HireRoleModal({ existingRoles, onClose, onHire, onStoreV
                 onClick={() => { setMode('store'); setError(''); onStoreVisit?.(); }}
                 className={`px-3 py-1 text-xs font-semibold rounded-md cursor-pointer transition-colors ${mode === 'store' ? 'bg-white/20 text-white' : 'text-white/50 hover:text-white/70'}`}
               >
-                Store
+                Job Board
               </button>
             </div>
           </div>
@@ -429,10 +424,10 @@ export default function HireRoleModal({ existingRoles, onClose, onHire, onStoreV
             </div>
           )}
           <div className="text-sm opacity-80 mt-0.5 flex items-center gap-2">
-            <span>{mode === 'single' ? `Step ${step} of ${TOTAL_STEPS}` : mode === 'bulk' ? (bulkStep === 'input' ? 'Enter roles, one per line' : `Review ${bulkEntries.length} roles`) : (storeStep === 'browse' ? `${storeChars.length} characters available` : 'Review & customize')}</span>
+            <span>{mode === 'single' ? `Step ${step} of ${TOTAL_STEPS}` : mode === 'bulk' ? (bulkStep === 'input' ? 'Enter roles, one per line' : `Review ${bulkEntries.length} roles`) : (storeStep === 'browse' ? `${storeChars.length} roles available` : 'Review & customize')}</span>
             {mode === 'store' && storeStep === 'browse' && (
               <a
-                href="https://tycono.ai/store.html"
+                href="https://tycono.ai/jobs"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[10px] opacity-60 hover:opacity-100 transition-opacity"
@@ -525,7 +520,7 @@ export default function HireRoleModal({ existingRoles, onClose, onHire, onStoreV
                     <input
                       value={storeSearch}
                       onChange={(e) => setStoreSearch(e.target.value)}
-                      placeholder="Search characters..."
+                      placeholder="Search roles..."
                       className="flex-1 p-2 rounded-lg border border-white/10 bg-white/5 text-sm text-white/90 placeholder-white/25 focus:outline-none focus:border-white/25 transition-colors"
                       autoFocus
                     />
@@ -605,7 +600,7 @@ export default function HireRoleModal({ existingRoles, onClose, onHire, onStoreV
                           <div className="flex-1">
                             <label className="block text-[10px] text-white/30 uppercase tracking-wider mb-0.5">Level</label>
                             <div className="text-sm text-white/70 p-2 rounded-lg bg-white/5 border border-white/10">
-                              {storeCharacter.level === 'c-level' ? 'C-Level' : storeCharacter.level === 'team-lead' ? 'Lead' : 'Member'}
+                              {storeCharacter.level === 'c-level' ? 'C-Level' : 'Member'}
                             </div>
                           </div>
                           <div className="flex-1">
@@ -691,7 +686,15 @@ export default function HireRoleModal({ existingRoles, onClose, onHire, onStoreV
                       {LEVEL_OPTIONS.map((opt) => (
                         <button
                           key={opt.value}
-                          onClick={() => setLevel(opt.value)}
+                          onClick={() => {
+                            setLevel(opt.value);
+                            if (opt.value === 'c-level') {
+                              setReportsTo('ceo');
+                            } else {
+                              const firstCLevel = existingRoles.find((r) => r.level === 'c-level');
+                              setReportsTo(firstCLevel?.id ?? 'ceo');
+                            }
+                          }}
                           className={`flex-1 p-2 text-xs font-semibold rounded-lg border cursor-pointer transition-colors ${level === opt.value ? 'border-green-600 bg-green-900/30 text-green-400' : 'border-white/10 text-white/50 hover:border-white/20'}`}
                         >
                           {opt.label}
@@ -701,16 +704,21 @@ export default function HireRoleModal({ existingRoles, onClose, onHire, onStoreV
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold text-[var(--desk-dark)] uppercase tracking-wider mb-1">Reports To</label>
-                    <select
-                      value={reportsTo}
-                      onChange={(e) => setReportsTo(e.target.value)}
-                      className="w-full p-2.5 rounded-lg border border-white/10 bg-white/5 text-sm text-white/90 focus:outline-none focus:border-white/25 transition-colors"
-                    >
-                      <option value="ceo" className="bg-[var(--wall)] text-white">CEO</option>
-                      {existingRoles.map((r) => (
-                        <option key={r.id} value={r.id} className="bg-[var(--wall)] text-white">{r.name} ({r.id})</option>
-                      ))}
-                    </select>
+                    {level === 'c-level' ? (
+                      <div className="w-full p-2.5 rounded-lg border border-white/10 bg-white/5 text-sm text-white/40">
+                        CEO (automatic)
+                      </div>
+                    ) : (
+                      <select
+                        value={reportsTo}
+                        onChange={(e) => setReportsTo(e.target.value)}
+                        className="w-full p-2.5 rounded-lg border border-white/10 bg-white/5 text-sm text-white/90 focus:outline-none focus:border-white/25 transition-colors"
+                      >
+                        {existingRoles.filter((r) => r.level === 'c-level').map((r) => (
+                          <option key={r.id} value={r.id} className="bg-[var(--wall)] text-white">{r.name} ({r.id})</option>
+                        ))}
+                      </select>
+                    )}
                   </div>
                 </div>
               )}
@@ -821,7 +829,7 @@ export default function HireRoleModal({ existingRoles, onClose, onHire, onStoreV
                       className="w-full h-40 p-3 rounded-lg border border-white/10 bg-white/5 text-sm text-white/90 placeholder-white/25 resize-none focus:outline-none focus:border-white/25 transition-colors font-mono"
                     />
                     <div className="text-[10px] text-gray-400 mt-1">
-                      Format: Name, Level (member/team-lead/c-level), ReportsTo. Level and ReportsTo are optional.
+                      Format: Name, Level (member/c-level), ReportsTo. Level and ReportsTo are optional.
                     </div>
                   </div>
                   {bulkEntries.length > 0 && (
@@ -1119,7 +1127,6 @@ function StoreCharCard({ char, isHired, onSelect, onVote, onDelete, fetching, to
           <span className="text-sm font-semibold text-white/90 truncate">{char.name}</span>
           <span className={`text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase ${
             char.level === 'c-level' ? 'bg-amber-900/30 text-amber-400 border border-amber-800/30' :
-            char.level === 'team-lead' ? 'bg-blue-900/30 text-blue-400 border border-blue-800/30' :
             'bg-white/5 text-white/40 border border-white/10'
           }`}>
             {char.level}

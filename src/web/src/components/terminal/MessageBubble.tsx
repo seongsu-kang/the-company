@@ -421,9 +421,17 @@ export default function MessageBubble({ message, roleId, roleColor }: Props) {
           {message.content ? (
             <MarkdownRenderer content={message.content} streaming={isStreaming} />
           ) : isStreaming && !hasThinking ? (
-            <span className="inline-block w-2 h-4 bg-[var(--terminal-text-secondary)] animate-pulse" />
+            <span className="typing-dots">
+              <span className="typing-dot" />
+              <span className="typing-dot" />
+              <span className="typing-dot" />
+            </span>
           ) : isStreaming && hasThinking ? (
-            <span className="text-[11px] text-purple-400/50 italic">analyzing...</span>
+            <span className="typing-dots">
+              <span className="typing-dot" />
+              <span className="typing-dot" />
+              <span className="typing-dot" />
+            </span>
           ) : null}
           {isStreaming && message.content && (
             <span className="inline-block w-1.5 h-3.5 bg-[var(--terminal-text-secondary)] animate-pulse ml-0.5 align-middle" />

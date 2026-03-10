@@ -976,7 +976,7 @@ function MiniInputBar({ onSend, disabled, placeholder, color }: {
         type="text"
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSubmit(); } }}
+        onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); handleSubmit(); } }}
         placeholder={disabled ? 'Waiting...' : placeholder}
         disabled={disabled}
         className="flex-1 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none disabled:opacity-40"

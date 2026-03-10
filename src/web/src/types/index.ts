@@ -145,7 +145,7 @@ export interface RoleSource {
 export interface CreateRoleInput {
   id: string;
   name: string;
-  level: 'c-level' | 'team-lead' | 'member';
+  level: 'c-level' | 'member';
   reportsTo: string;
   persona: string;
   authority: { autonomous: string[]; needsApproval: string[] };
