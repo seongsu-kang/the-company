@@ -10,9 +10,10 @@ interface Props {
   onSend: (content: string, attachments?: ImageAttachment[]) => void;
   disabled?: boolean;
   disabledReason?: string;
+  onStop?: () => void;
 }
 
-export default function InputBar({ mode, onModeChange, onSend, disabled, disabledReason }: Props) {
+export default function InputBar({ mode, onModeChange, onSend, disabled, disabledReason, onStop }: Props) {
   const [value, setValue] = useState('');
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -271,6 +272,17 @@ export default function InputBar({ mode, onModeChange, onSend, disabled, disable
           rows={1}
           className="flex-1 bg-[var(--terminal-inline-bg)] border border-[var(--terminal-border)] rounded-lg px-3 py-2 text-sm text-[var(--terminal-text)] placeholder:text-[var(--terminal-text-muted)] resize-none focus:outline-none focus:border-[var(--terminal-border-hover)] disabled:opacity-40 terminal-scrollbar"
         />
+
+        {/* Stop (visible when streaming) */}
+        {disabled && onStop && (
+          <button
+            onClick={onStop}
+            className="w-8 h-8 rounded-lg bg-red-900/40 text-red-400 flex items-center justify-center shrink-0 cursor-pointer hover:bg-red-900/60 hover:text-red-300 transition-colors"
+            title="Stop"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2" /></svg>
+          </button>
+        )}
 
         {/* Send */}
         <button

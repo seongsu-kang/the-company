@@ -1410,6 +1410,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
               onCloseAll={handleCloseAllSessions}
               onSendMessage={handleSendMessage}
               onModeChange={handleModeChange}
+              onStopSession={(sid) => api.abortSession(sid).catch(() => {})}
               onCloseTerminal={() => setTerminalOpen(false)}
               onMaximize={() => { prevViewModeRef.current = 'iso'; setProChannel({ type: 'terminal' }); setViewMode('pro'); }}
               chatChannels={officeChat.channels}
@@ -1774,6 +1775,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
               onCloseAll={handleCloseAllSessions}
               onSendMessage={handleSendMessage}
               onModeChange={handleModeChange}
+              onStopSession={(sid) => api.abortSession(sid).catch(() => {})}
               onCloseTerminal={() => setProChannel({ type: 'dashboard' })}
               chatChannels={officeChat.channels}
               activeChatChannelId={officeChat.activeChannelId}

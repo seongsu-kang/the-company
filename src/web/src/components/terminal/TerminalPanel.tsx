@@ -20,6 +20,7 @@ interface Props {
   onCloseAll?: () => void;
   onSendMessage: (sessionId: string, content: string, mode: 'talk' | 'do', attachments?: ImageAttachment[]) => void;
   onModeChange: (sessionId: string, mode: 'talk' | 'do') => void;
+  onStopSession?: (sessionId: string) => void;
   onCloseTerminal: () => void;
   onMaximize?: () => void;
   /** Office Chat channels */
@@ -45,7 +46,7 @@ const MAX_WIDTH = 800;
 export default function TerminalPanel({
   sessions, activeSessionId, roles, streamingSessionId, width, onWidthChange,
   onSwitchSession, onCloseSession, onCreateSession, onClearEmpty, onCloseAll,
-  onSendMessage, onModeChange, onCloseTerminal, onMaximize,
+  onSendMessage, onModeChange, onStopSession, onCloseTerminal, onMaximize,
   chatChannels, activeChatChannelId, onSwitchChatChannel, onCreateChatChannel, onDeleteChatChannel, onUpdateChatMembers, onUpdateChatTopic, onSendChatMessage, unreadChannels,
 }: Props) {
   const [showNewMenu, setShowNewMenu] = useState(false);
@@ -341,25 +342,14 @@ export default function TerminalPanel({
             roleId={activeSession.roleId}
             roleColor={ROLE_COLORS[activeSession.roleId] ?? '#666'}
           />
-          {activeSession.source === 'wave' ? (
-            <div className="shrink-0 px-4 py-2 border-t border-[var(--terminal-border)] bg-[var(--terminal-bg-deeper)] flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" style={activeSession.status === 'active' ? { animation: 'pulse 2s infinite' } : undefined} />
-              <span className="text-[11px] text-amber-400/80">
-                Wave execution · read-only
-              </span>
-              <span className="text-[10px] text-[var(--terminal-text-muted)] ml-auto">
-                Interact via Wave Command Center
-              </span>
-            </div>
-          ) : (
-            <InputBar
-              mode={activeSession.mode}
-              onModeChange={(mode) => onModeChange(activeSession.id, mode)}
-              onSend={(content, attachments) => onSendMessage(activeSession.id, content, activeSession.mode, attachments)}
-              disabled={isStreaming}
-              disabledReason={isStreaming ? `${activeSession.roleId.toUpperCase()} is responding...` : undefined}
-            />
-          )}
+          <InputBar
+            mode={activeSession.mode}
+            onModeChange={(mode) => onModeChange(activeSession.id, mode)}
+            onSend={(content, attachments) => onSendMessage(activeSession.id, content, activeSession.mode, attachments)}
+            disabled={isStreaming}
+            disabledReason={isStreaming ? `${activeSession.roleId.toUpperCase()} is responding...` : undefined}
+            onStop={isStreaming && onStopSession ? () => onStopSession(activeSession.id) : undefined}
+          />
         </>
       ) : (
         <div className="flex-1 flex items-center justify-center text-[var(--terminal-text-muted)] text-sm">
