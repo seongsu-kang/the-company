@@ -122,6 +122,10 @@ Write a directive. Select target roles on the org tree. Hit dispatch. Every sele
 
 Every task produces knowledge. Cross-linked Markdown documents that grow with every session. Search, navigate, never lose context. Session 50 is dramatically smarter than session 1.
 
+<p align="center">
+  <img src=".github/assets/knowledge-graph.png" alt="Knowledge Base — graph view with 194+ cross-linked documents" width="640" />
+</p>
+
 ### Role-Based Authority
 
 Each role has scoped authority defined in `role.yaml`. Engineers can't make CEO decisions. PMs can't merge code. The org chart isn't decoration — it's enforcement.
