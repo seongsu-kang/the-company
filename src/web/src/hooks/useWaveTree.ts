@@ -14,13 +14,17 @@ export interface WaveNode {
   streamStatus: StreamStatus;
 }
 
-interface UseWaveTreeResult {
+export interface UseWaveTreeResult {
   nodes: Map<string, WaveNode>;
   selectedRoleId: string | null;
   selectNode: (roleId: string) => void;
+  checkedRoles: Set<string>;
+  toggleCheck: (roleId: string) => void;
+  setCheckedRoles: (roles: Set<string>) => void;
   progress: { done: number; total: number; running: number; awaitingInput: number };
   allDone: boolean;
   connectStream: (sessionId: string, roleId: string) => void;
+  injectStaticNodes: (staticNodes: Map<string, WaveNode>) => void;
 }
 
 interface StreamState {
@@ -35,19 +39,22 @@ export default function useWaveTree(
 ): UseWaveTreeResult {
   const [nodes, setNodes] = useState<Map<string, WaveNode>>(new Map());
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
+  const [checkedRoles, setCheckedRoles] = useState<Set<string>>(new Set());
   const streamsRef = useRef<Map<string, StreamState>>(new Map());
   const nodesRef = useRef<Map<string, WaveNode>>(nodes);
   nodesRef.current = nodes;
 
-  // Build initial tree from org nodes
-  useEffect(() => {
-    if (!rootRoleId || Object.keys(orgNodes).length === 0) return;
+  // Build org tree helper
+  const buildOrgTree = useCallback(() => {
+    if (!rootRoleId || Object.keys(orgNodes).length === 0) return null;
 
     const initial = new Map<string, WaveNode>();
+    const allRoles = new Set<string>();
 
     const addNode = (roleId: string) => {
       const org = orgNodes[roleId];
       if (!org) return;
+      allRoles.add(roleId);
       initial.set(roleId, {
         sessionId: '',
         roleId,
@@ -74,6 +81,15 @@ export default function useWaveTree(
       root.children.forEach(addNode);
     }
 
+    return { initial, allRoles };
+  }, [orgNodes, rootRoleId]);
+
+  // Build initial tree from org nodes
+  useEffect(() => {
+    const result = buildOrgTree();
+    if (!result) return;
+    const { initial, allRoles } = result;
+
     // Map root jobs to their role nodes
     for (const rj of rootJobs) {
       const node = initial.get(rj.roleId);
@@ -85,10 +101,47 @@ export default function useWaveTree(
     }
 
     setNodes(initial);
-    if (rootJobs.length > 0) {
+
+    // Initialize checkedRoles to all non-CEO roles
+    setCheckedRoles(prev => {
+      if (prev.size === 0) {
+        const nonCeo = new Set(allRoles);
+        nonCeo.delete(rootRoleId);
+        return nonCeo;
+      }
+      return prev;
+    });
+
+    if (rootJobs.length > 0 && !selectedRoleId) {
       setSelectedRoleId(rootJobs[0].roleId);
     }
-  }, [rootJobs, orgNodes, rootRoleId]);
+  }, [rootJobs, orgNodes, rootRoleId, buildOrgTree, selectedRoleId]);
+
+  const toggleCheck = useCallback((roleId: string) => {
+    setCheckedRoles(prev => {
+      const next = new Set(prev);
+      if (next.has(roleId)) next.delete(roleId);
+      else next.add(roleId);
+      return next;
+    });
+  }, []);
+
+  // Inject static replay nodes (aborts existing streams)
+  const injectStaticNodes = useCallback((staticNodes: Map<string, WaveNode>) => {
+    // Abort all existing streams
+    for (const [, stream] of streamsRef.current) {
+      stream.controller.abort();
+    }
+    streamsRef.current.clear();
+    setNodes(staticNodes);
+    // Select first non-CEO role that has events
+    for (const [id, node] of staticNodes) {
+      if (id !== rootRoleId && node.events.length > 0) {
+        setSelectedRoleId(id);
+        break;
+      }
+    }
+  }, [rootRoleId]);
 
   // Connect SSE for a session
   const connectStream = useCallback((sessionId: string, roleId: string) => {
@@ -97,6 +150,14 @@ export default function useWaveTree(
     if (existing) {
       existing.controller.abort();
     }
+
+    // Mark node as running
+    setNodes((prev) => {
+      const next = new Map(prev);
+      const node = next.get(roleId);
+      if (node) next.set(roleId, { ...node, sessionId, status: 'running', streamStatus: 'connecting', events: [] });
+      return next;
+    });
 
     const controller = new AbortController();
     const state: StreamState = { controller, lastSeq: -1 };
@@ -157,11 +218,8 @@ export default function useWaveTree(
 
                     const updated = { ...node, events: [...node.events, event] };
 
-                    // Handle dispatch:start — child dispatches create their own sessions
-                    // The session-based stream will emit dispatch events with session info
                     if (event.type === 'dispatch:start' && event.data.childJobId) {
                       const targetRoleId = (event.data.targetRoleId as string) ?? (event.data.roleId as string);
-                      // Child dispatches: use the child's sessionId if available, or jobId as fallback lookup
                       const childSessionId = event.data.childSessionId as string | undefined;
 
                       console.log(`[WaveTree] dispatch:start → target=${targetRoleId} childSession=${childSessionId ?? 'none'} from=${roleId}`);
@@ -176,26 +234,20 @@ export default function useWaveTree(
                             streamStatus: 'connecting',
                           });
                           setTimeout(() => connectStream(childSessionId, targetRoleId), 0);
-                        } else {
-                          console.warn(`[WaveTree] dispatch:start — no node found for role "${targetRoleId}"`);
                         }
                       }
                     }
 
                     if (event.type === 'job:done') {
-                      console.log(`[WaveTree] job:done → role=${roleId}`);
                       updated.status = 'done';
                       updated.streamStatus = 'done';
                     } else if (event.type === 'job:error') {
-                      console.log(`[WaveTree] job:error → role=${roleId}`);
                       updated.status = 'error';
                       updated.streamStatus = 'error';
                     } else if (event.type === 'job:awaiting_input') {
-                      console.log(`[WaveTree] job:awaiting_input → role=${roleId}`);
                       updated.status = 'awaiting_input';
                       updated.streamStatus = 'done';
                     } else if (event.type === 'job:reply') {
-                      console.log(`[WaveTree] job:reply → role=${roleId}`);
                       updated.status = 'running';
                       updated.streamStatus = 'streaming';
                     }
@@ -205,7 +257,6 @@ export default function useWaveTree(
                   });
                 } else if (currentEvent === 'stream:end') {
                   const reason = data.reason as string;
-                  console.log(`[WaveTree] stream:end → role=${roleId} reason=${reason}`);
                   if (reason !== 'replied') {
                     setNodes((prev) => {
                       const next = new Map(prev);
@@ -295,8 +346,12 @@ export default function useWaveTree(
     nodes,
     selectedRoleId,
     selectNode: setSelectedRoleId,
+    checkedRoles,
+    toggleCheck,
+    setCheckedRoles,
     progress,
     allDone,
     connectStream,
+    injectStaticNodes,
   };
 }

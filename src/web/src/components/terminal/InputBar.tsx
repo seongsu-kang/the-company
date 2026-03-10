@@ -19,6 +19,7 @@ export default function InputBar({ mode, onModeChange, onSend, disabled, disable
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const composingRef = useRef(false);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -153,7 +154,8 @@ export default function InputBar({ mode, onModeChange, onSend, disabled, disable
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      if (composingRef.current) return;
       e.preventDefault();
       handleSubmit();
     }
@@ -261,6 +263,8 @@ export default function InputBar({ mode, onModeChange, onSend, disabled, disable
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
+          onCompositionStart={() => { composingRef.current = true; }}
+          onCompositionEnd={() => { composingRef.current = false; }}
           onPaste={handlePaste}
           placeholder={disabled ? 'Waiting...' : mode === 'talk' ? 'Ask something...' : 'Give a directive...'}
           disabled={disabled}

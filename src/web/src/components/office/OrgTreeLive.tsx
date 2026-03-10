@@ -6,7 +6,7 @@ const ROLE_COLORS: Record<string, string> = {
   'data-analyst': '#0277BD',
 };
 
-const NODE_W = 120;
+const NODE_W = 130;
 const NODE_H = 44;
 const Y_GAP = 80;
 
@@ -27,7 +27,6 @@ function buildLayout(
   const layout: LayoutNode[] = [];
   const levels: string[][] = [];
 
-  // BFS to get levels
   const queue: Array<{ id: string; depth: number; parentId: string | null }> = [
     { id: rootId, depth: 0, parentId: null },
   ];
@@ -52,7 +51,6 @@ function buildLayout(
     }
   }
 
-  // Position nodes horizontally per level
   const maxWidth = Math.max(...levels.map(l => l.length)) * (NODE_W + 16);
   const totalWidth = Math.max(maxWidth, 280);
 
@@ -74,10 +72,14 @@ interface Props {
   rootId: string;
   selectedRoleId: string | null;
   onSelectNode: (roleId: string) => void;
+  /** Checked roles for dispatch targeting */
+  checkedRoles?: Set<string>;
+  onToggleCheck?: (roleId: string) => void;
 }
 
-export default function OrgTreeLive({ nodes, rootId, selectedRoleId, onSelectNode }: Props) {
+export default function OrgTreeLive({ nodes, rootId, selectedRoleId, onSelectNode, checkedRoles, onToggleCheck }: Props) {
   const { layout, width, height } = buildLayout(nodes, rootId);
+  const showCheckboxes = !!onToggleCheck;
 
   const getNodeCenter = (roleId: string) => {
     const item = layout.find(l => l.roleId === roleId);
@@ -159,7 +161,8 @@ export default function OrgTreeLive({ nodes, rootId, selectedRoleId, onSelectNod
         const color = statusColor(node);
         const isSelected = selectedRoleId === item.roleId;
         const isCeo = item.roleId === rootId;
-        const opacity = isCeo ? 0.4 : node.status === 'not-dispatched' ? 0.35 : 1;
+        const isChecked = checkedRoles?.has(item.roleId) ?? false;
+        const opacity = isCeo ? 0.4 : node.status === 'not-dispatched' && !isChecked ? 0.35 : 1;
 
         return (
           <g
@@ -174,9 +177,9 @@ export default function OrgTreeLive({ nodes, rootId, selectedRoleId, onSelectNod
               width={NODE_W} height={NODE_H}
               rx={8} ry={8}
               fill="var(--terminal-bg-deeper, #181825)"
-              stroke={isSelected ? '#fff' : color}
-              strokeWidth={isSelected ? 2 : 1.5}
-              strokeDasharray={node.status === 'not-dispatched' ? '4 3' : ''}
+              stroke={isSelected ? '#fff' : isChecked ? '#EF5350' : color}
+              strokeWidth={isSelected ? 2 : isChecked ? 2 : 1.5}
+              strokeDasharray={node.status === 'not-dispatched' && !isChecked ? '4 3' : ''}
             />
 
             {/* Status dot */}
@@ -217,12 +220,38 @@ export default function OrgTreeLive({ nodes, rootId, selectedRoleId, onSelectNod
             </text>
 
             {/* Done checkmark */}
-            {node.status === 'done' && (
+            {node.status === 'done' && !showCheckboxes && (
               <text x={NODE_W - 18} y={NODE_H / 2 + 4} fontSize={14} fill="#2E7D32">&#x2713;</text>
             )}
             {/* Error X */}
-            {node.status === 'error' && (
+            {node.status === 'error' && !showCheckboxes && (
               <text x={NODE_W - 18} y={NODE_H / 2 + 4} fontSize={14} fill="#C62828">&#x2717;</text>
+            )}
+
+            {/* Checkbox for dispatch targeting */}
+            {showCheckboxes && !isCeo && (
+              <g
+                onClick={(e) => { e.stopPropagation(); onToggleCheck?.(item.roleId); }}
+                style={{ cursor: 'pointer' }}
+              >
+                {/* Hit area */}
+                <rect x={NODE_W - 24} y={NODE_H / 2 - 10} width={20} height={20} fill="transparent" />
+                {/* Checkbox */}
+                <rect
+                  x={NODE_W - 20} y={NODE_H / 2 - 6}
+                  width={12} height={12}
+                  rx={2} ry={2}
+                  fill={isChecked ? '#EF5350' : 'transparent'}
+                  stroke={isChecked ? '#EF5350' : '#666'}
+                  strokeWidth={1.5}
+                />
+                {isChecked && (
+                  <text
+                    x={NODE_W - 18} y={NODE_H / 2 + 4}
+                    fontSize={10} fontWeight={700} fill="#fff"
+                  >&#x2713;</text>
+                )}
+              </g>
             )}
           </g>
         );
