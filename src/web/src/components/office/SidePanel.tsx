@@ -791,9 +791,13 @@ function PublishToStore({ role, appearance }: { role: RoleDetail; appearance?: C
       <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--terminal-border)' }}>
         <div className="px-3 py-2.5 flex items-center justify-between gap-2" style={{ background: 'var(--hud-bg-alt)' }}>
           <div className="flex items-center gap-2 min-w-0">
-            <span className="text-[11px] font-bold uppercase tracking-wider shrink-0" style={{ color: 'var(--terminal-text-secondary)', fontFamily: 'var(--pixel-font)' }}>
-              Job Board
-            </span>
+            <a href="https://tycono.ai/store.html" target="_blank" rel="noopener noreferrer"
+              className="text-[11px] font-bold uppercase tracking-wider shrink-0 hover:underline cursor-pointer"
+              style={{ color: 'var(--terminal-text-secondary)', fontFamily: 'var(--pixel-font)', textDecoration: 'none' }}
+              onClick={e => e.stopPropagation()}
+            >
+              Job Board ↗
+            </a>
             {publishedVersion && (
               <span className="text-[9px] px-1.5 py-0.5 rounded shrink-0" style={{ background: 'rgba(34,197,94,0.1)', color: 'rgba(34,197,94,0.6)', border: '1px solid rgba(34,197,94,0.2)' }}>
                 v{publishedVersion}
@@ -803,14 +807,6 @@ function PublishToStore({ role, appearance }: { role: RoleDetail; appearance?: C
           <div className="flex items-center gap-1.5 shrink-0">
             {status === 'done' ? (
               <>
-                <a
-                  href="https://tycono.ai/store.html"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[10px] hover:underline"
-                  style={{ color: 'var(--terminal-text-muted)' }}
-                  onClick={e => e.stopPropagation()}
-                >View on Store ↗</a>
                 <span className="text-[10px] font-semibold" style={{ color: 'var(--active-green)' }}>{message}</span>
               </>
             ) : status === 'error' ? (
