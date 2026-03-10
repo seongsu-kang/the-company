@@ -1820,6 +1820,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
               onRefreshWaves={() => api.getWaves().then(setWaves).catch(() => {})}
               terminalWidth={0}
               inline
+              onOpenSaveModal={() => setShowSaveModal(true)}
             />
           )}
 
@@ -1966,6 +1967,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           }}
           onRefreshWaves={() => api.getWaves().then(setWaves).catch(() => {})}
           terminalWidth={terminalOpen ? terminalWidth : 0}
+          onOpenSaveModal={() => setShowSaveModal(true)}
         />
       )}
 

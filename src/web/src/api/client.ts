@@ -102,7 +102,7 @@ export const api = {
     post<{ ok: boolean; jobId: string; sessionId: string }>(`/sessions/${sessionId}/reply`, { message }),
 
   // Jobs (start only — monitoring/control via Session API)
-  startJob: (params: { type?: string; roleId?: string; task?: string; directive?: string; sourceRole?: string; readOnly?: boolean; targetRole?: string; targetRoles?: string[] }) =>
+  startJob: (params: { type?: string; roleId?: string; task?: string; directive?: string; sourceRole?: string; readOnly?: boolean; targetRole?: string; targetRoles?: string[]; waveId?: string }) =>
     post<{ jobId: string; jobIds?: string[]; waveId?: string; sessionId?: string; sessionIds?: string[] }>('/jobs', params),
   saveWave: (params: { directive: string; jobIds: string[]; waveId?: string; sessionIds?: string[] }) =>
     post<{ ok: boolean; path: string }>('/waves/save', params),

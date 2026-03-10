@@ -44,15 +44,18 @@ interface Props {
   onMaximize?: () => void;
   /** When true, renders inline (no dimmer/fixed positioning) for Pro view */
   inline?: boolean;
+  /** Open the SAVE GAME modal (reuses Office's SaveModal) */
+  onOpenSaveModal?: () => void;
 }
 
 export default function WaveCenter({
   orgNodes, rootRoleId, cLevelRoles: _cLevelRoles, pastWaves,
   activeWaves, onDispatch, onClose, onDone, onSave, onOpenKnowledgeDoc,
-  onRefreshWaves,
+  onRefreshWaves: _onRefreshWaves,
   terminalWidth = 0,
   onMaximize,
   inline = false,
+  onOpenSaveModal,
 }: Props) {
   const [directive, setDirective] = useState('');
   const [replayData, setReplayData] = useState<WaveReplay | null>(null);
@@ -74,11 +77,21 @@ export default function WaveCenter({
     rootRoleId,
   );
 
-  // When replay loads, inject static data
+  // When replay loads, inject static data + reconnect running follow-ups
   useEffect(() => {
     if (replayData) {
       const staticNodes = buildReplayNodes(orgNodes, rootRoleId, replayData.roles);
       waveTree.injectStaticNodes(staticNodes);
+
+      // If any follow-up roles are still running, reconnect their streams
+      for (const r of replayData.roles ?? []) {
+        if (r.status === 'running' && r.jobId) {
+          const node = staticNodes.get(r.roleId);
+          if (node?.sessionId) {
+            setTimeout(() => waveTree.connectStream(node.sessionId, r.roleId), 100);
+          }
+        }
+      }
     }
   }, [replayData, orgNodes, rootRoleId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -119,11 +132,6 @@ export default function WaveCenter({
 
   useEffect(() => { fetchCodeGit(); }, [fetchCodeGit]);
 
-  // Commit state
-  const [commitMsg, setCommitMsg] = useState('');
-  const [committing, setCommitting] = useState(false);
-  const [commitResult, setCommitResult] = useState<{ ok: boolean; sha?: string; error?: string } | null>(null);
-  const [showChanges, setShowChanges] = useState(false);
 
   // Timer for active wave
   const [elapsed, setElapsed] = useState(0);
@@ -264,7 +272,8 @@ export default function WaveCenter({
         waveTree.connectStream(resp.sessionId || node.sessionId, waveTree.selectedRoleId);
       } else {
         // Start new job (follow-up for done, replay, or not-dispatched)
-        const resp = await api.startJob({ type: 'assign', roleId: waveTree.selectedRoleId, task: replyText.trim() });
+        const waveId = currentActiveWave?.id ?? replayData?.waveId ?? replayData?.id;
+        const resp = await api.startJob({ type: 'assign', roleId: waveTree.selectedRoleId, task: replyText.trim(), ...(waveId && { waveId }) });
         setReplyText('');
         if (resp.sessionId) {
           waveTree.connectStream(resp.sessionId, waveTree.selectedRoleId);
@@ -275,7 +284,7 @@ export default function WaveCenter({
     } finally {
       setReplying(false);
     }
-  }, [waveTree, replyText]);
+  }, [waveTree, replyText, currentActiveWave, replayData]);
 
   const handleForceStop = useCallback(async (roleId: string) => {
     const node = waveTree.nodes.get(roleId);
@@ -307,35 +316,6 @@ export default function WaveCenter({
     }
   }, []);
 
-  const handleCommit = useCallback(async () => {
-    if (!commitMsg.trim() || committing) return;
-    setCommitting(true);
-    setCommitResult(null);
-    try {
-      const result = await api.save(commitMsg.trim(), 'code');
-      setCommitResult({ ok: true, sha: result.commitSha });
-      const waveId = currentActiveWave?.id ?? replayData?.id;
-      if (result.commitSha && waveId) {
-        api.patchWave(waveId, { commitSha: result.commitSha, commitMessage: commitMsg.trim() }).then(() => {
-          onRefreshWaves?.();
-        }).catch(() => {});
-      }
-      fetchCodeGit();
-    } catch (err) {
-      setCommitResult({ ok: false, error: err instanceof Error ? err.message : 'Commit failed' });
-    } finally {
-      setCommitting(false);
-    }
-  }, [commitMsg, committing, currentActiveWave, replayData, fetchCodeGit, onRefreshWaves]);
-
-  // Default commit message
-  useEffect(() => {
-    const dir = currentDirective;
-    if (dir && !commitMsg) {
-      const short = dir.slice(0, 60).replace(/\n/g, ' ');
-      setCommitMsg(`wave: ${short}`);
-    }
-  }, [currentDirective, commitMsg]);
 
   // Notify when done
   const doneFired = useRef(false);
@@ -374,8 +354,9 @@ export default function WaveCenter({
   /* ─── Inner content (shared by inline & overlay) ─── */
   const innerContent = (
     <>
-      {/* Header */}
-      <div className="shrink-0 px-4 py-3" style={{ background: 'linear-gradient(180deg, #B71C1C 0%, #7f1d1d 100%)' }}>
+      {/* Header — only in overlay mode (Pro view already has its own header) */}
+      {!inline && (
+        <div className="shrink-0 px-4 py-3" style={{ background: 'linear-gradient(180deg, #B71C1C 0%, #7f1d1d 100%)' }}>
           <div className="flex items-center gap-3">
             <span className="text-white font-bold text-lg tracking-wide" style={{ fontFamily: 'var(--pixel-font)' }}>
               Wave Center
@@ -398,6 +379,7 @@ export default function WaveCenter({
                 : 'Broadcast directives to your organization'}
           </div>
         </div>
+      )}
 
         {/* Main content */}
         <div className="flex-1 flex min-h-0">
@@ -720,55 +702,6 @@ export default function WaveCenter({
                   </div>
                 )}
 
-                {/* Git commit bar (when all done or replay) */}
-                {(waveTree.allDone || (isReplay && !hasRunning)) && codeGitBrief?.dirty && (
-                  <div className="px-4 py-3 border-t shrink-0" style={{ borderColor: 'var(--terminal-border)', background: 'var(--hud-bg-alt)' }}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="w-2 h-2 rounded-full" style={{ background: 'var(--idle-amber)' }} />
-                      <span className="text-[11px] font-semibold text-[var(--terminal-text-secondary)]">
-                        {codeGitBrief.count} uncommitted changes on {codeGitBrief.branch}
-                      </span>
-                      <button
-                        onClick={() => setShowChanges(v => !v)}
-                        className="text-[9px] text-[var(--terminal-text-muted)] cursor-pointer ml-auto hover:text-[var(--terminal-text)]"
-                      >
-                        {showChanges ? 'hide' : `${codeGitBrief.count} changes`}
-                      </button>
-                    </div>
-                    {showChanges && codeGit && (
-                      <div className="mb-2 text-[10px] text-[var(--terminal-text-muted)] font-mono max-h-20 overflow-y-auto">
-                        {codeGit.modified.map(f => <div key={f}>M {f}</div>)}
-                        {codeGit.untracked.map(f => <div key={f}>? {f}</div>)}
-                      </div>
-                    )}
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={commitMsg}
-                        onChange={(e) => setCommitMsg(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleCommit(); } }}
-                        placeholder="Commit message..."
-                        disabled={committing}
-                        className="flex-1 px-3 py-1.5 text-xs rounded border bg-[var(--terminal-bg)] text-[var(--terminal-text)] outline-none"
-                        style={{ borderColor: 'var(--terminal-border)' }}
-                      />
-                      <button
-                        onClick={handleCommit}
-                        disabled={committing || !commitMsg.trim()}
-                        className="px-4 py-1.5 text-xs rounded font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                        style={{ background: '#2E7D32', color: '#fff' }}
-                      >
-                        {committing ? '...' : 'Commit'}
-                      </button>
-                    </div>
-                    {commitResult && (
-                      <div className={`text-[10px] mt-1 ${commitResult.ok ? 'text-green-400' : 'text-red-400'}`}>
-                        {commitResult.ok ? `Committed ${commitResult.sha?.slice(0, 7)}` : commitResult.error}
-                      </div>
-                    )}
-                  </div>
-                )}
-
                 {/* Save wave button */}
                 {waveTree.allDone && currentActiveWave && onSave && (
                   <div className="px-4 py-2 border-t shrink-0 flex justify-end" style={{ borderColor: 'var(--terminal-border)' }}>
@@ -825,24 +758,6 @@ export default function WaveCenter({
               </div>
             )}
 
-            {/* Code repo status */}
-            {codeGitBrief && (
-              <div className="px-3 py-2 border-b" style={{ borderColor: 'var(--terminal-border)' }}>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: codeGitBrief.dirty ? 'var(--idle-amber)' : '#2E7D32' }} />
-                  <span className="text-[10px] font-mono text-[var(--terminal-text-muted)] truncate">{codeGitBrief.branch}</span>
-                  {codeGitBrief.dirty && (
-                    <span className="text-[9px] ml-auto shrink-0" style={{ color: 'var(--idle-amber)' }}>
-                      {codeGitBrief.count} uncommitted
-                    </span>
-                  )}
-                  {!codeGitBrief.dirty && (
-                    <span className="text-[9px] text-green-400 ml-auto shrink-0">clean</span>
-                  )}
-                </div>
-              </div>
-            )}
-
             {/* Past waves */}
             <div className="flex-1 overflow-y-auto p-3">
               <div className="text-[10px] font-bold text-[var(--terminal-text-muted)] uppercase tracking-wider mb-2">
@@ -864,6 +779,27 @@ export default function WaveCenter({
                 ))}
               </div>
             </div>
+
+            {/* Git status — bottom of sidebar */}
+            {codeGitBrief && (
+              <button
+                onClick={onOpenSaveModal}
+                disabled={!onOpenSaveModal}
+                className="px-3 py-2.5 border-t shrink-0 flex items-center gap-1.5 w-full text-left hover:bg-white/5 transition-colors cursor-pointer disabled:cursor-default"
+                style={{ borderColor: 'var(--terminal-border)' }}
+              >
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: codeGitBrief.dirty ? 'var(--idle-amber)' : '#2E7D32' }} />
+                <span className="text-[10px] font-mono text-[var(--terminal-text-muted)] truncate">{codeGitBrief.branch}</span>
+                {codeGitBrief.dirty && (
+                  <span className="text-[9px] ml-auto shrink-0" style={{ color: 'var(--idle-amber)' }}>
+                    {codeGitBrief.count} unsaved
+                  </span>
+                )}
+                {!codeGitBrief.dirty && (
+                  <span className="text-[9px] text-green-400 ml-auto shrink-0">clean</span>
+                )}
+              </button>
+            )}
           </div>
         </div>
       </>
@@ -940,10 +876,13 @@ function buildReplayNodes(
   for (const r of replayRoles) {
     const existing = nodes.get(r.roleId);
     if (existing) {
+      const isRunning = r.status === 'running';
       nodes.set(r.roleId, {
         ...existing,
-        sessionId: r.jobId ?? '', status: (r.status as WaveNode['status']) || 'done',
-        events: r.events, streamStatus: 'done',
+        sessionId: r.sessionId ?? r.jobId ?? '',
+        status: (r.status as WaveNode['status']) || 'done',
+        events: r.events,
+        streamStatus: isRunning ? 'connecting' : 'done',
       });
     }
     for (const c of r.childJobs) {
@@ -978,9 +917,17 @@ function PastWaveCard({ wave, active, onLoad }: { wave: Wave; active?: boolean; 
     >
       <div className="p-2">
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px]">{'▶'}</span>
+          {wave.hasRunning ? (
+            <span className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0" style={{ background: '#4CAF50' }} />
+          ) : (
+            <span className="text-[10px]">{'▶'}</span>
+          )}
           <span className="text-[10px] text-[var(--terminal-text-muted)]">{date}</span>
-          {wave.commit ? (
+          {wave.hasRunning ? (
+            <span className="text-[9px] ml-auto animate-pulse" style={{ color: '#4CAF50' }}>
+              running
+            </span>
+          ) : wave.commit ? (
             <span className="text-[9px] text-green-400 ml-auto font-mono" title={`Committed: ${wave.commit.sha}`}>
               {wave.commit.sha.slice(0, 7)}
             </span>

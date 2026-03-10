@@ -227,6 +227,42 @@ export default function ProView({
         {/* Spacer */}
         <div className="flex-1" />
 
+        {/* Active Jobs — Slack-style bottom section */}
+        {activeExecs.length > 0 && (
+          <div className="shrink-0 px-3 pb-2" style={{ borderTop: '1px solid var(--terminal-border, #2E261F)' }}>
+            <div className="px-1 py-1.5 text-[8px] font-bold tracking-widest" style={{ color: 'var(--terminal-text-muted)' }}>
+              ACTIVE JOBS ({activeExecs.length})
+            </div>
+            <div className="space-y-0.5 max-h-[140px] overflow-y-auto">
+              {activeExecs.map(exec => {
+                const role = roles.find(r => r.id === exec.roleId);
+                const color = ROLE_COLORS[exec.roleId] ?? '#666';
+                const isActive = channel.type === 'role' && channel.roleId === exec.roleId;
+                return (
+                  <button
+                    key={exec.jobId ?? exec.roleId}
+                    onClick={() => onChannelChange({ type: 'role', roleId: exec.roleId })}
+                    className="flex items-center gap-2 w-full px-2 py-1.5 rounded text-left hover:opacity-80 transition-all"
+                    style={{
+                      background: isActive ? `${color}18` : 'transparent',
+                    }}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0" style={{ background: color }} />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[10px] truncate" style={{ color: 'var(--terminal-text, #fff5eb)' }}>
+                        {role?.name ?? exec.roleId}
+                      </div>
+                      <div className="text-[8px] truncate" style={{ color: 'var(--terminal-text-muted)' }}>
+                        {exec.task.slice(0, 40)}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Bottom: Office button */}
         <div className="px-3 py-3 shrink-0" style={{ borderTop: '1px solid var(--terminal-border, #2E261F)' }}>
           <button

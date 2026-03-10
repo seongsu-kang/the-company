@@ -103,6 +103,7 @@ function handleStartJob(body: Record<string, unknown>, res: ServerResponse): voi
   const readOnly = body.readOnly === true;
   const targetRole = (body.targetRole as string) || 'cto';
   const parentJobId = body.parentJobId as string | undefined;
+  const waveId = body.waveId as string | undefined;
 
   // Wave shorthand — broadcast to C-level direct reports (optionally filtered)
   if (type === 'wave') {
@@ -200,7 +201,8 @@ function handleStartJob(body: Record<string, unknown>, res: ServerResponse): voi
   if (sourceRole === 'ceo' && !parentJobId) {
     const session = createSession(roleId, {
       mode: readOnly ? 'talk' : 'do',
-      source: 'dispatch',
+      source: waveId ? 'wave' : 'dispatch',
+      ...(waveId && { waveId }),
     });
     sessionId = session.id;
 
@@ -241,7 +243,127 @@ function handleStartJob(body: Record<string, unknown>, res: ServerResponse): voi
     addMessage(sessionId, roleMsg, true);
   }
 
-  jsonResponse(res, 200, { jobId: job.id, ...(sessionId && { sessionId }) });
+  // Follow-up: append this job to the wave JSON so it persists across navigation
+  if (waveId) {
+    appendFollowUpToWave(waveId, job.id, roleId, task, sessionId);
+  }
+
+  jsonResponse(res, 200, { jobId: job.id, ...(sessionId && { sessionId }), ...(waveId && { waveId }) });
+}
+
+/* ─── Follow-up: append/update wave JSON ── */
+
+function appendFollowUpToWave(waveId: string, jobId: string, roleId: string, task: string, sessionId?: string): void {
+  const wavesDir = path.join(COMPANY_ROOT, 'operations', 'waves');
+  const waveFile = findWaveFile(wavesDir, waveId);
+  if (!waveFile) {
+    console.warn(`[FollowUp] Wave file not found for ${waveId}`);
+    return;
+  }
+
+  try {
+    const data = JSON.parse(fs.readFileSync(waveFile, 'utf-8'));
+    if (!data.roles) data.roles = [];
+
+    // Add follow-up entry with running status
+    data.roles.push({
+      roleId,
+      roleName: roleId,
+      jobId,
+      sessionId,
+      status: 'running',
+      events: [],
+      childJobs: [],
+      isFollowUp: true,
+      followUpTask: task,
+    });
+
+    fs.writeFileSync(waveFile, JSON.stringify(data, null, 2), 'utf-8');
+    console.log(`[FollowUp] Appended job ${jobId} to wave ${waveId}`);
+
+    // Watch the job's activity stream for completion
+    const job = jobManager.getJob(jobId);
+    if (job) {
+      const subscriber = (event: ActivityEvent) => {
+        if (event.type === 'job:done' || event.type === 'job:error' || event.type === 'job:awaiting_input') {
+          updateFollowUpInWave(waveId, jobId, roleId);
+          job.stream.unsubscribe(subscriber);
+        }
+      };
+      job.stream.subscribe(subscriber);
+    }
+  } catch (err) {
+    console.error(`[FollowUp] Failed to append to wave:`, err);
+  }
+}
+
+function updateFollowUpInWave(waveId: string, jobId: string, roleId: string): void {
+  const wavesDir = path.join(COMPANY_ROOT, 'operations', 'waves');
+  const waveFile = findWaveFile(wavesDir, waveId);
+  if (!waveFile) return;
+
+  try {
+    const data = JSON.parse(fs.readFileSync(waveFile, 'utf-8'));
+    if (!data.roles) return;
+
+    const events = ActivityStream.readAll(jobId);
+    const doneEvent = events.find(e => e.type === 'job:done' || e.type === 'job:error' || e.type === 'job:awaiting_input');
+    const status = doneEvent?.type === 'job:done' ? 'done'
+      : doneEvent?.type === 'job:error' ? 'error'
+      : doneEvent?.type === 'job:awaiting_input' ? 'awaiting_input' : 'running';
+
+    // Collect child jobs
+    const childJobs: Array<{ roleId: string; roleName: string; jobId: string; status: string; events: ReturnType<typeof ActivityStream.readAll> }> = [];
+    for (const e of events) {
+      if (e.type === 'dispatch:start' && e.data.childJobId) {
+        const childJobId = e.data.childJobId as string;
+        const targetRoleId = (e.data.targetRoleId as string) ?? 'unknown';
+        const childEvents = ActivityStream.readAll(childJobId);
+        const childDone = childEvents.find(ce => ce.type === 'job:done' || ce.type === 'job:error');
+        const childStatus = childDone?.type === 'job:done' ? 'done' : childDone?.type === 'job:error' ? 'error' : 'unknown';
+        childJobs.push({
+          roleId: targetRoleId,
+          roleName: targetRoleId,
+          jobId: childJobId,
+          status: childStatus,
+          events: childEvents,
+        });
+      }
+    }
+
+    // Find and update the follow-up entry
+    const idx = data.roles.findIndex((r: { jobId?: string }) => r.jobId === jobId);
+    if (idx >= 0) {
+      data.roles[idx] = { ...data.roles[idx], status, events, childJobs };
+    }
+
+    fs.writeFileSync(waveFile, JSON.stringify(data, null, 2), 'utf-8');
+    console.log(`[FollowUp] Updated job ${jobId} in wave ${waveId} → ${status}`);
+  } catch (err) {
+    console.error(`[FollowUp] Failed to update wave:`, err);
+  }
+}
+
+function findWaveFile(wavesDir: string, waveId: string): string | null {
+  if (!fs.existsSync(wavesDir)) return null;
+
+  // Direct match
+  const direct = path.join(wavesDir, `${waveId}.json`);
+  if (fs.existsSync(direct)) return direct;
+
+  // Search by waveId field inside files
+  try {
+    for (const f of fs.readdirSync(wavesDir)) {
+      if (!f.endsWith('.json')) continue;
+      try {
+        const data = JSON.parse(fs.readFileSync(path.join(wavesDir, f), 'utf-8'));
+        if (data.waveId === waveId || data.id === waveId) {
+          return path.join(wavesDir, f);
+        }
+      } catch { /* skip */ }
+    }
+  } catch { /* skip */ }
+  return null;
 }
 
 /* ─── POST /api/waves/save ──────────────── */

@@ -47,6 +47,7 @@ export interface Wave {
   rolesCount: number;
   startedAt: string;
   commit?: { sha: string; message: string; committedAt: string };
+  hasRunning?: boolean;
 }
 
 export interface WaveReplay {
@@ -65,6 +66,7 @@ export interface WaveReplayRole {
   roleId: string;
   roleName: string;
   jobId: string;
+  sessionId?: string;
   status: string;
   events: ActivityEvent[];
   childJobs: Array<{
@@ -74,6 +76,8 @@ export interface WaveReplayRole {
     status: string;
     events: ActivityEvent[];
   }>;
+  isFollowUp?: boolean;
+  followUpTask?: string;
 }
 
 export interface Decision {

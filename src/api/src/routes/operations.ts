@@ -49,13 +49,16 @@ operationsRouter.get('/waves', (_req: Request, res: Response, next: NextFunction
         const id = path.basename(f, '.json');
         try {
           const data = JSON.parse(readFile(`operations/waves/${f}`));
+          const roles = data.roles ?? [];
+          const hasRunning = roles.some((r: { status?: string }) => r.status === 'running' || r.status === 'awaiting_input');
           return {
             id,
             timestamp: id,
             directive: data.directive ?? '',
-            rolesCount: data.roles?.length ?? 0,
+            rolesCount: roles.length,
             startedAt: data.startedAt ?? '',
             ...(data.commit ? { commit: data.commit } : {}),
+            ...(hasRunning ? { hasRunning: true } : {}),
           };
         } catch {
           return { id, timestamp: id, directive: '', rolesCount: 0, startedAt: '' };

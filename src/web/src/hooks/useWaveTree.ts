@@ -195,6 +195,7 @@ export default function useWaveTree(
           return;
         }
 
+        console.log(`[WaveTree SSE] connected → role=${roleId} status=${response.status}`);
         setNodes((prev) => {
           const next = new Map(prev);
           const node = next.get(roleId);
@@ -205,6 +206,7 @@ export default function useWaveTree(
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        let currentEvent = ''; // persist across chunks
 
         while (true) {
           const { done, value } = await reader.read();
@@ -214,13 +216,13 @@ export default function useWaveTree(
           const lines = buffer.split('\n');
           buffer = lines.pop() ?? '';
 
-          let currentEvent = '';
           for (const line of lines) {
             if (line.startsWith('event: ')) {
               currentEvent = line.slice(7).trim();
             } else if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.slice(6));
+                console.log(`[WaveTree SSE] role=${roleId} event=${currentEvent} type=${data?.type ?? '?'} seq=${data?.seq ?? '?'}`);
 
                 if (currentEvent === 'activity') {
                   const event = data as ActivityEvent;

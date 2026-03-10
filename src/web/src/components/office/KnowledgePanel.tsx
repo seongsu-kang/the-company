@@ -964,6 +964,11 @@ function TreeView({
 }) {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['knowledge', 'projects', 'architecture', 'operations', 'company']));
   const [viewingDocId, setViewingDocId] = useState<string | null>(null);
+
+  // KB-010: History navigation state (max 10 items)
+  const [history, setHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number>(-1);
+
   const tree = useMemo(() => buildTree(docs), [docs]);
 
   const toggleFolder = (path: string) => {
@@ -981,11 +986,56 @@ function TreeView({
   const handleFileClick = (docId: string) => {
     setViewingDocId(docId);
     onDocumentClick(docId);
+
+    // KB-010: Add to history (trim old entries if user navigated back)
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push(docId);
+    // Keep max 10 items
+    if (newHistory.length > 10) {
+      newHistory.shift();
+    }
+    setHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
   };
 
   const handleCloseDetail = () => {
     setViewingDocId(null);
     onDocumentClick(null!);
+  };
+
+  // KB-010: History navigation
+  const handleHistoryBack = () => {
+    if (historyIndex > 0) {
+      const newIndex = historyIndex - 1;
+      setHistoryIndex(newIndex);
+      setViewingDocId(history[newIndex]);
+      onDocumentClick(history[newIndex]);
+    }
+  };
+
+  const handleHistoryForward = () => {
+    if (historyIndex < history.length - 1) {
+      const newIndex = historyIndex + 1;
+      setHistoryIndex(newIndex);
+      setViewingDocId(history[newIndex]);
+      onDocumentClick(history[newIndex]);
+    }
+  };
+
+  const handleHistoryJump = (docId: string) => {
+    const index = history.indexOf(docId);
+    if (index !== -1) {
+      setHistoryIndex(index);
+      setViewingDocId(docId);
+      onDocumentClick(docId);
+    }
+  };
+
+  // KB-009: Breadcrumb navigation
+  const handleBreadcrumbClick = (level: 'hub') => {
+    if (level === 'hub') {
+      handleCloseDetail();
+    }
   };
 
   const viewingDoc = viewingDocId ? docs.find((d) => d.id === viewingDocId) : null;
@@ -1018,7 +1068,17 @@ function TreeView({
       {/* Content Area */}
       <div className="flex-1 overflow-y-auto">
         {viewingDoc ? (
-          <DocDetailView doc={viewingDoc} onClose={handleCloseDetail} />
+          <DocDetailView
+            doc={viewingDoc}
+            onClose={handleCloseDetail}
+            onBreadcrumbClick={handleBreadcrumbClick}
+            history={history}
+            historyIndex={historyIndex}
+            onHistoryBack={handleHistoryBack}
+            onHistoryForward={handleHistoryForward}
+            onHistoryJump={handleHistoryJump}
+            allDocs={docs}
+          />
         ) : (
           <div className="flex items-center justify-center h-full text-xs" style={{ color: 'var(--terminal-text-muted)' }}>
             <div className="text-center">
@@ -1154,7 +1214,27 @@ function parseToc(markdown: string): TocItem[] {
   return toc;
 }
 
-function DocDetailView({ doc, onClose }: { doc: KnowledgeDocDetail | KnowledgeDoc; onClose: () => void }) {
+function DocDetailView({
+  doc,
+  onClose,
+  onBreadcrumbClick,
+  history,
+  historyIndex,
+  onHistoryBack,
+  onHistoryForward,
+  onHistoryJump,
+  allDocs,
+}: {
+  doc: KnowledgeDocDetail | KnowledgeDoc;
+  onClose: () => void;
+  onBreadcrumbClick: (level: 'hub') => void;
+  history: string[];
+  historyIndex: number;
+  onHistoryBack: () => void;
+  onHistoryForward: () => void;
+  onHistoryJump: (docId: string) => void;
+  allDocs: KnowledgeDoc[];
+}) {
   const [detailDoc, setDetailDoc] = useState<KnowledgeDocDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1207,10 +1287,72 @@ function DocDetailView({ doc, onClose }: { doc: KnowledgeDocDetail | KnowledgeDo
   const isHub = doc.akb_type === 'hub';
   const showToc = toc.length > 0 && !loading && !error;
 
+  // KB-010: Get recent docs (last 3, excluding current)
+  const recentDocs = history
+    .slice(0, historyIndex)
+    .reverse()
+    .filter((id) => id !== doc.id)
+    .slice(0, 3)
+    .map((id) => allDocs.find((d) => d.id === id))
+    .filter((d): d is KnowledgeDoc => d !== undefined);
+
+  const canGoBack = historyIndex > 0;
+  const canGoForward = historyIndex < history.length - 1;
+
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
       <div className="shrink-0 p-4" style={{ borderBottom: '1px solid var(--terminal-border)' }}>
+        {/* KB-010: History navigation buttons + recent docs */}
+        <div className="flex items-center gap-2 mb-3">
+          <button
+            onClick={onHistoryBack}
+            disabled={!canGoBack}
+            className="text-xs font-semibold cursor-pointer hover:opacity-70 disabled:opacity-30 disabled:cursor-not-allowed"
+            style={{ color: 'var(--active-green)' }}
+            title="Back"
+          >
+            ←
+          </button>
+          <button
+            onClick={onHistoryForward}
+            disabled={!canGoForward}
+            className="text-xs font-semibold cursor-pointer hover:opacity-70 disabled:opacity-30 disabled:cursor-not-allowed"
+            style={{ color: 'var(--active-green)' }}
+            title="Forward"
+          >
+            →
+          </button>
+          <div className="flex-1 flex items-center gap-1 overflow-x-auto">
+            {recentDocs.map((recentDoc) => (
+              <button
+                key={recentDoc.id}
+                onClick={() => onHistoryJump(recentDoc.id)}
+                className="px-2 py-0.5 rounded text-[9px] hover:opacity-70 cursor-pointer whitespace-nowrap"
+                style={{ background: 'var(--hud-bg)', color: 'var(--terminal-text-secondary)' }}
+                title={recentDoc.title}
+              >
+                📄 {recentDoc.title.length > 15 ? recentDoc.title.slice(0, 15) + '...' : recentDoc.title}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* KB-009: Breadcrumb navigation */}
+        <div className="flex items-center gap-1 mb-2 text-[10px]" style={{ color: 'var(--terminal-text-muted)' }}>
+          <button
+            onClick={() => onBreadcrumbClick('hub')}
+            className="hover:underline cursor-pointer"
+            style={{ color: 'var(--active-green)' }}
+          >
+            Knowledge Hub
+          </button>
+          <span>›</span>
+          <span style={{ color: color.text }}>{doc.category}</span>
+          <span>›</span>
+          <span style={{ color: 'var(--terminal-text)' }}>{doc.title}</span>
+        </div>
+
         <div className="flex items-center gap-2 mb-2">
           <button
             onClick={onClose}

@@ -193,12 +193,6 @@ sessionsRouter.post('/:id/reply', (req, res) => {
     return;
   }
 
-  const job = jobManager.getJobBySessionId(req.params.id);
-  if (!job) {
-    res.status(404).json({ error: 'No active job for this session' });
-    return;
-  }
-
   // Add CEO reply message to session
   const ceoMsg: Message = {
     id: `msg-${Date.now()}-ceo-reply`,
@@ -210,10 +204,35 @@ sessionsRouter.post('/:id/reply', (req, res) => {
   };
   addMessage(req.params.id, ceoMsg);
 
-  const newJob = jobManager.replyToJob(job.id, message, responderRole);
-  if (!newJob) {
-    res.status(400).json({ error: 'Job not in a replyable state' });
-    return;
+  const job = jobManager.getJobBySessionId(req.params.id);
+  let newJob;
+
+  if (job) {
+    // Normal path: reply to existing job
+    newJob = jobManager.replyToJob(job.id, message, responderRole);
+    if (!newJob) {
+      res.status(400).json({ error: 'Job not in a replyable state' });
+      return;
+    }
+  } else {
+    // Fallback: job lost (server restart) — create fresh follow-up job
+    // Build context from session history
+    const prevMessages = session.messages
+      .filter(m => m.id !== ceoMsg.id)
+      .slice(-6)
+      .map(m => `${m.from === 'ceo' ? 'CEO' : m.from.toUpperCase()}: ${m.content.slice(0, 500)}`)
+      .join('\n');
+    const task = prevMessages
+      ? `[Conversation History]\n${prevMessages}\n\n[CEO Follow-up]\n${message}`
+      : message;
+
+    newJob = jobManager.startJob({
+      type: 'assign',
+      roleId: session.roleId,
+      task,
+      sourceRole: responderRole ?? 'ceo',
+      sessionId: req.params.id,
+    });
   }
 
   // Add role message for the continuation job
