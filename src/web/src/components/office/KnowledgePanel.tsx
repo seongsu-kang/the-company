@@ -687,7 +687,7 @@ function KnowledgeGraph({
               const nodeOpacity = (isMatched && isInLocalView) ? 1 : 0.35;
 
               // KB-006: Micro view extras
-              const firstSentence = zoomLevel === 'micro' ? getFirstSentence(node.tldr, 50) : '';
+              const firstSentence = zoomLevel === 'micro' ? getFirstSentence(node.tldr, 60) : '';
               const displayTags = zoomLevel === 'micro' && node.tags ? node.tags.slice(0, 3) : [];
 
               return (
@@ -745,13 +745,13 @@ function KnowledgeGraph({
                   <text
                     y={size / 2 + 14}
                     textAnchor="middle"
-                    fill={isSelected ? '#e2e8f0' : '#94a3b8'}
-                    fontSize={zoomLevel === 'micro' ? 10 : 11}
+                    fill={isSelected ? '#e2e8f0' : '#cbd5e1'}
+                    fontSize={zoomLevel === 'micro' ? 13 : 12}
                     fontFamily="monospace"
                     fontWeight={isSelected ? 'bold' : 'normal'}
                     style={{ pointerEvents: 'none' }}
                   >
-                    {node.title.length > 24 ? node.title.slice(0, 22) + '..' : node.title}
+                    {node.title.length > 36 ? node.title.slice(0, 34) + '..' : node.title}
                   </text>
 
                   {/* KB-006: Micro view - TL;DR first sentence */}
@@ -760,9 +760,9 @@ function KnowledgeGraph({
                       y={size / 2 + 28}
                       textAnchor="middle"
                       fill="#94a3b8"
-                      fontSize={8}
+                      fontSize={10}
                       fontFamily="system-ui, sans-serif"
-                      opacity={0.7}
+                      opacity={0.85}
                       style={{ pointerEvents: 'none' }}
                     >
                       {firstSentence}
@@ -795,7 +795,7 @@ function KnowledgeGraph({
                               textAnchor="middle"
                               dominantBaseline="middle"
                               fill={color.text}
-                              fontSize={7}
+                              fontSize={9}
                               fontFamily="monospace"
                               style={{ pointerEvents: 'none' }}
                             >
