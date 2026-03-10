@@ -8,7 +8,7 @@ import { applyStyles } from './TopDownCharCanvas';
 import './sprites/data'; // trigger blueprint registration
 import { WALK_FRAMES } from './sprites/data/walk-frames-mini';
 import type { WalkDirection } from './sprites/data/walk-frames-mini';
-import { MASCOT_FRAMES, MASCOT_IDLE_TONGUE, MASCOT_SHADOW, MASCOT_SHADOW_SIDE } from './sprites/data/mascot-bichon';
+import { MASCOT_FRAMES, MASCOT_IDLE_TONGUE, MASCOT_SHADOW, MASCOT_SHADOW_SIDE, MASCOT_SHADOW_BELLY, MASCOT_BELLY_UP, MASCOT_BELLY_UP_B } from './sprites/data/mascot-bichon';
 import type { MascotDirection } from './sprites/data/mascot-bichon';
 import { generateFloorLayout, selectPreset, applyFurnitureOverrides, applyDeskOverrides, applyFurnitureRemovals, applyAddedFurniture } from './floor-template';
 import type { FloorLayout, DeskDef, RoomDef } from './floor-template';
@@ -353,7 +353,20 @@ interface CharState {
   dir: string; walkFrame: number; walkTimer: number;
   bobY: number; bobOff: number;
   stateTimer: number;
+  sittingTime: number;  // frames spent sitting (for zzz)
 }
+
+/* ── Interaction Particles ── */
+interface Particle {
+  x: number; y: number;
+  vx: number; vy: number;
+  life: number; maxLife: number;
+  char: string;  // emoji/symbol to render
+  color?: string;
+}
+let _particles: Particle[] = [];
+let _hoverMascot = false;
+let _mascotHoverTime = 0;  // frames hovered on mascot
 
 /* ── Mascot (office pet) ── */
 interface MascotState {
@@ -365,6 +378,7 @@ interface MascotState {
   state: 'walking' | 'idle';
   stateTimer: number;
   tongueTimer: number;  // tongue animation while idle
+  idleTime: number;     // frames spent idle (for zzz)
 }
 
 function createMascot(): MascotState {
@@ -379,14 +393,28 @@ function createMascot(): MascotState {
     state: 'walking',
     stateTimer: 0,
     tongueTimer: 0,
+    idleTime: 0,
   };
 }
 
 function updateMascot(m: MascotState) {
   m.stateTimer--;
 
+  // Mascot freezes and faces CEO when hovered
+  if (_hoverMascot) {
+    _mascotHoverTime++;
+    m.dir = 'down';
+    m.walkFrame = 0;
+    m.tongueTimer++;
+    m.idleTime = 0;  // wake up from zzz
+    return;  // skip all movement
+  } else {
+    _mascotHoverTime = 0;
+  }
+
   if (m.state === 'idle') {
     m.tongueTimer++;
+    m.idleTime++;
     if (m.stateTimer <= 0) {
       m.state = 'walking';
       m.tongueTimer = 0;
@@ -416,6 +444,7 @@ function updateMascot(m: MascotState) {
       m.walkTimer = 0;
     }
   } else if (m.state === 'walking') {
+    m.idleTime = 0;
     if (m.path.length === 0) {
       m.state = 'idle'; m.dir = 'down';
       m.stateTimer = 120 + Math.floor(Math.random() * 240);
@@ -443,9 +472,18 @@ function updateMascot(m: MascotState) {
 }
 
 function drawMascot(m: MascotState) {
+  const mx = Math.round(m.x), my = Math.round(m.y);
+
+  // Belly-up mode: after hovering for ~1.5 seconds (90 frames)
+  if (_hoverMascot && _mascotHoverTime > 90) {
+    const bellyFrame = (Math.floor(_mascotHoverTime / 12) % 2 === 0) ? MASCOT_BELLY_UP : MASCOT_BELLY_UP_B;
+    renderPixelsAt(_ctx, MASCOT_SHADOW_BELLY, mx, my);
+    renderPixelsAt(_ctx, bellyFrame, mx, my);
+    return;
+  }
+
   const frame = m.state === 'walking' ? m.walkFrame : 0;
   const pixels = MASCOT_FRAMES[m.dir][frame];
-  const mx = Math.round(m.x), my = Math.round(m.y);
   const isSide = m.dir === 'left' || m.dir === 'right';
   // shadow (wider for side views)
   renderPixelsAt(_ctx, isSide ? MASCOT_SHADOW_SIDE : MASCOT_SHADOW, mx, my);
@@ -472,7 +510,8 @@ function createChars(roleIds: string[]): Record<string, CharState> {
       room: d.room,
       dir: 'down', walkFrame: 0, walkTimer: 0,
       bobY: 0, bobOff: idx * 17,
-      stateTimer: 600 + Math.floor(Math.random() * 900),
+      stateTimer: 1200 + Math.floor(Math.random() * 1800),  // sit 20-50s
+      sittingTime: 0,
     };
     idx++;
   }
@@ -543,17 +582,25 @@ function buildReturnPath(ch: CharState) {
 }
 
 function updateChars(chars: Record<string, CharState>, frame: number) {
-  for (const [, ch] of Object.entries(chars)) {
+  for (const [id, ch] of Object.entries(chars)) {
     ch.stateTimer--;
 
     if (ch.state === 'sitting') {
-      ch.bobY = ((frame + ch.bobOff) % 60) < 30 ? 1 : 0;
+      ch.sittingTime++;
+      // Hover reaction: character startles when moused over
+      const isHovered = _hoverRole === id;
+      if (isHovered) {
+        ch.sittingTime = 0;  // wake up from zzz
+        ch.bobY = -3;  // jump up (visible at 2x zoom = 6 screen px)
+      } else {
+        ch.bobY = ((frame + ch.bobOff) % 60) < 30 ? 1 : 0;
+      }
       if (ch.stateTimer <= 0) {
         ch.state = 'walking';
         ch.x = ch.homeX; ch.y = ch.homeY;
         ch.room = ch.homeRoom;
         const allRooms = Object.keys(_layout.rooms);
-        if (Math.random() < 0.25 && allRooms.length > 1) {
+        if (Math.random() < 0.15 && allRooms.length > 1) {  // rarely cross rooms
           const rooms = allRooms.filter(r => r !== ch.room);
           const targetRoom = rooms[Math.floor(Math.random() * rooms.length)];
           const crossPath = buildCrossRoomPath(ch, targetRoom);
@@ -577,10 +624,18 @@ function updateChars(chars: Record<string, CharState>, frame: number) {
         }
       }
     } else if (ch.state === 'walking' || ch.state === 'returning') {
+      ch.sittingTime = 0;
+      // Hover freeze: character stops and looks startled when moused over
+      const isWalkHovered = _hoverRole === id;
+      if (isWalkHovered) {
+        ch.dir = 'down';  // face forward (toward CEO)
+        ch.walkFrame = 0;  // stand still
+        continue;  // skip movement — frozen in place
+      }
       if (ch.path.length === 0) {
         if (ch.state === 'returning') {
           ch.state = 'sitting'; ch.room = ch.homeRoom;
-          ch.stateTimer = 800 + Math.floor(Math.random() * 1200);
+          ch.stateTimer = 1200 + Math.floor(Math.random() * 1800);  // sit 20-50s
         } else {
           ch.state = 'idle'; ch.dir = 'down';
           ch.stateTimer = 180 + Math.floor(Math.random() * 360);
@@ -606,8 +661,13 @@ function updateChars(chars: Record<string, CharState>, frame: number) {
         ch.walkFrame = Math.floor(ch.walkTimer / 12) % 4;
       }
     } else if (ch.state === 'idle') {
+      // Idle characters also freeze on hover
+      if (_hoverRole === id) {
+        ch.dir = 'down';
+        continue;
+      }
       if (ch.stateTimer <= 0) {
-        if (Math.random() < 0.3) {
+        if (Math.random() < 0.15) {  // rarely wander again — usually head back
           ch.state = 'walking';
           const pts = _layout.waypoints[ch.room];
           if (pts && pts.length > 0) {
@@ -776,7 +836,7 @@ function drawScene(
     }
   }
 
-  // Draw hover highlight
+  // Draw hover highlight + startled "!" for non-sitting characters
   if (_hoverRole) {
     const d = DESKS[_hoverRole];
     const ch = chars[_hoverRole];
@@ -789,8 +849,132 @@ function drawScene(
       } else {
         _ctx.fillRect(Math.round(ch.x) - 1, Math.round(ch.y) - 1, 14, 24);
       }
+      // "!" startled indicator above character (any state)
+      _ctx.globalAlpha = 0.95;
+      _ctx.fillStyle = '#FBBF24';
+      _ctx.font = 'bold 8px monospace';
+      _ctx.textAlign = 'center';
+      const exX = ch.state === 'sitting' ? d.dx + 13 : Math.round(ch.x) + 6;
+      const exY = ch.state === 'sitting' ? d.dy - 1 : Math.round(ch.y) - 5;
+      _ctx.fillText('!', exX, exY);
       _ctx.restore();
     }
+  }
+
+  // ── Zzz animation for long-idle characters ──
+  const ZZZ_THRESHOLD = 3600;  // ~60 seconds at 60fps
+  for (const [, ch] of Object.entries(chars)) {
+    if (ch.state === 'sitting' && ch.sittingTime > ZZZ_THRESHOLD) {
+      const d = Object.values(DESKS).find(dk => dk.dx + 8 === ch.homeX && dk.dy + 34 === ch.homeY);
+      if (!d) continue;
+      const cx = d.dx + 13, cy = d.dy;
+      const phase = Math.floor(ch.sittingTime / 40) % 3;  // cycle through z positions
+      _ctx.save();
+      _ctx.font = '5px monospace';
+      _ctx.textAlign = 'center';
+      // Three "z" at different heights and sizes, cycling
+      const alphas = [0.7, 0.5, 0.3];
+      const offsets = [
+        { x: 3, y: -2 - phase },
+        { x: 6, y: -5 - ((phase + 1) % 3) },
+        { x: 4, y: -8 - ((phase + 2) % 3) },
+      ];
+      for (let i = 0; i < 3; i++) {
+        _ctx.globalAlpha = alphas[i];
+        _ctx.fillStyle = '#93C5FD';
+        _ctx.font = `${4 + i}px monospace`;
+        _ctx.fillText('z', cx + offsets[i].x, cy + offsets[i].y);
+      }
+      _ctx.restore();
+    }
+  }
+
+  // ── Reaction particles ──
+  _particles = _particles.filter(p => p.life > 0);
+  for (const p of _particles) {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life--;
+    _ctx.save();
+    _ctx.globalAlpha = Math.min(1, p.life / (p.maxLife * 0.3));
+    _ctx.fillStyle = p.color ?? '#FF6B8A';
+    _ctx.font = '8px serif';
+    _ctx.fillText(p.char, Math.round(p.x), Math.round(p.y));
+    _ctx.restore();
+  }
+
+  // ── Mascot "!" on hover (only before belly-up) ──
+  if (_hoverMascot && mascot && _mascotHoverTime <= 90) {
+    const mx = Math.round(mascot.x), my = Math.round(mascot.y);
+    _ctx.save();
+    _ctx.globalAlpha = 0.9;
+    _ctx.fillStyle = '#FBBF24';
+    _ctx.font = 'bold 5px monospace';
+    _ctx.textAlign = 'center';
+    _ctx.fillText('!', mx + 4, my - 2);
+    _ctx.restore();
+  }
+
+  // ── Mascot zzz when idle long enough ──
+  if (mascot && !_hoverMascot && mascot.state === 'idle' && mascot.idleTime > 600) {
+    const mx = Math.round(mascot.x), my = Math.round(mascot.y);
+    const phase = Math.floor(mascot.idleTime / 40) % 3;
+    _ctx.save();
+    const offsets = [
+      { x: 3, y: -2 - phase },
+      { x: 5, y: -5 - ((phase + 1) % 3) },
+      { x: 4, y: -8 - ((phase + 2) % 3) },
+    ];
+    for (let i = 0; i < 3; i++) {
+      _ctx.globalAlpha = [0.7, 0.5, 0.3][i];
+      _ctx.fillStyle = '#93C5FD';
+      _ctx.font = `${3 + i}px monospace`;
+      _ctx.textAlign = 'center';
+      _ctx.fillText('z', mx + offsets[i].x, my + offsets[i].y);
+    }
+    _ctx.restore();
+  }
+
+  // ── Mascot tail wag on hover (before belly-up) ──
+  if (_hoverMascot && mascot && _mascotHoverTime <= 90) {
+    const mx = Math.round(mascot.x), my = Math.round(mascot.y);
+    const wagOffset = (Math.floor(Date.now() / 150) % 2 === 0) ? -1 : 1;
+    if (mascot.dir === 'down') {
+      _ctx.fillStyle = '#FAFAF7';
+      _ctx.fillRect(mx + 4 + wagOffset, my - 1, 2, 2);  // original position (top)
+    }
+  }
+}
+
+/* ── Spawn heart particles (mascot click) ── */
+function spawnHearts(cx: number, cy: number) {
+  for (let i = 0; i < 4; i++) {
+    _particles.push({
+      x: cx + (Math.random() - 0.5) * 8,
+      y: cy,
+      vx: (Math.random() - 0.5) * 0.3,
+      vy: -0.3 - Math.random() * 0.2,
+      life: 60 + Math.floor(Math.random() * 30),
+      maxLife: 80,
+      char: i % 2 === 0 ? '♥' : '♡',
+      color: '#FF6B8A',
+    });
+  }
+}
+
+/* ── Spawn sweat particles (employee click) ── */
+function spawnSweat(cx: number, cy: number) {
+  for (let i = 0; i < 3; i++) {
+    _particles.push({
+      x: cx + (Math.random() - 0.5) * 6,
+      y: cy - 2,
+      vx: (Math.random() - 0.5) * 0.2,
+      vy: 0.2 + Math.random() * 0.15,  // drip downward
+      life: 45 + Math.floor(Math.random() * 20),
+      maxLife: 60,
+      char: '💧',
+      color: '#60A5FA',
+    });
   }
 }
 
@@ -1006,6 +1190,11 @@ export default function TopDownOfficeView({
       lbl.className = 'td-facility-label';
       lbl.dataset.facility = fz.id;
       if (fz.id === 'meeting') lbl.dataset.questTarget = 'meeting-room';
+      if (fz.id === 'knowledge') lbl.dataset.questTarget = 'knowledge-hub';
+      if (fz.id === 'bulletin') lbl.dataset.questTarget = 'bulletin-board';
+      if (fz.id === 'stats') lbl.dataset.questTarget = 'stats-btn';
+      if (fz.id === 'settings') lbl.dataset.questTarget = 'settings-btn';
+      if (fz.id === 'theme') lbl.dataset.questTarget = 'theme-btn';
       lbl.textContent = `${fz.icon} ${fz.label}`;
       lbl.style.borderColor = `${fz.color}44`;
       const handler = facilityHandlers[fz.id];
@@ -1208,10 +1397,11 @@ export default function TopDownOfficeView({
     saveOverrides({ addedFurniture: newAdded });
     // Notify parent (quest triggers)
     onFurniturePlaced?.(_placingType, price);
-    // Deduct coins
+    // Deduct coins (capture type before async — _placingType may be cleared)
     if (price > 0) {
+      const furnitureType = newDef.type;
       import('../../api/client').then(({ api }) => {
-        api.spendCoins(price, `furniture: ${_placingType}`, newDef.id)
+        api.spendCoins(price, `furniture: ${furnitureType}`, newDef.id)
           .then(r => onCoinsSpent?.(r.balance))
           .catch(() => {});
       });
@@ -1278,7 +1468,7 @@ export default function TopDownOfficeView({
     const hit = hitTest(e);
     _hoverRole = hit?.type === 'role' ? hit.id : null;
     _hoverFacility = hit?.type === 'facility' ? hit.id : null;
-    // mascot hover detection (nametag always visible)
+    _hoverMascot = hit?.type === 'mascot';
     _hoverFurniture = null;
     if (canvas) canvas.style.cursor = hit ? 'pointer' : 'default';
   }, [hitTest, canvasCoords]);
@@ -1390,7 +1580,7 @@ export default function TopDownOfficeView({
     }
     _hoverRole = null;
     _hoverFacility = null;
-    // mascot hover cleared on mouse leave
+    _hoverMascot = false;
     _hoverFurniture = null;
     if (canvasRef.current) canvasRef.current.style.cursor = 'default';
   }, []);
@@ -1400,8 +1590,25 @@ export default function TopDownOfficeView({
     if (_editMode) return; // clicks handled by mouseDown/Up in edit mode
     const hit = hitTest(e);
     if (!hit) return;
-    if (hit.type === 'role') { onRoleClick(hit.id); return; }
-    if (hit.type === 'mascot') { onMascotClick?.(); return; }
+    if (hit.type === 'role') {
+      // Spawn heart particles (CEO shows appreciation!)
+      const ch = charsRef.current[hit.id];
+      const d = DESKS[hit.id];
+      if (ch && d) {
+        const cx = ch.state === 'sitting' ? d.dx + 13 : Math.round(ch.x) + 6;
+        const cy = ch.state === 'sitting' ? d.dy + 2 : Math.round(ch.y) - 2;
+        spawnHearts(cx, cy);
+      }
+      onRoleClick(hit.id);
+      return;
+    }
+    if (hit.type === 'mascot') {
+      // Spawn hearts for mascot too
+      const mc = mascotRef.current;
+      if (mc) spawnHearts(Math.round(mc.x) + 4, Math.round(mc.y) - 2);
+      onMascotClick?.();
+      return;
+    }
     // Facility clicks
     switch (hit.id) {
       case 'meeting': {
@@ -1442,6 +1649,7 @@ export default function TopDownOfficeView({
       )}
       <button
         className={`td-edit-btn${editMode ? ' td-edit-btn--active' : ''}`}
+        data-quest-target="edit-btn"
         onClick={() => {
           setEditMode(m => {
             const next = !m;
