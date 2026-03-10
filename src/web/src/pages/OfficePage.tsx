@@ -624,10 +624,10 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   };
 
   /** Connect SSE stream for a wave job → update virtual terminal session */
-  const connectWaveStream = (jobId: string, _roleId: string, serverSessionId?: string) => {
-    const sessionId = `wave-${jobId}`;
+  const connectWaveStream = (serverSessionId: string, _roleId: string, jobId?: string) => {
+    const virtualSessionId = `wave-${jobId ?? serverSessionId}`;
     const controller = new AbortController();
-    waveStreamsRef.current.set(jobId, controller);
+    waveStreamsRef.current.set(serverSessionId, controller);
 
     // Create initial role message (streaming)
     const roleMsg: Message = {
@@ -640,7 +640,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
       streamEvents: [],
     };
     setSessions((prev) => prev.map((s) =>
-      s.id === sessionId ? { ...s, messages: [...s.messages, roleMsg] } : s,
+      s.id === virtualSessionId ? { ...s, messages: [...s.messages, roleMsg] } : s,
     ));
 
     const streamUrl = `/api/sessions/${serverSessionId}/stream?from=0`;
@@ -668,7 +668,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
                 if (currentEvent === 'activity') {
                   const evt = data as ActivityEvent;
                   setSessions((prev) => prev.map((s) => {
-                    if (s.id !== sessionId) return s;
+                    if (s.id !== virtualSessionId) return s;
                     const msgs = [...s.messages];
                     const lastMsg = msgs[msgs.length - 1];
                     if (!lastMsg || lastMsg.from !== 'role') return s;
@@ -702,7 +702,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
                   }));
                 } else if (currentEvent === 'stream:end') {
                   setSessions((prev) => prev.map((s) => {
-                    if (s.id !== sessionId) return s;
+                    if (s.id !== virtualSessionId) return s;
                     const msgs = s.messages.map((m) =>
                       m.status === 'streaming' ? { ...m, status: 'done' as const } : m,
                     );
@@ -718,7 +718,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
       .catch((err) => {
         if (err.name === 'AbortError') return;
         setSessions((prev) => prev.map((s) => {
-          if (s.id !== sessionId) return s;
+          if (s.id !== virtualSessionId) return s;
           const msgs = s.messages.map((m) =>
             m.status === 'streaming' ? { ...m, status: 'error' as const } : m,
           );
@@ -742,11 +742,15 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
         ? ceoDirectReports.filter(r => targetRoles.includes(r.id))
         : ceoDirectReports;
 
+      // D-014: Extract server-generated waveId and sessionIds
+      const serverWaveId = resp.waveId ?? `wave-${Date.now()}`;
+      const serverSessionIds: string[] = resp.sessionIds ?? [];
+
       const wj = jobIds.map((jid, i) => ({
         jobId: jid,
         roleId: cLevels[i]?.id ?? `role-${i}`,
         roleName: cLevels[i]?.name ?? `C-Level ${i + 1}`,
-        sessionId: serverSessionIds[i],
+        sessionId: serverSessionIds[i] ?? `wave-${jid}`,
       }));
 
       // Log wave to #office
@@ -756,11 +760,6 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
         text: `[CEO WAVE] "${directive}" → ${wj.map(w => w.roleName).join(', ')}`,
         type: 'dispatch',
       });
-
-      // Add to WaveCenter active waves
-      // D-014: Use server-generated waveId and sessionIds
-      const serverWaveId = resp.waveId ?? `wave-${Date.now()}`;
-      const serverSessionIds = resp.sessionIds ?? [];
 
       const newActiveWave = {
         id: serverWaveId,

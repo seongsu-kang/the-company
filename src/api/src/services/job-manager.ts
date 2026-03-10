@@ -10,7 +10,7 @@ import { estimateCost } from './pricing.js';
 import { readConfig, getConversationLimits } from './company-config.js';
 import { postKnowledgingCheck, type KnowledgeDebtItem } from '../engine/knowledge-gate.js';
 import { earnCoinsInternal } from '../routes/coins.js';
-import { getSession, updateMessage as updateSessionMessage, appendMessageEvent } from './session-store.js';
+import { getSession, createSession, addMessage, updateMessage as updateSessionMessage, appendMessageEvent, type Message } from './session-store.js';
 
 /* ─── Types ──────────────────────────────── */
 
@@ -194,6 +194,7 @@ class JobManager {
           targetRoleId: params.roleId,
           task: params.task,
           childJobId: jobId,
+          childSessionId: params.sessionId,
         });
       }
     }
@@ -273,9 +274,23 @@ class JobManager {
               return;
             }
           }
-          // Create child job — startJob() auto-emits dispatch:start
-          // on parent stream when parentJobId is set.
-          // Propagate targetRoles to child jobs for cascading enforcement
+          // Create session for child dispatch
+          const childSession = createSession(subRoleId, {
+            mode: 'do',
+            source: 'dispatch',
+          });
+          // Add directive as CEO message in child session
+          const dispatchMsg: Message = {
+            id: `msg-${Date.now()}-dispatch-${subRoleId}`,
+            from: 'ceo',
+            content: subTask,
+            type: 'directive',
+            status: 'done',
+            timestamp: new Date().toISOString(),
+          };
+          addMessage(childSession.id, dispatchMsg);
+
+          // Create child job linked to child session
           const childJob = this.startJob({
             type: 'assign',
             roleId: subRoleId,
@@ -283,13 +298,29 @@ class JobManager {
             sourceRole: params.roleId,
             parentJobId: jobId,
             targetRoles: params.targetRoles,
+            sessionId: childSession.id,
           });
-          // D-014 SCA-010: Embed dispatch event in session message
+
+          // Add role message linked to child job
+          const childRoleMsg: Message = {
+            id: `msg-${Date.now() + 1}-role-${subRoleId}`,
+            from: 'role',
+            content: '',
+            type: 'conversation',
+            status: 'streaming',
+            timestamp: new Date().toISOString(),
+            jobId: childJob.id,
+          };
+          addMessage(childSession.id, childRoleMsg, true);
+
+          // Embed dispatch event with childSessionId in parent session
           if (job.sessionId) {
             this.embedSessionEvent(job, 'dispatch:start', {
               roleId: subRoleId,
               task: subTask,
               childJobId: childJob.id,
+              childSessionId: childSession.id,
+              targetRoleId: subRoleId,
             });
           }
         },
@@ -688,6 +719,7 @@ class JobManager {
       sourceRole: effectiveResponder,
       parentJobId: job.id,
       isContinuation: !isFollowUp,
+      sessionId: job.sessionId,
     });
 
     job.childJobIds.push(newJob.id);
@@ -706,15 +738,22 @@ class JobManager {
 
   /** SCA-011: Find the most recent job linked to a session */
   getJobBySessionId(sessionId: string): Job | undefined {
+    let active: Job | undefined;
     let latest: Job | undefined;
     for (const job of this.jobs.values()) {
       if (job.sessionId === sessionId) {
+        // Prefer running or awaiting_input jobs
+        if (job.status === 'running' || job.status === 'awaiting_input') {
+          if (!active || job.createdAt > active.createdAt) {
+            active = job;
+          }
+        }
         if (!latest || job.createdAt > latest.createdAt) {
           latest = job;
         }
       }
     }
-    return latest;
+    return active ?? latest;
   }
 }
 

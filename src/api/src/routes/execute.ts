@@ -77,6 +77,16 @@ function handleJobsRequest(url: string, method: string, req: IncomingMessage, re
     return;
   }
 
+  // GET /api/jobs/:id/history — internal only (used by engine Python sub-processes)
+  const historyMatch = path.match(/^\/api\/jobs\/([^/]+)\/history$/);
+  if (method === 'GET' && historyMatch) {
+    const jobId = historyMatch[1];
+    const events = ActivityStream.readAll(jobId);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ events }));
+    return;
+  }
+
   // All other /api/jobs/* endpoints removed — use /api/sessions/* instead
   res.writeHead(410);  // Gone
   res.end(JSON.stringify({ error: 'Job monitoring endpoints removed. Use /api/sessions/:id/stream, /api/sessions/:id/abort, /api/sessions/:id/reply instead.' }));
