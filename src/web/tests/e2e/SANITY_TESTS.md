@@ -129,8 +129,8 @@
 | TC-PRO05 | 팀원 클릭 → DM 채팅 | 사이드바 팀원 클릭 -> 메인 영역에 DM 채팅 뷰 (MessageList + Talk/Do + InputBar) | PASS |
 | TC-PRO06 | DM 빈 상태 | 세션 없는 Role 클릭 -> 캐릭터 아바타 + "Start a conversation" + InputBar | PASS |
 | TC-PRO07 | DM 헤더 | 아바타 + Role Name + Level 정보 + Profile 버튼 + Dashboard 버튼 | PASS |
-| TC-PRO08 | Profile 패널 열기 | 헤더 Profile 버튼 클릭 -> 오른쪽 340px 프로필 패널 표시 | PASS |
-| TC-PRO09 | Profile 패널 내용 | 큰 아바타 + Role ID + Name + Lv/상태/level/reportsTo 스탯바 + About + Authority + Direct Reports + Relationships + Journal | PASS |
+| TC-PRO08 | Profile 패널 열기 | 헤더 Profile 버튼 클릭 -> 오른쪽 420px 프로필 패널 (기존 SidePanel 재사용) | PASS |
+| TC-PRO09 | Profile 패널 내용 | 큰 아바타 + Role ID + Name + Lv/상태/level/reportsTo + Latest + Talk/Do + Profile/Authority/Relationships/Journal 아코디언 + Cloud Store + Fire Role | PASS |
 | TC-PRO10 | Profile 패널 닫기 | × 버튼 또는 Profile 버튼 재클릭 -> 패널 닫힘, 채팅 유지 | PASS |
 | TC-PRO11 | 팀원 전환 | 다른 팀원 클릭 -> 채팅 + 프로필 모두 해당 Role로 전환 | PASS |
 | TC-PRO12 | 채널 전환 (general) | general 클릭 -> TerminalPanel 렌더링 | - |

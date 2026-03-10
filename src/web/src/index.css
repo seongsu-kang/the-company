@@ -104,6 +104,9 @@ body {
 }
 
 /* Pro View: panels render inline (full-width) instead of fixed overlay */
+.pro-panel-inline {
+  position: relative !important;
+}
 .pro-panel-inline .side-panel,
 .pro-panel-inline .dimmer {
   position: absolute !important;

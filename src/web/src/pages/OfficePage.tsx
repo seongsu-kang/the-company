@@ -1909,14 +1909,14 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           companyName={companyName}
           getAppearance={getAppearance}
           waveCenterWaves={waveCenterWaves}
-          profileContent={proChannel.type === 'role' && selectedRole ? (() => {
+          renderProfile={proChannel.type === 'role' && selectedRole ? (closeProfile) => {
             const roleExec = activeExecsByRole[selectedRole.id];
             return (
               <SidePanel
                 role={selectedRole}
                 allRoles={roles}
                 recentActivity={getRoleSpeechFull(selectedRole.id)}
-                onClose={() => {/* handled by ProView toggle */}}
+                onClose={closeProfile}
                 onFireRole={(id, name) => { setFireTarget({ roleId: id, roleName: name }); }}
                 terminalWidth={0}
                 activeJobId={roleExec?.id}
@@ -1939,7 +1939,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
                 roleLevel={roleLevels[selectedRole.id]?.level}
               />
             );
-          })() : undefined}
+          } : undefined}
           channel={proChannel}
           onChannelChange={(ch) => {
             setProChannel(ch);
