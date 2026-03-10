@@ -61,6 +61,7 @@ export default function WaveCenter({
   const [replayData, setReplayData] = useState<WaveReplay | null>(null);
   const [replayLoading, setReplayLoading] = useState(false);
   const [selectedWaveIdx, setSelectedWaveIdx] = useState(activeWaves.length > 0 ? 0 : -1);
+  const [composingNew, setComposingNew] = useState(false); // true when user clicked "+ New Wave"
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Active wave tracking
@@ -102,13 +103,21 @@ export default function WaveCenter({
     }
   }, [rootRoleId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // When new active wave starts, select it
+  // When new active wave starts, select it (but not if user is composing a new wave)
+  const prevActiveCount = useRef(activeWaves.length);
   useEffect(() => {
-    if (activeWaves.length > 0 && selectedWaveIdx < 0) {
+    const grew = activeWaves.length > prevActiveCount.current;
+    prevActiveCount.current = activeWaves.length;
+    if (grew) {
+      // A new wave just started — select it and exit composing mode
+      setSelectedWaveIdx(0);
+      setReplayData(null);
+      setComposingNew(false);
+    } else if (activeWaves.length > 0 && selectedWaveIdx < 0 && !composingNew) {
       setSelectedWaveIdx(0);
       setReplayData(null);
     }
-  }, [activeWaves.length, selectedWaveIdx]);
+  }, [activeWaves.length, selectedWaveIdx, composingNew]);
 
   // Code git status
   const [codeGit, setCodeGit] = useState<GitInfo | null>(null);
@@ -872,7 +881,7 @@ export default function WaveCenter({
             {/* New Wave button */}
             <div className="p-3 pb-0">
               <button
-                onClick={() => { setReplayData(null); setSelectedWaveIdx(-1); waveTree.reset(); }}
+                onClick={() => { setReplayData(null); setSelectedWaveIdx(-1); setComposingNew(true); waveTree.reset(); }}
                 className="w-full px-3 py-1.5 text-[11px] font-bold rounded-lg cursor-pointer transition-colors"
                 style={{
                   background: !replayData && selectedWaveIdx < 0 ? '#B71C1C' : 'var(--terminal-inline-bg)',
@@ -895,7 +904,7 @@ export default function WaveCenter({
                   {activeWaves.map((w, i) => (
                     <button
                       key={w.id}
-                      onClick={() => { setSelectedWaveIdx(i); setReplayData(null); }}
+                      onClick={() => { setSelectedWaveIdx(i); setReplayData(null); setComposingNew(false); }}
                       className="text-left p-2 rounded-lg cursor-pointer transition-colors"
                       style={{
                         background: selectedWaveIdx === i && !replayData ? 'var(--terminal-bg)' : 'transparent',

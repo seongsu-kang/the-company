@@ -603,6 +603,95 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
     api.getCostSummary().then((s) => updateRoleLevels(computeRoleLevels(s.byRole))).catch(() => {});
   };
 
+  // Track active wave session SSE controllers for cleanup
+  const waveStreamControllers = useRef<Map<string, AbortController>>(new Map());
+
+  /** Connect a wave session to its SSE activity stream to update chat messages in real-time */
+  const connectWaveSessionStream = (sessionId: string) => {
+    // Avoid duplicate connections
+    if (waveStreamControllers.current.has(sessionId)) return;
+    const controller = new AbortController();
+    waveStreamControllers.current.set(sessionId, controller);
+
+    setStreamingSessionId((prev) => prev ?? sessionId);
+
+    fetch(`/api/sessions/${sessionId}/stream?from=0`, { signal: controller.signal })
+      .then(async (resp) => {
+        if (!resp.ok || !resp.body) return;
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+
+          let currentEvent = '';
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              currentEvent = line.slice(7).trim();
+            } else if (line.startsWith('data: ')) {
+              try {
+                const payload = JSON.parse(line.slice(6));
+                if (currentEvent === 'stream:end') {
+                  setSessions((prev) => prev.map((s) => {
+                    if (s.id !== sessionId) return s;
+                    const msgs = s.messages.map((m) =>
+                      m.status === 'streaming' ? { ...m, status: 'done' as const } : m,
+                    );
+                    return { ...s, messages: msgs };
+                  }));
+                  setStreamingSessionId((prev) => prev === sessionId ? null : prev);
+                  waveStreamControllers.current.delete(sessionId);
+                } else if (currentEvent === 'activity') {
+                  if (payload.type === 'text' && payload.data?.text) {
+                    setSessions((prev) => prev.map((s) => {
+                      if (s.id !== sessionId) return s;
+                      const msgs = [...s.messages];
+                      const lastMsg = msgs[msgs.length - 1];
+                      if (lastMsg?.from === 'role' && lastMsg.status === 'streaming') {
+                        msgs[msgs.length - 1] = { ...lastMsg, content: lastMsg.content + payload.data.text };
+                      }
+                      return { ...s, messages: msgs };
+                    }));
+                  } else if (payload.type === 'thinking' && payload.data?.text) {
+                    setSessions((prev) => prev.map((s) => {
+                      if (s.id !== sessionId) return s;
+                      const msgs = [...s.messages];
+                      const lastMsg = msgs[msgs.length - 1];
+                      if (lastMsg?.from === 'role' && lastMsg.status === 'streaming') {
+                        msgs[msgs.length - 1] = { ...lastMsg, thinking: (lastMsg.thinking ?? '') + payload.data.text };
+                      }
+                      return { ...s, messages: msgs };
+                    }));
+                  } else if (payload.type === 'job:done' || payload.type === 'job:error') {
+                    setSessions((prev) => prev.map((s) => {
+                      if (s.id !== sessionId) return s;
+                      const msgs = s.messages.map((m) =>
+                        m.status === 'streaming' ? { ...m, status: payload.type === 'job:done' ? 'done' as const : 'error' as const } : m,
+                      );
+                      return { ...s, messages: msgs };
+                    }));
+                    setStreamingSessionId((prev) => prev === sessionId ? null : prev);
+                    waveStreamControllers.current.delete(sessionId);
+                  }
+                }
+              } catch { /* skip malformed */ }
+              currentEvent = '';
+            }
+          }
+        }
+      })
+      .catch(() => {
+        waveStreamControllers.current.delete(sessionId);
+        setStreamingSessionId((prev) => prev === sessionId ? null : prev);
+      });
+  };
+
 
   const handleWaveDispatch = async (directive: string, targetRoles?: string[], attachments?: ImageAttachment[]) => {
     setShowWaveModal(false);
@@ -691,13 +780,33 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
             updatedAt: now,
           }));
 
-      setSessions((prev) => [...waveSessions, ...prev]);
-      if (waveSessions.length > 0) {
-        setActiveSessionId(waveSessions[0].id);
+      // Add role streaming message to each wave session and connect SSE
+      const sessionsWithRoleMsg = waveSessions.map((ws, i) => ({
+        ...ws,
+        messages: [
+          ...ws.messages,
+          {
+            id: `msg-wave-${wj[i].jobId}-role`,
+            from: 'role' as const,
+            content: '',
+            type: 'conversation' as const,
+            status: 'streaming' as const,
+            timestamp: now,
+            jobId: wj[i].jobId,
+          },
+        ],
+      }));
+
+      setSessions((prev) => [...sessionsWithRoleMsg, ...prev]);
+      if (sessionsWithRoleMsg.length > 0) {
+        setActiveSessionId(sessionsWithRoleMsg[0].id);
         openTerminal();
       }
 
-      // SSE streams are managed by WaveCenter's useWaveTree hook — no duplicate connections here
+      // Connect each wave session to its SSE activity stream for live chat updates
+      for (const ws of sessionsWithRoleMsg) {
+        connectWaveSessionStream(ws.id);
+      }
     } catch (err) {
       addToast(`Failed to start wave: ${err instanceof Error ? err.message : 'unknown'}`, '#C62828');
     }
