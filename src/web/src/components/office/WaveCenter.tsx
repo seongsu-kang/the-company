@@ -1054,15 +1054,7 @@ function ReplayView({ replay, orgNodes, rootRoleId, onOpenKnowledgeDoc, onRefres
     if (!node) return;
     setReplying(true);
     try {
-      // Resolve session for this role
-      const roleIdx = replay.roles.findIndex(r => r.roleId === selectedRoleId);
-      const resolvedSessionId = node.sessionId || replay.sessionIds?.[roleIdx];
-      if (resolvedSessionId) {
-        await api.sendSessionMessage(resolvedSessionId, replyText.trim(), 'do');
-        setReplyText('');
-        return;
-      }
-      // Fallback: start a new assign job for this role
+      // Replay follow-up: start a new assign job for this role
       await api.startJob({ type: 'assign', roleId: selectedRoleId, task: replyText.trim() });
       setReplyText('');
     } catch (err) {

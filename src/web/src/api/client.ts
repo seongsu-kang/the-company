@@ -82,9 +82,6 @@ export const api = {
   deleteEmptySessions: () => del<{ deleted: number; ids: string[] }>('/sessions?empty=true'),
   updateSession: (id: string, patch: { title?: string; mode?: 'talk' | 'do' }) =>
     patch_<Session>(`/sessions/${id}`, patch),
-  /** D-014: Send a message to a session (returns SSE EventSource URL) */
-  sendSessionMessage: (sessionId: string, content: string, mode: 'talk' | 'do' = 'talk') =>
-    post<Record<string, unknown>>(`/exec/session/${sessionId}/message`, { content, mode }),
   /** SCA-011: Abort the active job linked to a session */
   abortSession: (sessionId: string) =>
     post<{ ok: boolean; jobId: string }>(`/sessions/${sessionId}/abort`, {}),
