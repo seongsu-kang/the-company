@@ -440,6 +440,20 @@ export default function MessageBubble({ message, roleId, roleColor }: Props) {
             {message.readOnly && <span className="text-blue-400/60">read-only</span>}
           </div>
         )}
+        {/* KP-006: Knowledge debt warnings */}
+        {message.knowledgeDebt && message.knowledgeDebt.length > 0 && (
+          <div className="mt-1.5 px-3 py-2 rounded-lg text-[10px]" style={{ background: '#FFA72615', border: '1px solid #FFA72630' }}>
+            <div className="font-bold mb-1" style={{ color: '#FFA726' }}>
+              Knowledge Debt ({message.knowledgeDebt.length})
+            </div>
+            {message.knowledgeDebt.map((d, i) => (
+              <div key={i} className="flex gap-1.5 mb-0.5" style={{ color: 'var(--terminal-text-muted)' }}>
+                <span style={{ color: '#FFA726' }}>{d.type === 'orphan' ? '\u26A0' : d.type === 'no-hub' ? '\u{1F4C1}' : '\u{1F517}'}</span>
+                <span>{d.message}{d.file ? ` (${d.file})` : ''}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

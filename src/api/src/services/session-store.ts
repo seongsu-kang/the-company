@@ -39,6 +39,8 @@ export interface Message {
   /** Execution stats */
   turns?: number;
   tokens?: { input: number; output: number };
+  /** KP-006: Knowledge debt warnings from Post-K check */
+  knowledgeDebt?: Array<{ type: string; file?: string; message: string }>;
 }
 
 /** How this session was created */
@@ -193,7 +195,7 @@ export function addMessage(sessionId: string, msg: Message, streaming = false): 
 }
 
 /** Fields that can be updated on a message */
-export type MessageUpdate = Partial<Pick<Message, 'content' | 'status' | 'turns' | 'tokens' | 'dispatches' | 'readOnly'>>;
+export type MessageUpdate = Partial<Pick<Message, 'content' | 'status' | 'turns' | 'tokens' | 'dispatches' | 'readOnly' | 'knowledgeDebt'>>;
 
 export function updateMessage(sessionId: string, messageId: string, updates: MessageUpdate): Session | undefined {
   const session = cache.get(sessionId);
@@ -208,6 +210,7 @@ export function updateMessage(sessionId: string, messageId: string, updates: Mes
   if (updates.tokens !== undefined) msg.tokens = updates.tokens;
   if (updates.dispatches !== undefined) msg.dispatches = updates.dispatches;
   if (updates.readOnly !== undefined) msg.readOnly = updates.readOnly;
+  if (updates.knowledgeDebt !== undefined) msg.knowledgeDebt = updates.knowledgeDebt;
   session.updatedAt = new Date().toISOString();
 
   if (updates.status === 'done' || updates.status === 'error') {

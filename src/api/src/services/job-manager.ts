@@ -544,6 +544,10 @@ class JobManager {
         turns: result.turns,
         tokens: result.totalTokens,
       }),
+      // KP-006: Include knowledge debt in session message
+      ...(job.knowledgeDebt && job.knowledgeDebt.length > 0 && {
+        knowledgeDebt: job.knowledgeDebt.map(d => ({ type: d.type, file: d.file, message: d.message })),
+      }),
     });
   }
 

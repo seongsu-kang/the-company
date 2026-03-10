@@ -132,6 +132,7 @@ export interface Message {
   readOnly?: boolean;
   turns?: number;
   tokens?: { input: number; output: number };
+  knowledgeDebt?: Array<{ type: string; file?: string; message: string }>;
 }
 
 export interface RoleSource {
