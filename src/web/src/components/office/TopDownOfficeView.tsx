@@ -1066,6 +1066,22 @@ function spawnHearts(cx: number, cy: number) {
   }
 }
 
+/* ── Spawn sweat particles (role click) ── */
+function spawnSweat(cx: number, cy: number) {
+  for (let i = 0; i < 3; i++) {
+    _particles.push({
+      x: cx + (Math.random() - 0.5) * 8,
+      y: cy,
+      vx: (Math.random() - 0.5) * 0.3,
+      vy: -0.3 - Math.random() * 0.2,
+      life: 60 + Math.floor(Math.random() * 30),
+      maxLife: 80,
+      char: '💧',
+      color: '#64B5F6',
+    });
+  }
+}
+
 /* ═══════════════════════════════════════════
    REACT COMPONENT
    ═══════════════════════════════════════════ */
@@ -1763,13 +1779,13 @@ export default function TopDownOfficeView({
     const hit = hitTest(e);
     if (!hit) return;
     if (hit.type === 'role') {
-      // Spawn heart particles (CEO shows appreciation!)
+      // Spawn sweat particles (employees working hard!)
       const ch = charsRef.current[hit.id];
       const d = DESKS[hit.id];
       if (ch && d) {
         const cx = ch.state === 'sitting' ? d.dx + 13 : Math.round(ch.x) + 6;
         const cy = ch.state === 'sitting' ? d.dy + 2 : Math.round(ch.y) - 2;
-        spawnHearts(cx, cy);
+        spawnSweat(cx, cy);
       }
       onRoleClick(hit.id);
       return;
