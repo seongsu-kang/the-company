@@ -9,6 +9,7 @@ import type { RunnerResult } from '../engine/runners/types.js';
 import { estimateCost } from './pricing.js';
 import { readConfig, getConversationLimits } from './company-config.js';
 import { postKnowledgingCheck, type KnowledgeDebtItem } from '../engine/knowledge-gate.js';
+import { earnCoinsInternal } from '../routes/coins.js';
 import { getSession, updateMessage as updateSessionMessage, appendMessageEvent } from './session-store.js';
 
 /* ─── Types ──────────────────────────────── */
@@ -438,6 +439,16 @@ class JobManager {
           if (job.sessionId) {
             this.finalizeSessionMessage(job, 'done', result);
           }
+
+          // EC-011: Job completion bonus (only for top-level jobs, not child dispatches)
+          if (!params.parentJobId && result) {
+            const totalTokens = (result.totalTokens?.input ?? 0) + (result.totalTokens?.output ?? 0);
+            const bonus = Math.min(2000, Math.max(500, Math.round(totalTokens / 500)));
+            try {
+              earnCoinsInternal(bonus, `Job done: ${params.roleId}`, `job:${job.id}`);
+            } catch { /* non-critical */ }
+          }
+
           // Cleanup orphaned child jobs (awaiting_input with no parent to respond)
           this.cleanupOrphanedChildren(job.id);
         }

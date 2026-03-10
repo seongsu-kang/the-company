@@ -15,6 +15,7 @@ import {
 } from '../services/session-store.js';
 import { jobManager, type Job } from '../services/job-manager.js';
 import { ActivityStream, type ActivityEvent, type ActivitySubscriber } from '../services/activity-stream.js';
+import { earnCoinsInternal } from './coins.js';
 
 /* ─── Runner — lazy, re-created when engine changes ── */
 
@@ -466,6 +467,14 @@ function handleSaveWave(body: Record<string, unknown>, res: ServerResponse): voi
     ...(sessionIds && sessionIds.length > 0 && { sessionIds }),
   };
   fs.writeFileSync(jsonPath, JSON.stringify(waveJson, null, 2), 'utf-8');
+
+  // EC-012: Wave completion bonus (participating roles × 500 coins)
+  const roleCount = rolesData.length;
+  if (roleCount > 0) {
+    try {
+      earnCoinsInternal(roleCount * 500, `Wave done: ${roleCount} roles`, `wave:${baseName}`);
+    } catch { /* non-critical */ }
+  }
 
   jsonResponse(res, 200, { ok: true, path: `operations/waves/${baseName}.json` });
 }
