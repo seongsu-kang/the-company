@@ -323,21 +323,28 @@ export default function useWaveTree(
   // SSE-005: Use multiplexed wave stream when waveId is available
   const startedSessionsRef = useRef<Set<string>>(new Set());
   const usingMultiplexRef = useRef(false);
+  const orgNodesRef = useRef(orgNodes);
+  orgNodesRef.current = orgNodes;
+  const rootJobsRef = useRef(rootJobs);
+  rootJobsRef.current = rootJobs;
+
+  // Multiplexed wave stream effect — depends only on waveId
   useEffect(() => {
-    if (rootJobs.length === 0) return;
+    if (!waveId || rootJobsRef.current.length === 0) return;
 
-    // SSE-005: Prefer multiplexed stream (1 connection) over per-role streams (N connections)
-    if (waveId) {
-      usingMultiplexRef.current = true;
-      connectWaveStream(waveId, setNodes, orgNodes);
+    usingMultiplexRef.current = true;
+    connectWaveStream(waveId, setNodes, orgNodesRef.current);
 
-      return () => {
-        disconnectWaveStream();
-        usingMultiplexRef.current = false;
-      };
-    }
+    return () => {
+      disconnectWaveStream();
+      usingMultiplexRef.current = false;
+    };
+  }, [waveId, connectWaveStream, disconnectWaveStream]);
 
-    // Fallback: per-role SSE (for cases without waveId, e.g. legacy)
+  // Fallback: per-role SSE (for cases without waveId, e.g. legacy)
+  useEffect(() => {
+    if (waveId || rootJobs.length === 0) return;
+
     usingMultiplexRef.current = false;
     const sessionIds = new Set<string>();
     for (const rj of rootJobs) {
@@ -347,7 +354,6 @@ export default function useWaveTree(
     startedSessionsRef.current = sessionIds;
 
     return () => {
-      // Only abort streams started by this effect
       for (const sid of startedSessionsRef.current) {
         const stream = streamsRef.current.get(sid);
         if (stream) {
@@ -357,7 +363,7 @@ export default function useWaveTree(
       }
       startedSessionsRef.current.clear();
     };
-  }, [rootJobs, connectStream, waveId, connectWaveStream, disconnectWaveStream, orgNodes]);
+  }, [rootJobs, connectStream, waveId]);
 
   // Progress
   const progress = (() => {

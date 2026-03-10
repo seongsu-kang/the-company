@@ -118,6 +118,13 @@ export function createHttpServer(): http.Server {
     const url = req.url ?? '';
     const method = req.method ?? '';
 
+    // SSE multiplexed wave stream (GET /api/waves/:waveId/stream)
+    if (url.match(/^\/api\/waves\/[^/]+\/stream/) && method === 'GET') {
+      setExecCors(req, res);
+      handleExecRequest(req, res);
+      return;
+    }
+
     // SSE 엔드포인트: Express 우회하여 raw HTTP로 처리
     if ((url.startsWith('/api/exec/') || url.startsWith('/api/jobs') || url === '/api/waves/save' || url === '/api/setup/import-knowledge') && method === 'POST') {
       setExecCors(req, res);
