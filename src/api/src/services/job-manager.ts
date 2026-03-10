@@ -10,7 +10,7 @@ import { estimateCost } from './pricing.js';
 import { readConfig, getConversationLimits } from './company-config.js';
 import { postKnowledgingCheck, type KnowledgeDebtItem } from '../engine/knowledge-gate.js';
 import { earnCoinsInternal } from '../routes/coins.js';
-import { getSession, createSession, addMessage, updateMessage as updateSessionMessage, appendMessageEvent, type Message } from './session-store.js';
+import { getSession, createSession, addMessage, updateMessage as updateSessionMessage, appendMessageEvent, type Message, type ImageAttachment } from './session-store.js';
 import { portRegistry, type PortAllocation } from './port-registry.js';
 
 /* ─── Types ──────────────────────────────── */
@@ -73,7 +73,7 @@ export interface StartJobParams {
   /** D-014: Link this job to a session (internal tracking) */
   sessionId?: string;
   /** Image attachments (base64 encoded) */
-  attachments?: Array<{ type: 'image'; data: string; name: string; mediaType: string }>;
+  attachments?: ImageAttachment[];
 }
 
 /* ─── Helpers ────────────────────────────── */

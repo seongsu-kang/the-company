@@ -599,10 +599,10 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   };
 
 
-  const handleWaveDispatch = async (directive: string, targetRoles?: string[]) => {
+  const handleWaveDispatch = async (directive: string, targetRoles?: string[], attachments?: ImageAttachment[]) => {
     setShowWaveModal(false);
     try {
-      const resp = await api.startJob({ type: 'wave', directive, targetRoles });
+      const resp = await api.startJob({ type: 'wave', directive, targetRoles, ...(attachments && { attachments }) });
       fireQuestTrigger({ type: 'wave_dispatched' });
       // Wave returns { jobIds: string[] } — one per C-Level role
       const jobIds: string[] = resp.jobIds ?? (resp.jobId ? [resp.jobId] : []);

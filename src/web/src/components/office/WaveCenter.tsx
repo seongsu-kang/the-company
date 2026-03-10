@@ -34,7 +34,7 @@ interface Props {
   cLevelRoles: { id: string; name: string }[];
   pastWaves: Wave[];
   activeWaves: ActiveWave[];
-  onDispatch: (directive: string, targetRoles?: string[]) => void;
+  onDispatch: (directive: string, targetRoles?: string[], attachments?: ImageAttachment[]) => void;
   onClose: () => void;
   onDone?: () => void;
   onSave?: (directive: string, jobIds: string[], extra?: { waveId?: string; sessionIds?: string[] }) => Promise<void>;
@@ -298,11 +298,13 @@ export default function WaveCenter({
   // ── Handlers ──
 
   const handleDispatch = () => {
-    if (!directive.trim() || checkedTargetCount === 0) return;
+    if ((!directive.trim() && attachments.length === 0) || checkedTargetCount === 0) return;
     const allNonCeo = Array.from(waveTree.nodes.keys()).filter(id => id !== rootRoleId);
     const allChecked = allNonCeo.every(id => waveTree.checkedRoles.has(id));
-    onDispatch(directive.trim(), allChecked ? undefined : Array.from(waveTree.checkedRoles));
+    const atts = attachments.length > 0 ? attachments : undefined;
+    onDispatch(directive.trim(), allChecked ? undefined : Array.from(waveTree.checkedRoles), atts);
     setDirective('');
+    setAttachments([]);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -586,12 +588,29 @@ export default function WaveCenter({
 
                 {/* Directive input */}
                 <div className="px-4 py-3 border-t shrink-0" style={{ borderColor: 'var(--terminal-border)', background: 'var(--hud-bg-alt)' }}>
+                  {/* Attachment previews for directive */}
+                  {attachments.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {attachments.map((att, idx) => (
+                        <div key={idx} className="relative group w-14 h-14 rounded-lg overflow-hidden border border-[var(--terminal-border)] bg-[var(--terminal-inline-bg)]">
+                          <img src={`data:${att.mediaType};base64,${att.data}`} alt={att.name} className="w-full h-full object-cover" />
+                          <button onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))} className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/70 text-white text-[9px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">x</button>
+                          <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[7px] text-white truncate px-1">{att.name}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {attachError && <div className="text-[10px] text-red-400 mb-1">{attachError}</div>}
                   <div className="flex gap-2 items-end">
+                    <button onClick={() => fileInputRef.current?.click()} className="w-8 h-8 rounded-lg bg-[var(--terminal-inline-bg)] border border-[var(--terminal-border)] text-[var(--terminal-text-muted)] flex items-center justify-center shrink-0 cursor-pointer hover:text-[var(--terminal-text-secondary)] transition-colors" title="Attach image">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
+                    </button>
                     <textarea
                       ref={inputRef}
                       value={directive}
                       onChange={(e) => setDirective(e.target.value)}
                       onKeyDown={handleKeyDown}
+                      onPaste={handlePaste}
                       placeholder="e.g. Report current status across all departments"
                       rows={2}
                       className="flex-1 px-3 py-2 text-sm rounded-lg border bg-[var(--terminal-bg)] text-[var(--terminal-text)] outline-none resize-none"
@@ -599,7 +618,7 @@ export default function WaveCenter({
                     />
                     <button
                       onClick={handleDispatch}
-                      disabled={!directive.trim() || checkedTargetCount === 0}
+                      disabled={(!directive.trim() && attachments.length === 0) || checkedTargetCount === 0}
                       className="px-4 py-2 text-xs font-bold rounded-lg cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
                       style={{
                         background: directive.trim() && checkedTargetCount > 0 ? '#B71C1C' : '#333',

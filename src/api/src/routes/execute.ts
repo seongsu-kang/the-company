@@ -105,7 +105,7 @@ function handleStartJob(body: Record<string, unknown>, res: ServerResponse): voi
   const targetRole = (body.targetRole as string) || 'cto';
   const parentJobId = body.parentJobId as string | undefined;
   const waveId = body.waveId as string | undefined;
-  const attachments = body.attachments as Array<{ type: 'image'; data: string; name: string; mediaType: string }> | undefined;
+  const attachments = body.attachments as ImageAttachment[] | undefined;
 
   // Wave shorthand — broadcast to C-level direct reports (optionally filtered)
   if (type === 'wave') {
@@ -155,6 +155,7 @@ function handleStartJob(body: Record<string, unknown>, res: ServerResponse): voi
         type: 'directive',
         status: 'done',
         timestamp: new Date().toISOString(),
+        attachments,
       };
       addMessage(session.id, ceoMsg);
 
@@ -166,6 +167,7 @@ function handleStartJob(body: Record<string, unknown>, res: ServerResponse): voi
         parentJobId,
         targetRoles: fullTargetScope,
         sessionId: session.id,       // D-014: link job to session
+        attachments,
       });
       jobIds.push(job.id);
 
