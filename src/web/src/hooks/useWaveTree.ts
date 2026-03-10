@@ -25,6 +25,8 @@ export interface UseWaveTreeResult {
   allDone: boolean;
   connectStream: (sessionId: string, roleId: string) => void;
   injectStaticNodes: (staticNodes: Map<string, WaveNode>) => void;
+  /** Reset to fresh org tree (clears replay state) */
+  reset: () => void;
 }
 
 interface StreamState {
@@ -371,6 +373,24 @@ export default function useWaveTree(
     });
   }, [allDone]);
 
+  const reset = useCallback(() => {
+    // Abort all streams
+    for (const [, stream] of streamsRef.current) {
+      stream.controller.abort();
+    }
+    streamsRef.current.clear();
+    injectedRef.current = false;
+    // Rebuild fresh org tree
+    const result = buildOrgTree();
+    if (result) {
+      setNodes(result.initial);
+      const nonCeo = new Set(result.allRoles);
+      nonCeo.delete(rootRoleId);
+      setCheckedRoles(nonCeo);
+    }
+    setSelectedRoleId(rootRoleId);
+  }, [buildOrgTree, rootRoleId]);
+
   return {
     nodes,
     selectedRoleId,
@@ -382,5 +402,6 @@ export default function useWaveTree(
     allDone,
     connectStream,
     injectStaticNodes,
+    reset,
   };
 }

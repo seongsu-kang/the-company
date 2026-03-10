@@ -869,6 +869,22 @@ export default function WaveCenter({
               style={{ left: -2 }}
               onMouseDown={handleSidebarResizeStart}
             />
+            {/* New Wave button */}
+            <div className="p-3 pb-0">
+              <button
+                onClick={() => { setReplayData(null); setSelectedWaveIdx(-1); waveTree.reset(); }}
+                className="w-full px-3 py-1.5 text-[11px] font-bold rounded-lg cursor-pointer transition-colors"
+                style={{
+                  background: !replayData && selectedWaveIdx < 0 ? '#B71C1C' : 'var(--terminal-inline-bg)',
+                  color: !replayData && selectedWaveIdx < 0 ? '#fff' : 'var(--terminal-text-secondary)',
+                  border: '1px solid',
+                  borderColor: !replayData && selectedWaveIdx < 0 ? '#B71C1C' : 'var(--terminal-border)',
+                }}
+              >
+                + New Wave
+              </button>
+            </div>
+
             {/* Active waves */}
             {activeWaves.length > 0 && (
               <div className="p-3">
