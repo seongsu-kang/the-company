@@ -95,11 +95,11 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
 
   /* Phase 2: Execution state — now job-based */
   const [assignModal, setAssignModal] = useState<{ roleId: string; roleName: string; mode: 'assign' | 'ask' } | null>(null);
-  const [jobStack, setJobStack] = useState<Array<{ jobId: string; title: string; color: string }>>([]);
+  const [jobStack, setJobStack] = useState<Array<{ jobId: string; sessionId?: string; title: string; color: string }>>([]);
   const [showWaveModal, setShowWaveModal] = useState(false);
   const [showWaveCenter, setShowWaveCenter] = useState(false);
-  const [waveCenterWaves, setWaveCenterWaves] = useState<Array<{ id: string; directive: string; rootJobs: Array<{ jobId: string; roleId: string; roleName: string }>; startedAt: number }>>([]);
-  const [waveJobs, setWaveJobs] = useState<Array<{ jobId: string; roleId: string; roleName: string }>>([]);
+  const [waveCenterWaves, setWaveCenterWaves] = useState<Array<{ id: string; directive: string; rootJobs: Array<{ jobId: string; roleId: string; roleName: string; sessionId?: string }>; startedAt: number }>>([]);
+  const [waveJobs, setWaveJobs] = useState<Array<{ jobId: string; roleId: string; roleName: string; sessionId?: string }>>([]);
   const [waveActiveIdx, setWaveActiveIdx] = useState(0);
   const [jobMinimized, setJobMinimized] = useState(false);
 
@@ -108,7 +108,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   const [orgRootId, setOrgRootId] = useState('ceo');
   const [waveState, setWaveState] = useState<{
     directive: string;
-    rootJobs: Array<{ jobId: string; roleId: string; roleName: string }>;
+    rootJobs: Array<{ jobId: string; roleId: string; roleName: string; sessionId?: string }>;
   } | null>(null);
   const [waveMinimized, setWaveMinimized] = useState(false);
   const [waveDone, setWaveDone] = useState(false);
@@ -459,11 +459,13 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
     setAssignModal(null);
 
     try {
-      const { jobId } = await api.startJob({ type: 'assign', roleId, task, readOnly: isAsk });
+      const resp = await api.startJob({ type: 'assign', roleId, task, readOnly: isAsk });
+      const jobId = resp.jobId;
+      const sessionId = resp.sessionId;
       const color = ROLE_COLORS[roleId] ?? '#666';
       const title = `${roleId.toUpperCase()} · ${role?.name ?? roleId}`;
       setJobMinimized(false);
-      setJobStack([{ jobId, title, color }]);
+      setJobStack([{ jobId, sessionId, title, color }]);
       fireQuestTrigger({ type: 'task_executed', condition: { roleId } });
       // Log to #office
       officeChat.pushMessage({
@@ -601,7 +603,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
   };
 
   /** Connect SSE stream for a wave job → update virtual terminal session */
-  const connectWaveStream = (jobId: string, _roleId: string) => {
+  const connectWaveStream = (jobId: string, _roleId: string, serverSessionId?: string) => {
     const sessionId = `wave-${jobId}`;
     const controller = new AbortController();
     waveStreamsRef.current.set(jobId, controller);
@@ -620,7 +622,11 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
       s.id === sessionId ? { ...s, messages: [...s.messages, roleMsg] } : s,
     ));
 
-    fetch(`/api/jobs/${jobId}/stream?from=0`, { signal: controller.signal })
+    // SCA-012: prefer session stream
+    const streamUrl = serverSessionId
+      ? `/api/sessions/${serverSessionId}/stream?from=0`
+      : `/api/jobs/${jobId}/stream?from=0`;
+    fetch(streamUrl, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok || !response.body) return;
         const reader = response.body.getReader();
@@ -722,6 +728,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
         jobId: jid,
         roleId: cLevels[i]?.id ?? `role-${i}`,
         roleName: cLevels[i]?.name ?? `C-Level ${i + 1}`,
+        sessionId: serverSessionIds[i],
       }));
 
       // Log wave to #office
@@ -798,7 +805,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
 
       // Connect SSE streams for each wave job
       for (const w of wj) {
-        connectWaveStream(w.jobId, w.roleId);
+        connectWaveStream(w.jobId, w.roleId, w.sessionId);
       }
     } catch (err) {
       addToast(`Failed to start wave: ${err instanceof Error ? err.message : 'unknown'}`, '#C62828');
@@ -1840,7 +1847,14 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
           activeTask={roleExec?.task}
           isWorking={effectiveRoleStatuses[selectedRole.id] === 'working'}
           jobStartedAt={roleExec?.startedAt}
-          onStopJob={(jobId) => api.abortJob(jobId)}
+          onStopJob={(jobId) => {
+            const entry = jobStack.find(j => j.jobId === jobId);
+            if (entry?.sessionId) {
+              api.abortSession(entry.sessionId);
+            } else {
+              api.abortJob(jobId);
+            }
+          }}
           sessions={sessions}
           streamingSessionId={streamingSessionId}
           onCreateSessionSilent={handleCreateSessionSilent}
@@ -1923,7 +1937,14 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
                 activeTask={roleExec?.task}
                 isWorking={effectiveRoleStatuses[selectedRole.id] === 'working'}
                 jobStartedAt={roleExec?.startedAt}
-                onStopJob={(jobId) => api.abortJob(jobId)}
+                onStopJob={(jobId) => {
+            const entry = jobStack.find(j => j.jobId === jobId);
+            if (entry?.sessionId) {
+              api.abortSession(entry.sessionId);
+            } else {
+              api.abortJob(jobId);
+            }
+          }}
                 sessions={sessions}
                 streamingSessionId={streamingSessionId}
                 onCreateSessionSilent={handleCreateSessionSilent}
@@ -2220,6 +2241,7 @@ export default function OfficePage({ importJob, onImportDone }: { importJob?: Im
             <ActivityPanel
               key={current.jobId}
               jobId={current.jobId}
+              sessionId={current.sessionId}
               title={jobStack.length > 1
                 ? current.title
                 : isWave

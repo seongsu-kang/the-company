@@ -11,7 +11,14 @@ interface UseActivityStreamResult {
   reconnect: () => void;
 }
 
-export default function useActivityStream(jobId: string | null): UseActivityStreamResult {
+/**
+ * SCA-012: Accepts jobId OR sessionId. When sessionId is provided,
+ * streams from the session-based endpoint; otherwise falls back to job endpoint.
+ */
+export default function useActivityStream(
+  jobId: string | null,
+  sessionId?: string | null,
+): UseActivityStreamResult {
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [status, setStatus] = useState<StreamStatus>('idle');
   const [textOutput, setTextOutput] = useState('');
@@ -20,8 +27,10 @@ export default function useActivityStream(jobId: string | null): UseActivityStre
   const controllerRef = useRef<AbortController | null>(null);
   const reconnectRef = useRef(0);
 
+  const streamTarget = sessionId ?? jobId;
+
   const connect = useCallback(() => {
-    if (!jobId) return;
+    if (!streamTarget) return;
 
     controllerRef.current?.abort();
     const controller = new AbortController();
@@ -30,7 +39,10 @@ export default function useActivityStream(jobId: string | null): UseActivityStre
     setStatus('connecting');
 
     const fromSeq = lastSeqRef.current + 1;
-    const url = `/api/jobs/${jobId}/stream?from=${fromSeq}`;
+    // SCA-012: prefer session stream, fall back to job stream
+    const url = sessionId
+      ? `/api/sessions/${sessionId}/stream?from=${fromSeq}`
+      : `/api/jobs/${streamTarget}/stream?from=${fromSeq}`;
 
     fetch(url, { signal: controller.signal })
       .then(async (response) => {
@@ -117,16 +129,16 @@ export default function useActivityStream(jobId: string | null): UseActivityStre
           setTimeout(connect, 1000 * reconnectRef.current);
         }
       });
-  }, [jobId]);
+  }, [streamTarget, sessionId]);
 
   const reconnect = useCallback(() => {
     reconnectRef.current = 0;
     connect();
   }, [connect]);
 
-  // Connect when jobId changes
+  // Connect when target changes
   useEffect(() => {
-    if (!jobId) {
+    if (!streamTarget) {
       setEvents([]);
       setStatus('idle');
       setTextOutput('');
@@ -135,7 +147,7 @@ export default function useActivityStream(jobId: string | null): UseActivityStre
       return;
     }
 
-    // Reset state for new job
+    // Reset state for new stream target
     setEvents([]);
     setTextOutput('');
     setChildJobIds([]);
@@ -147,7 +159,7 @@ export default function useActivityStream(jobId: string | null): UseActivityStre
     return () => {
       controllerRef.current?.abort();
     };
-  }, [jobId, connect]);
+  }, [streamTarget, connect]);
 
   return { events, status, textOutput, childJobIds, reconnect };
 }

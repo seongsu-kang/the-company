@@ -16,7 +16,7 @@ const ROLE_COLORS: Record<string, string> = {
 interface ActiveWave {
   id: string;
   directive: string;
-  rootJobs: Array<{ jobId: string; roleId: string; roleName: string }>;
+  rootJobs: Array<{ jobId: string; roleId: string; roleName: string; sessionId?: string }>;
   startedAt: number;
   /** D-014: Server-generated session IDs (one per role) */
   sessionIds?: string[];
@@ -484,9 +484,16 @@ function MonitorView({
 
     setReplying(true);
     try {
-      const { jobId: newJobId } = await api.replyToJob(node.jobId, replyText.trim());
-      setReplyText('');
-      connectStream(newJobId, selectedRoleId);
+      // SCA-012: prefer session-based reply
+      if (node.sessionId) {
+        const { jobId: newJobId } = await api.replyToSession(node.sessionId, replyText.trim());
+        setReplyText('');
+        connectStream(newJobId, selectedRoleId, node.sessionId);
+      } else {
+        const { jobId: newJobId } = await api.replyToJob(node.jobId, replyText.trim());
+        setReplyText('');
+        connectStream(newJobId, selectedRoleId);
+      }
     } catch (err) {
       console.error('Reply failed:', err);
     } finally {
@@ -497,13 +504,25 @@ function MonitorView({
   const handleForceStop = useCallback(async (roleId: string) => {
     const node = nodes.get(roleId);
     if (!node?.jobId) return;
-    try { await api.abortJob(node.jobId); } catch { /* ignore */ }
+    try {
+      if (node.sessionId) {
+        await api.abortSession(node.sessionId);
+      } else {
+        await api.abortJob(node.jobId);
+      }
+    } catch { /* ignore */ }
   }, [nodes]);
 
   const handleStopAll = useCallback(async () => {
     for (const [, node] of nodes) {
       if ((node.status === 'running' || node.status === 'awaiting_input') && node.jobId) {
-        try { await api.abortJob(node.jobId); } catch { /* ignore */ }
+        try {
+          if (node.sessionId) {
+            await api.abortSession(node.sessionId);
+          } else {
+            await api.abortJob(node.jobId);
+          }
+        } catch { /* ignore */ }
       }
     }
   }, [nodes]);
@@ -1040,7 +1059,14 @@ function ReplayView({ replay, orgNodes, rootRoleId, onOpenKnowledgeDoc, onRefres
         return;
       }
 
-      // Legacy: Try replyToJob (works if job still in memory)
+      // SCA-012: Try session-based reply, then job reply, then fallback
+      if (node.sessionId) {
+        try {
+          await api.replyToSession(node.sessionId, replyText.trim());
+          setReplyText('');
+          return;
+        } catch { /* fall through */ }
+      }
       if (node.jobId) {
         try {
           await api.replyToJob(node.jobId, replyText.trim());

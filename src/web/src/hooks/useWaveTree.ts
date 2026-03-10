@@ -6,6 +6,7 @@ export type WaveNodeStatus = 'waiting' | 'running' | 'done' | 'error' | 'not-dis
 
 export interface WaveNode {
   jobId: string | null;
+  sessionId?: string | null;
   roleId: string;
   roleName: string;
   children: string[];
@@ -20,7 +21,7 @@ interface UseWaveTreeResult {
   selectNode: (roleId: string) => void;
   progress: { done: number; total: number; running: number; awaitingInput: number };
   allDone: boolean;
-  connectStream: (jobId: string, roleId: string) => void;
+  connectStream: (jobId: string, roleId: string, sessionId?: string) => void;
 }
 
 interface StreamState {
@@ -29,7 +30,7 @@ interface StreamState {
 }
 
 export default function useWaveTree(
-  rootJobs: Array<{ jobId: string; roleId: string; roleName?: string }>,
+  rootJobs: Array<{ jobId: string; roleId: string; roleName?: string; sessionId?: string }>,
   orgNodes: Record<string, OrgNode>,
   rootRoleId: string,
 ): UseWaveTreeResult {
@@ -82,6 +83,7 @@ export default function useWaveTree(
       const node = initial.get(rj.roleId);
       if (node) {
         node.jobId = rj.jobId;
+        node.sessionId = rj.sessionId;
         node.status = 'running';
         node.streamStatus = 'connecting';
       }
@@ -93,21 +95,25 @@ export default function useWaveTree(
     }
   }, [rootJobs, orgNodes, rootRoleId]);
 
-  // Connect SSE for a job
-  const connectStream = useCallback((jobId: string, roleId: string) => {
-    console.log(`[WaveTree] connectStream → role=${roleId} job=${jobId}`);
+  // Connect SSE for a job (SCA-012: prefer session-based stream)
+  const connectStream = useCallback((jobId: string, roleId: string, sessionId?: string) => {
+    console.log(`[WaveTree] connectStream → role=${roleId} job=${jobId} session=${sessionId ?? 'none'}`);
     // Cleanup existing stream for this jobId
-    const existing = streamsRef.current.get(jobId);
+    const streamKey = sessionId ?? jobId;
+    const existing = streamsRef.current.get(streamKey);
     if (existing) {
       existing.controller.abort();
     }
 
     const controller = new AbortController();
     const state: StreamState = { controller, lastSeq: -1 };
-    streamsRef.current.set(jobId, state);
+    streamsRef.current.set(streamKey, state);
 
     const fromSeq = 0;
-    const url = `/api/jobs/${jobId}/stream?from=${fromSeq}`;
+    // SCA-012: prefer session stream, fall back to job stream
+    const url = sessionId
+      ? `/api/sessions/${sessionId}/stream?from=${fromSeq}`
+      : `/api/jobs/${jobId}/stream?from=${fromSeq}`;
 
     fetch(url, { signal: controller.signal })
       .then(async (response) => {
@@ -252,7 +258,7 @@ export default function useWaveTree(
     if (rootJobs.length === 0) return;
 
     for (const rj of rootJobs) {
-      connectStream(rj.jobId, rj.roleId);
+      connectStream(rj.jobId, rj.roleId, rj.sessionId);
     }
 
     return () => {

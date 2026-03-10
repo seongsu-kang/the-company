@@ -13,7 +13,7 @@ const ROLE_COLORS: Record<string, string> = {
 
 interface Props {
   directive: string;
-  rootJobs: Array<{ jobId: string; roleId: string; roleName: string }>;
+  rootJobs: Array<{ jobId: string; roleId: string; roleName: string; sessionId?: string }>;
   orgNodes: Record<string, OrgNode>;
   rootRoleId: string;
   onClose: () => void;
@@ -58,10 +58,16 @@ export default function WaveCommandCenter({
 
     setReplying(true);
     try {
-      const { jobId: newJobId } = await api.replyToJob(node.jobId, replyText.trim());
-      setReplyText('');
-      // Connect to the new continuation job stream
-      connectStream(newJobId, selectedRoleId);
+      // SCA-012: prefer session-based reply, fall back to job reply
+      if (node.sessionId) {
+        const { jobId: newJobId } = await api.replyToSession(node.sessionId, replyText.trim());
+        setReplyText('');
+        connectStream(newJobId, selectedRoleId, node.sessionId);
+      } else {
+        const { jobId: newJobId } = await api.replyToJob(node.jobId, replyText.trim());
+        setReplyText('');
+        connectStream(newJobId, selectedRoleId);
+      }
     } catch (err) {
       console.error('Reply failed:', err);
     } finally {
@@ -73,7 +79,12 @@ export default function WaveCommandCenter({
     const node = nodes.get(roleId);
     if (!node?.jobId) return;
     try {
-      await api.abortJob(node.jobId);
+      // SCA-012: prefer session-based abort
+      if (node.sessionId) {
+        await api.abortSession(node.sessionId);
+      } else {
+        await api.abortJob(node.jobId);
+      }
     } catch (err) {
       console.error('Abort failed:', err);
     }
@@ -82,7 +93,13 @@ export default function WaveCommandCenter({
   const handleStopAll = useCallback(async () => {
     for (const [, node] of nodes) {
       if ((node.status === 'running' || node.status === 'awaiting_input') && node.jobId) {
-        try { await api.abortJob(node.jobId); } catch { /* ignore */ }
+        try {
+          if (node.sessionId) {
+            await api.abortSession(node.sessionId);
+          } else {
+            await api.abortJob(node.jobId);
+          }
+        } catch { /* ignore */ }
       }
     }
   }, [nodes]);

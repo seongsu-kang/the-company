@@ -85,10 +85,16 @@ export const api = {
   /** D-014: Send a message to a session (returns SSE EventSource URL) */
   sendSessionMessage: (sessionId: string, content: string, mode: 'talk' | 'do' = 'talk') =>
     post<Record<string, unknown>>(`/exec/session/${sessionId}/message`, { content, mode }),
+  /** SCA-011: Abort the active job linked to a session */
+  abortSession: (sessionId: string) =>
+    post<{ ok: boolean; jobId: string }>(`/sessions/${sessionId}/abort`, {}),
+  /** SCA-011: Reply to an awaiting_input job via session */
+  replyToSession: (sessionId: string, message: string) =>
+    post<{ ok: boolean; jobId: string; sessionId: string }>(`/sessions/${sessionId}/reply`, { message }),
 
   // Jobs
   startJob: (params: { type?: string; roleId?: string; task?: string; directive?: string; sourceRole?: string; readOnly?: boolean; targetRole?: string; targetRoles?: string[] }) =>
-    post<{ jobId: string; jobIds?: string[]; waveId?: string; sessionIds?: string[] }>('/jobs', params),
+    post<{ jobId: string; jobIds?: string[]; waveId?: string; sessionId?: string; sessionIds?: string[] }>('/jobs', params),
   getJob: (id: string) => get<JobInfo>(`/jobs/${id}`),
   listJobs: (filter?: { status?: string; roleId?: string }) => {
     const params = new URLSearchParams();

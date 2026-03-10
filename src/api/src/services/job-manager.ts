@@ -703,6 +703,19 @@ class JobManager {
     }
     return undefined;
   }
+
+  /** SCA-011: Find the most recent job linked to a session */
+  getJobBySessionId(sessionId: string): Job | undefined {
+    let latest: Job | undefined;
+    for (const job of this.jobs.values()) {
+      if (job.sessionId === sessionId) {
+        if (!latest || job.createdAt > latest.createdAt) {
+          latest = job;
+        }
+      }
+    }
+    return latest;
+  }
 }
 
 /* ─── Export singleton ───────────────────── */
