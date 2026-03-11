@@ -595,7 +595,6 @@ function KnowledgeGraph({
                     fill={color.bg}
                     stroke={color.border}
                     strokeWidth={1}
-                    strokeDasharray="6 4"
                     opacity={bgOpacity}
                     style={{ transition: 'opacity 0.3s ease' }}
                     pointerEvents="none"
@@ -648,7 +647,6 @@ function KnowledgeGraph({
                     x1={s.x} y1={s.y} x2={t.x} y2={t.y}
                     stroke={isEdgeHovered ? 'rgba(148,163,184,0.7)' : 'rgba(148,163,184,0.6)'}
                     strokeWidth={isEdgeHovered ? 2 : 1.5}
-                    strokeDasharray="4 3"
                     pointerEvents="none"
                   />
                   {isEdgeHovered && link.label && (
