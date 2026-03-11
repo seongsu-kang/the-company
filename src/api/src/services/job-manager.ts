@@ -15,8 +15,8 @@ import { portRegistry, type PortAllocation } from './port-registry.js';
 
 /* ─── Types (re-export from shared contract) ─── */
 
-export { type JobType, type JobStatus, type JobInfo, isJobActive, canTransition, jobStatusToRoleStatus } from '../../../shared/types';
-import { type JobType, type JobStatus, type JobInfo, isJobActive, canTransition } from '../../../shared/types';
+export { type JobType, type JobStatus, type JobInfo, isJobActive, canTransition, jobStatusToRoleStatus } from '../../../shared/types.js';
+import { type JobType, type JobStatus, type JobInfo, isJobActive, canTransition } from '../../../shared/types.js';
 
 export interface Job {
   id: string;

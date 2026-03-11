@@ -42,8 +42,8 @@ export interface AssembledContext {
  * 8. CEO Decisions (전사 공지 — Approved 결정만)
  * 9. Task
  */
-export type { TeamStatus } from '../../../shared/types';
-import { type RoleStatus, type TeamStatus, isRoleActive } from '../../../shared/types';
+export type { TeamStatus } from '../../../shared/types.js';
+import { type RoleStatus, type TeamStatus, isRoleActive } from '../../../shared/types.js';
 
 export function assembleContext(
   companyRoot: string,

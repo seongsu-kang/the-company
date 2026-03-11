@@ -4,8 +4,8 @@ import { COMPANY_ROOT } from './file-reader.js';
 
 /* ─── Types (re-export from shared contract) ── */
 
-export { type ActivityEventType, type ActivityEvent } from '../../../shared/types';
-import type { ActivityEventType, ActivityEvent } from '../../../shared/types';
+export { type ActivityEventType, type ActivityEvent } from '../../../shared/types.js';
+import type { ActivityEventType, ActivityEvent } from '../../../shared/types.js';
 
 /* ─── Constants ──────────────────────────── */
 

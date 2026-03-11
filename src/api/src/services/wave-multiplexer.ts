@@ -1,6 +1,6 @@
 import { ActivityStream, type ActivityEvent, type ActivitySubscriber } from './activity-stream.js';
 import type { Job } from './job-manager.js';
-import { isJobActive } from '../../../shared/types';
+import { isJobActive } from '../../../shared/types.js';
 import type { Response } from 'express';
 
 /* ─── Types ──────────────────────────────── */

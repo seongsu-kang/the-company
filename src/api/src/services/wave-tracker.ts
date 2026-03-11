@@ -7,7 +7,7 @@ import path from 'node:path';
 import { COMPANY_ROOT } from './file-reader.js';
 import { ActivityStream, type ActivityEvent } from './activity-stream.js';
 import { jobManager } from './job-manager.js';
-import { type WaveRoleStatus, eventTypeToJobStatus } from '../../../shared/types';
+import { type WaveRoleStatus, eventTypeToJobStatus } from '../../../shared/types.js';
 
 /* ─── Find wave file ──────────────────────── */
 

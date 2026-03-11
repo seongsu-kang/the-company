@@ -14,7 +14,7 @@ import {
   type ImageAttachment,
 } from '../services/session-store.js';
 import { jobManager, type Job } from '../services/job-manager.js';
-import { type JobStatus, type RoleStatus, type WaveRoleStatus, type TeamStatus, isJobActive, isRoleActive, jobStatusToRoleStatus, eventTypeToJobStatus } from '../../../shared/types';
+import { type JobStatus, type RoleStatus, type WaveRoleStatus, type TeamStatus, isJobActive, isRoleActive, jobStatusToRoleStatus, eventTypeToJobStatus } from '../../../shared/types.js';
 import { ActivityStream, type ActivityEvent, type ActivitySubscriber } from '../services/activity-stream.js';
 import { earnCoinsInternal } from './coins.js';
 import { appendFollowUpToWave } from '../services/wave-tracker.js';

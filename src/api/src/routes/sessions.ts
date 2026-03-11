@@ -11,7 +11,7 @@ import {
   type Message,
 } from '../services/session-store.js';
 import { jobManager } from '../services/job-manager.js';
-import { isJobActive } from '../../../shared/types';
+import { isJobActive } from '../../../shared/types.js';
 import { ActivityStream, type ActivityEvent } from '../services/activity-stream.js';
 import { updateFollowUpForReply } from '../services/wave-tracker.js';
 

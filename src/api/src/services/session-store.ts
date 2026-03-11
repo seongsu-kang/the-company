@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { COMPANY_ROOT } from './file-reader.js';
-import { type ActivityEvent, type SessionSource, type SessionStatus, type MessageStatus, isMessageTerminal } from '../../../shared/types';
+import { type ActivityEvent, type SessionSource, type SessionStatus, type MessageStatus, isMessageTerminal } from '../../../shared/types.js';
 
 /* ─── Types ─────────────────────────────── */
 

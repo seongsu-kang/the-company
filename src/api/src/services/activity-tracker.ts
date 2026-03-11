@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { COMPANY_ROOT } from './file-reader.js';
-import type { RoleStatus } from '../../../shared/types';
+import type { RoleStatus } from '../../../shared/types.js';
 
 function activityDir(): string {
   return path.join(COMPANY_ROOT, 'operations', 'activity');

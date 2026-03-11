@@ -23,8 +23,8 @@ export interface ImageAttachment {
 
 /* ─── Config ──────────────────────────────────── */
 
-export type { TeamStatus } from '../../../../shared/types';
-import type { TeamStatus } from '../../../../shared/types';
+export type { TeamStatus } from '../../../../shared/types.js';
+import type { TeamStatus } from '../../../../shared/types.js';
 
 export interface RunnerConfig {
   companyRoot: string;

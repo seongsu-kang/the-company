@@ -4,7 +4,7 @@ import { extractBoldKeyValues } from '../services/markdown-parser.js';
 import { ActivityStream } from '../services/activity-stream.js';
 import path from 'node:path';
 import fs from 'node:fs';
-import { type JobStatus, isJobActive } from '../../../shared/types';
+import { type JobStatus, isJobActive } from '../../../shared/types.js';
 
 export const operationsRouter = Router();
 

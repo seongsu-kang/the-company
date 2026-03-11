@@ -21,7 +21,7 @@ import { engineRouter } from './routes/engine.js';
 import { sessionsRouter } from './routes/sessions.js';
 import { setupRouter } from './routes/setup.js';
 import { getAllActivities, completeActivity } from './services/activity-tracker.js';
-import { type RoleStatus, isRoleActive } from '../../shared/types';
+import { type RoleStatus, isRoleActive } from '../../shared/types.js';
 import { knowledgeRouter } from './routes/knowledge.js';
 import { preferencesRouter } from './routes/preferences.js';
 import { saveRouter } from './routes/save.js';
