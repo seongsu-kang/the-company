@@ -307,7 +307,8 @@ function handleStartJob(body: Record<string, unknown>, res: ServerResponse): voi
     appendFollowUpToWave(waveId, job.id, roleId, task, sessionId);
   }
 
-  jsonResponse(res, 200, { sessionId: sessionId ?? job.id, jobId: job.id, ...(waveId && { waveId }) });
+  // D-014: sessionId is the primary identifier. Falls back to job.id only when session creation is deferred.
+  jsonResponse(res, 200, { sessionId: sessionId ?? job.id, jobId: job.id /* @deprecated */, ...(waveId && { waveId }) });
 }
 
 /* ─── Follow-up: wave tracking (delegated to wave-tracker service) ── */

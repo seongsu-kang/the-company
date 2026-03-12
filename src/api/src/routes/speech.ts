@@ -941,7 +941,7 @@ RULES:
     if (totalUsage) {
       getLedger().record({
         ts: new Date().toISOString(),
-        jobId: `chat-${channelId}`,
+        sessionId: `chat-${channelId}`,
         roleId,
         model: process.env.SPEECH_MODEL || 'claude-haiku-4-5-20251001',
         inputTokens: totalUsage.inputTokens ?? 0,

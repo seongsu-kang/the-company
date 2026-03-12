@@ -51,7 +51,7 @@ export function isMessageTerminal(status: MessageStatus): boolean {
 /** 허용된 상태 전이 (from → to[]) */
 export const MESSAGE_TRANSITIONS: Record<MessageStatus, MessageStatus[]> = {
   streaming:      ['done', 'error', 'awaiting_input', 'interrupted'],
-  awaiting_input: ['streaming', 'done', 'error'],
+  awaiting_input: ['streaming', 'done', 'error', 'interrupted'],
   interrupted:    ['streaming', 'done'],  // re-dispatch 또는 CEO dismiss
   done:           [],
   error:          [],

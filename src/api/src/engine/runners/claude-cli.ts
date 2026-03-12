@@ -437,7 +437,7 @@ export class ClaudeCliRunner implements ExecutionRunner {
                 totalOutput += out;
                 tokenLedger.record({
                   ts: new Date().toISOString(),
-                  jobId: config.sessionId ?? config.jobId ?? 'unknown',
+                  sessionId: config.sessionId ?? config.jobId ?? 'unknown',
                   roleId,
                   model: modelName,
                   inputTokens: input,
@@ -477,7 +477,7 @@ export class ClaudeCliRunner implements ExecutionRunner {
                 totalOutput += out;
                 tokenLedger.record({
                   ts: new Date().toISOString(),
-                  jobId: config.sessionId ?? config.jobId ?? 'unknown',
+                  sessionId: config.sessionId ?? config.jobId ?? 'unknown',
                   roleId,
                   model: modelName,
                   inputTokens: input,

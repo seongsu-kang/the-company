@@ -5,10 +5,10 @@ import path from 'node:path';
 
 export interface TokenEntry {
   ts: string;
-  /** @deprecated D-014: use sessionId */
-  jobId: string;
-  /** D-014: Session this entry belongs to */
-  sessionId?: string;
+  /** D-014: Session this entry belongs to (primary identifier) */
+  sessionId: string;
+  /** @deprecated D-014: Internal runtime handle. Kept for legacy JSONL compat. */
+  jobId?: string;
   roleId: string;
   model: string;
   inputTokens: number;
@@ -82,11 +82,13 @@ export class TokenLedger {
     if (filter?.roleId) {
       filtered = filtered.filter((e) => e.roleId === filter.roleId);
     }
-    if (filter?.jobId) {
-      filtered = filtered.filter((e) => e.jobId === filter.jobId);
-    }
     if (filter?.sessionId) {
-      filtered = filtered.filter((e) => e.sessionId === filter.sessionId);
+      const sid = filter.sessionId;
+      filtered = filtered.filter((e) => e.sessionId === sid || e.jobId === sid);
+    }
+    if (filter?.jobId) {
+      const jid = filter.jobId;
+      filtered = filtered.filter((e) => e.jobId === jid || e.sessionId === jid);
     }
 
     let totalInput = 0;

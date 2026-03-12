@@ -24,7 +24,6 @@ activeSessionsRouter.get('/', (_req, res) => {
     return {
       ...s,
       messageStatus: job?.status ?? null,
-      jobStatus: job?.status ?? null, // @deprecated D-014: use messageStatus
       roleName: job?.roleId ?? s.roleId,
       alive: s.pid ? isAlive(s.pid) : null,
     };
@@ -52,7 +51,6 @@ activeSessionsRouter.get('/:id', (req, res) => {
   res.json({
     ...session,
     messageStatus: job?.status ?? null,
-    jobStatus: job?.status ?? null, // @deprecated D-014: use messageStatus
     roleName: job?.roleId ?? session.roleId,
     alive: session.pid ? isAlive(session.pid) : null,
     job: job ?? null,

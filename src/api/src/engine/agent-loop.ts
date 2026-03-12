@@ -292,7 +292,7 @@ export async function runAgentLoop(config: AgentConfig): Promise<AgentResult> {
     // Record token usage
     config.tokenLedger?.record({
       ts: new Date().toISOString(),
-      jobId: config.sessionId ?? config.jobId ?? 'unknown',
+      sessionId: config.sessionId ?? config.jobId ?? 'unknown',
       roleId,
       model: config.model ?? 'unknown',
       inputTokens: response.usage.inputTokens,
@@ -456,7 +456,7 @@ export async function runAgentLoop(config: AgentConfig): Promise<AgentResult> {
         totalOutput += supResponse.usage.outputTokens;
         config.tokenLedger?.record({
           ts: new Date().toISOString(),
-          jobId: config.sessionId ?? config.jobId ?? 'unknown',
+          sessionId: config.sessionId ?? config.jobId ?? 'unknown',
           roleId,
           model: config.model ?? 'unknown',
           inputTokens: supResponse.usage.inputTokens,
@@ -536,7 +536,7 @@ export async function runAgentLoop(config: AgentConfig): Promise<AgentResult> {
           totalOutput += verifyResponse.usage.outputTokens;
           config.tokenLedger?.record({
             ts: new Date().toISOString(),
-            jobId: config.sessionId ?? config.jobId ?? 'unknown',
+            sessionId: config.sessionId ?? config.jobId ?? 'unknown',
             roleId,
             model: config.model ?? 'unknown',
             inputTokens: verifyResponse.usage.inputTokens,
@@ -582,7 +582,7 @@ export async function runAgentLoop(config: AgentConfig): Promise<AgentResult> {
               totalOutput += summaryResponse.usage.outputTokens;
               config.tokenLedger?.record({
                 ts: new Date().toISOString(),
-                jobId: config.sessionId ?? config.jobId ?? 'unknown',
+                sessionId: config.sessionId ?? config.jobId ?? 'unknown',
                 roleId,
                 model: config.model ?? 'unknown',
                 inputTokens: summaryResponse.usage.inputTokens,
