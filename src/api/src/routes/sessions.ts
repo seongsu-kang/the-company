@@ -178,6 +178,57 @@ sessionsRouter.post('/:id/abort', (req, res) => {
   res.json({ ok: true, sessionId: req.params.id });
 });
 
+/** POST /api/sessions/:id/message — send a new message to the session (D-014 Session-Centric) */
+sessionsRouter.post('/:id/message', (req, res) => {
+  const session = getSession(req.params.id);
+  if (!session) {
+    res.status(404).json({ error: 'Session not found' });
+    return;
+  }
+
+  const { message, sourceRole, attachments } = req.body;
+  if (!message && (!attachments || attachments.length === 0)) {
+    res.status(400).json({ error: 'message or attachments required' });
+    return;
+  }
+
+  // Add CEO message to session
+  const ceoMsg: Message = {
+    id: `msg-${Date.now()}-ceo-msg`,
+    from: 'ceo',
+    content: message ?? '',
+    type: 'conversation',
+    status: 'done',
+    timestamp: new Date().toISOString(),
+    attachments,
+  };
+  addMessage(req.params.id, ceoMsg);
+
+  // Start new job for this message
+  const newJob = jobManager.startJob({
+    type: 'assign',
+    roleId: session.roleId,
+    task: message ?? '(image attached)',
+    sourceRole: sourceRole ?? 'ceo',
+    sessionId: req.params.id,
+    attachments,
+  });
+
+  // Add role message for the new job
+  const roleMsg: Message = {
+    id: `msg-${Date.now() + 1}-role-msg`,
+    from: 'role',
+    content: '',
+    type: 'conversation',
+    status: 'streaming',
+    timestamp: new Date().toISOString(),
+    jobId: newJob.id, // @deprecated D-014: use sessionId for tracking
+  };
+  addMessage(req.params.id, roleMsg, true);
+
+  res.json({ ok: true, sessionId: req.params.id, jobId: newJob.id });
+});
+
 /** POST /api/sessions/:id/reply — reply to awaiting_input job via session */
 sessionsRouter.post('/:id/reply', (req, res) => {
   const session = getSession(req.params.id);
