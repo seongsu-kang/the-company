@@ -2002,9 +2002,9 @@ interface Props {
 
 export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, terminalWidth = 0, initialDocId: _initialDocId, onMaximize }: Props) {
   // Load view mode from localStorage, default to 'graph'
-  const [view, setView] = useState<'graph' | 'tree' | 'list'>(() => {
+  const [view, setView] = useState<'graph' | 'tree' | 'list' | 'health'>(() => {
     const saved = localStorage.getItem('kb-view-mode');
-    return (saved === 'graph' || saved === 'tree' || saved === 'list') ? saved : 'graph';
+    return (saved === 'graph' || saved === 'tree' || saved === 'list' || saved === 'health') ? saved : 'graph';
   });
   const [graphSelectedDocId, setGraphSelectedDocId] = useState<string | null>(null);
 
@@ -2159,6 +2159,12 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
             active={view === 'list'}
             onClick={() => { setView('list'); setGraphSelectedDocId(null); }}
           />
+          <ViewModeBtn
+            icon="🏥"
+            label="Health"
+            active={view === 'health'}
+            onClick={() => { setView('health'); setGraphSelectedDocId(null); }}
+          />
         </div>
 
         {/* KB-003: Search Bar + KB-004: Domain Filter Chips */}
@@ -2295,6 +2301,11 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
           />
         )}
 
+        {/* ─── HEALTH VIEW ─── */}
+        {view === 'health' && (
+          <HealthView onNavigateDoc={(docId) => setGraphSelectedDocId(docId)} />
+        )}
+
       </div>
     </>
   );
@@ -2355,6 +2366,214 @@ function PlaceholderView({
         <div className="text-xs leading-relaxed" style={{ color: 'var(--terminal-text-muted)' }}>
           {description}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Health View ─────────────────────────────────── */
+
+interface HealthData {
+  health: number;
+  orphanDocs: string[];
+  staleDocs: string[];
+  brokenLinks: Array<{ file: string; link: string }>;
+  suggestions: string[];
+  totalDocs: number;
+  linkedDocs: number;
+}
+
+function HealthView({ onNavigateDoc }: { onNavigateDoc: (docId: string) => void }) {
+  const [healthData, setHealthData] = useState<HealthData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .getKnowledgeHealth()
+      .then((data: HealthData) => {
+        setHealthData(data);
+        setLoading(false);
+      })
+      .catch((err: Error) => {
+        setError(err.message || 'Failed to fetch health data');
+        setLoading(false);
+      });
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-sm" style={{ color: 'var(--terminal-text-muted)' }}>
+          Loading health data...
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-sm" style={{ color: '#ef4444' }}>
+          Error: {error}
+        </div>
+      </div>
+    );
+  }
+
+  if (!healthData) return null;
+
+  const { health, orphanDocs, staleDocs, brokenLinks, suggestions, totalDocs, linkedDocs } = healthData;
+
+  // Health badge color
+  let healthColor = '#4ade80'; // green
+  if (health < 70) healthColor = '#f59e0b'; // amber
+  if (health < 50) healthColor = '#ef4444'; // red
+
+  return (
+    <div className="flex-1 overflow-y-auto p-6 animate-fadeIn">
+      <div className="max-w-3xl mx-auto space-y-6">
+        {/* Health Score */}
+        <div className="p-6 rounded-lg" style={{ background: 'var(--hud-bg-alt)', border: '1px solid var(--terminal-border)' }}>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <div className="text-lg font-bold mb-1" style={{ color: 'var(--terminal-text)' }}>
+                Knowledge Health
+              </div>
+              <div className="text-xs" style={{ color: 'var(--terminal-text-muted)' }}>
+                {totalDocs} total documents, {linkedDocs} linked
+              </div>
+            </div>
+            <div
+              className="text-4xl font-bold px-6 py-3 rounded-lg"
+              style={{
+                color: healthColor,
+                background: `${healthColor}15`,
+                border: `2px solid ${healthColor}40`,
+              }}
+            >
+              {health}
+            </div>
+          </div>
+
+          {/* Progress bar */}
+          <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: 'var(--hud-bg)' }}>
+            <div
+              className="h-full transition-all duration-500"
+              style={{
+                width: `${health}%`,
+                background: healthColor,
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Suggestions */}
+        {suggestions.length > 0 && (
+          <div className="p-4 rounded-lg" style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)' }}>
+            <div className="text-sm font-bold mb-2" style={{ color: '#60a5fa' }}>
+              💡 Suggestions
+            </div>
+            <ul className="space-y-1">
+              {suggestions.map((s, i) => (
+                <li key={i} className="text-xs" style={{ color: 'var(--terminal-text)' }}>
+                  • {s}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Orphan Docs */}
+        {orphanDocs.length > 0 && (
+          <div className="p-4 rounded-lg" style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)' }}>
+            <div className="text-sm font-bold mb-2" style={{ color: '#fbbf24' }}>
+              📦 Orphan Documents ({orphanDocs.length})
+            </div>
+            <div className="text-xs mb-2" style={{ color: 'var(--terminal-text-muted)' }}>
+              Documents not registered in any Hub
+            </div>
+            <ul className="space-y-1">
+              {orphanDocs.map((doc, i) => (
+                <li key={i}>
+                  <button
+                    onClick={() => onNavigateDoc(doc)}
+                    className="text-xs hover:underline"
+                    style={{ color: '#fbbf24' }}
+                  >
+                    {doc}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Stale Docs */}
+        {staleDocs.length > 0 && (
+          <div className="p-4 rounded-lg" style={{ background: 'rgba(236,72,153,0.1)', border: '1px solid rgba(236,72,153,0.3)' }}>
+            <div className="text-sm font-bold mb-2" style={{ color: '#f472b6' }}>
+              📅 Stale Documents ({staleDocs.length})
+            </div>
+            <div className="text-xs mb-2" style={{ color: 'var(--terminal-text-muted)' }}>
+              Documents marked as deprecated or stale
+            </div>
+            <ul className="space-y-1">
+              {staleDocs.map((doc, i) => (
+                <li key={i}>
+                  <button
+                    onClick={() => onNavigateDoc(doc)}
+                    className="text-xs hover:underline"
+                    style={{ color: '#f472b6' }}
+                  >
+                    {doc}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Broken Links */}
+        {brokenLinks.length > 0 && (
+          <div className="p-4 rounded-lg" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)' }}>
+            <div className="text-sm font-bold mb-2" style={{ color: '#f87171' }}>
+              🔗 Broken Links ({brokenLinks.length})
+            </div>
+            <div className="text-xs mb-2" style={{ color: 'var(--terminal-text-muted)' }}>
+              Links pointing to non-existent documents
+            </div>
+            <ul className="space-y-2">
+              {brokenLinks.map((link, i) => (
+                <li key={i} className="space-y-0.5">
+                  <button
+                    onClick={() => onNavigateDoc(link.file)}
+                    className="text-xs hover:underline block"
+                    style={{ color: '#f87171' }}
+                  >
+                    {link.file}
+                  </button>
+                  <div className="text-xs pl-4" style={{ color: 'var(--terminal-text-muted)' }}>
+                    → {link.link}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* All Good Message */}
+        {orphanDocs.length === 0 && staleDocs.length === 0 && brokenLinks.length === 0 && (
+          <div className="p-8 rounded-lg text-center" style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)' }}>
+            <div className="text-4xl mb-3">🎉</div>
+            <div className="text-lg font-bold mb-2" style={{ color: '#4ade80' }}>
+              All documents are healthy!
+            </div>
+            <div className="text-xs" style={{ color: 'var(--terminal-text-muted)' }}>
+              No orphan documents, stale content, or broken links detected.
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

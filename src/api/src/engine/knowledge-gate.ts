@@ -26,7 +26,9 @@ export interface PostKnowledgingResult {
 export interface DecayReport {
   health: number;
   orphanDocs: string[];
+  staleDocs: string[];
   brokenLinks: Array<{ file: string; link: string }>;
+  suggestions: string[];
   totalDocs: number;
   linkedDocs: number;
 }
@@ -257,6 +259,7 @@ export function postKnowledgingCheck(
 export function detectDecay(companyRoot: string): DecayReport {
   const searchDirs = ['knowledge', 'architecture'];
   const orphanDocs: string[] = [];
+  const staleDocs: string[] = [];
   const brokenLinks: Array<{ file: string; link: string }> = [];
   let totalDocs = 0;
   let linkedDocs = 0;
@@ -282,10 +285,20 @@ export function detectDecay(companyRoot: string): DecayReport {
         linkedDocs++;
       }
 
-      // Check for broken links in the file
+      // Check for broken links and stale status in the file
       const filePath = path.join(dirPath, file);
       try {
         const content = fs.readFileSync(filePath, 'utf-8');
+
+        // Check for deprecated/stale status in frontmatter
+        const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+        if (frontmatterMatch) {
+          const frontmatter = frontmatterMatch[1];
+          if (/status:\s*(deprecated|stale)/i.test(frontmatter)) {
+            staleDocs.push(path.join(dir, file));
+          }
+        }
+
         const linkRegex = /\[.*?\]\(\.\/(.*?\.md)\)/g;
         let match;
         while ((match = linkRegex.exec(content)) !== null) {
@@ -322,13 +335,30 @@ export function detectDecay(companyRoot: string): DecayReport {
   }
 
   const health = totalDocs > 0
-    ? Math.round(((totalDocs - orphanDocs.length - brokenLinks.length) / totalDocs) * 100)
+    ? Math.round(((totalDocs - orphanDocs.length - staleDocs.length - brokenLinks.length) / totalDocs) * 100)
     : 100;
+
+  // Build suggestions
+  const suggestions: string[] = [];
+  if (orphanDocs.length > 0) {
+    suggestions.push(`${orphanDocs.length}개의 고아 문서를 Hub에 등록하세요`);
+  }
+  if (staleDocs.length > 0) {
+    suggestions.push(`${staleDocs.length}개의 오래된 문서를 업데이트하거나 삭제하세요`);
+  }
+  if (brokenLinks.length > 0) {
+    suggestions.push(`${brokenLinks.length}개의 깨진 링크를 수정하세요`);
+  }
+  if (orphanDocs.length === 0 && staleDocs.length === 0 && brokenLinks.length === 0) {
+    suggestions.push('모든 문서가 건강합니다! 🎉');
+  }
 
   return {
     health: Math.max(0, Math.min(100, health)),
     orphanDocs,
+    staleDocs,
     brokenLinks,
+    suggestions,
     totalDocs,
     linkedDocs,
   };

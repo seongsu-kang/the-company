@@ -173,6 +173,16 @@ export const api = {
     const encodedPath = id.split('/').map(encodeURIComponent).join('/');
     return del<{ id: string; status: 'deleted' }>(`/knowledge/${encodedPath}`);
   },
+  getKnowledgeHealth: () =>
+    get<{
+      health: number;
+      orphanDocs: string[];
+      staleDocs: string[];
+      brokenLinks: Array<{ file: string; link: string }>;
+      suggestions: string[];
+      totalDocs: number;
+      linkedDocs: number;
+    }>('/knowledge/health'),
 
   // Preferences
   getPreferences: () => get<{ appearances: Record<string, unknown>; theme: string; speech?: SpeechSettings; language?: string; purchasedItems?: string[] }>('/preferences'),
