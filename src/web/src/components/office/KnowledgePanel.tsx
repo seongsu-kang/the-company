@@ -2019,10 +2019,37 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
     () => new Set(Object.keys(DOMAIN_COLORS))
   );
 
+  // KB-011: List view state (sort, view mode, collapsed domains)
+  const [sortMode, setSortMode] = useState<'recent' | 'a-z' | 'type'>(() => {
+    const saved = localStorage.getItem('kb-list-sort');
+    return (saved === 'recent' || saved === 'a-z' || saved === 'type') ? saved : 'recent';
+  });
+  const [listViewMode, setListViewMode] = useState<'cards' | 'table' | 'compact'>(() => {
+    const saved = localStorage.getItem('kb-list-view-mode');
+    return (saved === 'cards' || saved === 'table' || saved === 'compact') ? saved : 'cards';
+  });
+  const [collapsedDomains, setCollapsedDomains] = useState<Set<string>>(() => {
+    const saved = localStorage.getItem('kb-collapsed-domains');
+    return saved ? new Set(JSON.parse(saved)) : new Set();
+  });
+
   // Save view mode to localStorage when it changes
   useEffect(() => {
     localStorage.setItem('kb-view-mode', view);
   }, [view]);
+
+  // KB-011: Save list view preferences
+  useEffect(() => {
+    localStorage.setItem('kb-list-sort', sortMode);
+  }, [sortMode]);
+
+  useEffect(() => {
+    localStorage.setItem('kb-list-view-mode', listViewMode);
+  }, [listViewMode]);
+
+  useEffect(() => {
+    localStorage.setItem('kb-collapsed-domains', JSON.stringify([...collapsedDomains]));
+  }, [collapsedDomains]);
 
   // KB-003: Fuse.js fuzzy search
   const fuse = useMemo(() => {
@@ -2059,9 +2086,55 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
     return docs.filter((d) => matchedIds.has(d.id));
   }, [docs, matchedIds]);
 
+  // KB-011: Sorted docs for List View
+  const sortedDocs = useMemo(() => {
+    const sorted = [...filteredDocs];
+    switch (sortMode) {
+      case 'recent':
+        // 기본 순서 유지 (API에서 이미 최신순으로 정렬되어 있다고 가정)
+        return sorted;
+      case 'a-z':
+        return sorted.sort((a, b) => a.title.localeCompare(b.title));
+      case 'type':
+        // Hub 먼저, Node 다음
+        return sorted.sort((a, b) => {
+          if (a.akb_type !== b.akb_type) {
+            return a.akb_type === 'hub' ? -1 : 1;
+          }
+          return a.title.localeCompare(b.title);
+        });
+      default:
+        return sorted;
+    }
+  }, [filteredDocs, sortMode]);
+
+  // KB-011: Grouped docs by domain for List View
+  const groupedDocs = useMemo(() => {
+    const groups: Record<string, KnowledgeDoc[]> = {};
+    for (const doc of sortedDocs) {
+      const domain = doc.category || 'general';
+      if (!groups[domain]) groups[domain] = [];
+      groups[domain].push(doc);
+    }
+    return groups;
+  }, [sortedDocs]);
+
   // Toggle domain filter
   const toggleDomain = (domain: string) => {
     setEnabledDomains((prev) => {
+      const next = new Set(prev);
+      if (next.has(domain)) {
+        next.delete(domain);
+      } else {
+        next.add(domain);
+      }
+      return next;
+    });
+  };
+
+  // KB-011: Toggle domain collapse in List View
+  const toggleCollapseDomain = (domain: string) => {
+    setCollapsedDomains((prev) => {
       const next = new Set(prev);
       if (next.has(domain)) {
         next.delete(domain);
@@ -2285,13 +2358,16 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
           />
         )}
 
-        {/* ─── LIST VIEW (Placeholder for KB-002) ─── */}
+        {/* ─── LIST VIEW (KB-011) ─── */}
         {view === 'list' && (
-          <PlaceholderView
-            icon="📋"
-            title="List View"
-            message="Coming soon in KB-002"
-            description="Table format with sortable columns and quick scanning"
+          <ListView
+            groupedDocs={groupedDocs}
+            sortMode={sortMode}
+            setSortMode={setSortMode}
+            listViewMode={listViewMode}
+            setListViewMode={setListViewMode}
+            collapsedDomains={collapsedDomains}
+            toggleCollapseDomain={toggleCollapseDomain}
           />
         )}
 
@@ -2356,6 +2432,274 @@ function PlaceholderView({
           {description}
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ─── KB-011: List View ─────────────────────────────── */
+
+interface ListViewProps {
+  groupedDocs: Record<string, KnowledgeDoc[]>;
+  sortMode: 'recent' | 'a-z' | 'type';
+  setSortMode: (mode: 'recent' | 'a-z' | 'type') => void;
+  listViewMode: 'cards' | 'table' | 'compact';
+  setListViewMode: (mode: 'cards' | 'table' | 'compact') => void;
+  collapsedDomains: Set<string>;
+  toggleCollapseDomain: (domain: string) => void;
+}
+
+function ListView({
+  groupedDocs,
+  sortMode,
+  setSortMode,
+  listViewMode,
+  setListViewMode,
+  collapsedDomains,
+  toggleCollapseDomain,
+}: ListViewProps) {
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden animate-fadeIn">
+      {/* Toolbar */}
+      <div className="shrink-0 flex items-center justify-between p-2 gap-2" style={{ borderBottom: '1px solid var(--terminal-border)', background: 'var(--hud-bg-alt)' }}>
+        {/* Sort dropdown */}
+        <div className="flex items-center gap-2">
+          <span className="text-[10px]" style={{ color: 'var(--terminal-text-muted)' }}>Sort:</span>
+          <select
+            value={sortMode}
+            onChange={(e) => setSortMode(e.target.value as 'recent' | 'a-z' | 'type')}
+            className="text-xs px-2 py-1 rounded cursor-pointer"
+            style={{ background: 'var(--hud-bg)', border: '1px solid var(--terminal-border)', color: 'var(--terminal-text)' }}
+          >
+            <option value="recent">Recent</option>
+            <option value="a-z">A-Z</option>
+            <option value="type">Type</option>
+          </select>
+        </div>
+
+        {/* View mode buttons */}
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] mr-1" style={{ color: 'var(--terminal-text-muted)' }}>View:</span>
+          <button
+            onClick={() => setListViewMode('cards')}
+            className={`px-2 py-1 text-xs rounded cursor-pointer transition-colors ${listViewMode === 'cards' ? 'bg-white/10' : ''}`}
+            style={{ color: listViewMode === 'cards' ? '#4ade80' : 'var(--terminal-text-muted)' }}
+          >
+            Cards
+          </button>
+          <button
+            onClick={() => setListViewMode('table')}
+            className={`px-2 py-1 text-xs rounded cursor-pointer transition-colors ${listViewMode === 'table' ? 'bg-white/10' : ''}`}
+            style={{ color: listViewMode === 'table' ? '#4ade80' : 'var(--terminal-text-muted)' }}
+          >
+            Table
+          </button>
+          <button
+            onClick={() => setListViewMode('compact')}
+            className={`px-2 py-1 text-xs rounded cursor-pointer transition-colors ${listViewMode === 'compact' ? 'bg-white/10' : ''}`}
+            style={{ color: listViewMode === 'compact' ? '#4ade80' : 'var(--terminal-text-muted)' }}
+          >
+            Compact
+          </button>
+        </div>
+      </div>
+
+      {/* Domain Groups */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+        {Object.entries(groupedDocs).map(([domain, docs]) => (
+          <DomainGroup
+            key={domain}
+            domain={domain}
+            docs={docs}
+            collapsed={collapsedDomains.has(domain)}
+            onToggle={() => toggleCollapseDomain(domain)}
+            viewMode={listViewMode}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── KB-011: Domain Group ─────────────────────────────── */
+
+interface DomainGroupProps {
+  domain: string;
+  docs: KnowledgeDoc[];
+  collapsed: boolean;
+  onToggle: () => void;
+  viewMode: 'cards' | 'table' | 'compact';
+}
+
+function DomainGroup({ domain, docs, collapsed, onToggle, viewMode }: DomainGroupProps) {
+  const color = getDomainColor(domain);
+
+  return (
+    <div>
+      {/* Group Header */}
+      <div
+        onClick={onToggle}
+        className="flex items-center justify-between py-2 px-3 rounded cursor-pointer hover:bg-white/5 transition-colors"
+        style={{ background: color.bg, borderLeft: `3px solid ${color.border}` }}
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold" style={{ color: color.text }}>
+            {domain}
+          </span>
+          <span className="text-[10px]" style={{ color: 'var(--terminal-text-muted)' }}>
+            ({docs.length} docs)
+          </span>
+        </div>
+        <span className="text-xs" style={{ color: color.text }}>
+          {collapsed ? '▶' : '▼'}
+        </span>
+      </div>
+
+      {/* Group Content */}
+      {!collapsed && (
+        <div className="mt-2 space-y-2">
+          {viewMode === 'cards' && docs.map((doc) => (
+            <KnowledgeCardSimple key={doc.id} doc={doc} />
+          ))}
+          {viewMode === 'table' && <TableView docs={docs} />}
+          {viewMode === 'compact' && <CompactView docs={docs} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── KB-011: Knowledge Card (Simple) ─────────────────────────────── */
+
+function KnowledgeCardSimple({ doc }: { doc: KnowledgeDoc }) {
+  const [expanded, setExpanded] = useState(false);
+  const color = getDomainColor(doc.category);
+  const isHub = doc.akb_type === 'hub';
+
+  return (
+    <div
+      className="rounded-lg overflow-hidden"
+      style={{
+        background: isHub ? 'rgba(22,163,106,0.08)' : 'var(--hud-bg-alt)',
+        border: `2px solid ${isHub ? 'rgba(22,163,106,0.4)' : 'var(--terminal-border)'}`,
+      }}
+    >
+      <div
+        className="p-3 cursor-pointer hover:bg-white/5 transition-colors"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div className="flex items-start gap-2">
+          <span className="shrink-0 text-sm">{isHub ? '\u{1F4D8}' : doc.format === 'html' ? '\u{1F310}' : '\u{1F4C4}'}</span>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1 flex-wrap">
+              <span className="font-semibold text-xs truncate" style={{ color: 'var(--terminal-text)' }}>{doc.title}</span>
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{
+                  background: doc.status === 'active' ? '#16a34a' : doc.status === 'draft' ? '#f59e0b' : '#94a3b8',
+                }}
+                title={doc.status}
+              />
+            </div>
+            {doc.tags.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {doc.tags.slice(0, 4).map((tag) => (
+                  <span
+                    key={tag}
+                    className="px-1.5 py-0.5 rounded text-[9px] font-medium"
+                    style={{ background: color.bg, color: color.text, border: `1px solid ${color.border}` }}
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+          <span className="text-xs shrink-0" style={{ color: 'var(--terminal-text-muted)' }}>{expanded ? '\u25b2' : '\u25bc'}</span>
+        </div>
+        {!expanded && doc.tldr && (
+          <div className="mt-1.5 text-[10px] line-clamp-2 ml-6" style={{ color: 'var(--terminal-text-secondary)' }}>{doc.tldr}</div>
+        )}
+      </div>
+
+      {expanded && (
+        <div className="px-3 pb-3 pt-2" style={{ borderTop: '1px solid var(--terminal-border)' }}>
+          {doc.tldr && (
+            <div className="text-[11px] leading-relaxed italic" style={{ color: 'var(--terminal-text-secondary)' }}>
+              {doc.tldr}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── KB-011: Table View ─────────────────────────────── */
+
+function TableView({ docs }: { docs: KnowledgeDoc[] }) {
+  return (
+    <div className="text-xs rounded-lg overflow-hidden" style={{ border: '1px solid var(--terminal-border)' }}>
+      <table className="w-full">
+        <thead>
+          <tr style={{ background: 'var(--hud-bg-alt)', borderBottom: '1px solid var(--terminal-border)' }}>
+            <th className="text-left py-2 px-3 font-bold" style={{ color: 'var(--terminal-text-muted)' }}>Type</th>
+            <th className="text-left py-2 px-3 font-bold" style={{ color: 'var(--terminal-text-muted)' }}>Title</th>
+            <th className="text-left py-2 px-3 font-bold" style={{ color: 'var(--terminal-text-muted)' }}>Tags</th>
+            <th className="text-left py-2 px-3 font-bold" style={{ color: 'var(--terminal-text-muted)' }}>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {docs.map((doc) => {
+            const color = getDomainColor(doc.category);
+            return (
+              <tr key={doc.id} className="hover:bg-white/5 cursor-pointer transition-colors" style={{ borderBottom: '1px solid var(--terminal-border)' }}>
+                <td className="py-2 px-3">{doc.akb_type === 'hub' ? '\u{1F4D8}' : '\u{1F4C4}'}</td>
+                <td className="py-2 px-3" style={{ color: 'var(--terminal-text)' }}>{doc.title}</td>
+                <td className="py-2 px-3">
+                  <div className="flex flex-wrap gap-1">
+                    {doc.tags.slice(0, 3).map((tag) => (
+                      <span
+                        key={tag}
+                        className="px-1.5 py-0.5 rounded text-[9px] font-medium"
+                        style={{ background: color.bg, color: color.text }}
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </td>
+                <td className="py-2 px-3">
+                  <div
+                    className="w-2 h-2 rounded-full inline-block"
+                    style={{
+                      background: doc.status === 'active' ? '#16a34a' : doc.status === 'draft' ? '#f59e0b' : '#94a3b8',
+                    }}
+                  />
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ─── KB-011: Compact View ─────────────────────────────── */
+
+function CompactView({ docs }: { docs: KnowledgeDoc[] }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {docs.map((doc) => (
+        <div
+          key={doc.id}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs cursor-pointer hover:bg-white/10 transition-colors"
+          style={{ background: 'var(--hud-bg-alt)', border: '1px solid var(--terminal-border)' }}
+        >
+          <span>{doc.akb_type === 'hub' ? '\u{1F4D8}' : '\u{1F4C4}'}</span>
+          <span style={{ color: 'var(--terminal-text)' }}>{doc.title}</span>
+        </div>
+      ))}
     </div>
   );
 }
