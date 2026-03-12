@@ -59,7 +59,7 @@ export const api = {
   getProject: (id: string) => get<ProjectDetail>(`/projects/${id}`),
   getStandups: () => get<Standup[]>('/operations/standups'),
   getWaves: () => get<Wave[]>('/operations/waves'),
-  getActiveWaves: () => get<{ waves: Array<{ id: string; directive: string; dispatches?: Array<{ sessionId: string; roleId: string; roleName: string }>; rootJobs?: Array<{ sessionId: string; roleId: string; roleName: string; jobId?: string }>; startedAt: number; sessionIds: string[] }> }>('/waves/active'),
+  getActiveWaves: () => get<{ waves: Array<{ id: string; directive: string; dispatches: Array<{ sessionId: string; roleId: string; roleName: string }>; startedAt: number; sessionIds: string[] }> }>('/waves/active'),
   getWaveDetail: (id: string) => get<{ id: string; timestamp: string; replay: import('../types').WaveReplay }>(`/operations/waves/${id}`),
   patchWave: (id: string, data: { commitSha: string; commitMessage: string }) => patch_<{ ok: boolean }>(`/operations/waves/${id}`, data),
   getDecisions: () => get<Decision[]>('/operations/decisions'),
@@ -95,19 +95,19 @@ export const api = {
   deleteEmptySessions: () => del<{ deleted: number; ids: string[] }>('/sessions?empty=true'),
   updateSession: (id: string, patch: { title?: string; mode?: 'talk' | 'do' }) =>
     patch_<Session>(`/sessions/${id}`, patch),
-  /** SCA-011: Abort the active job linked to a session */
+  /** Abort the active execution linked to a session */
   abortSession: (sessionId: string) =>
-    post<{ ok: boolean; jobId: string }>(`/sessions/${sessionId}/abort`, {}),
-  /** @internal fallback — Abort a job directly by jobId (when session is unavailable) */
-  abortJob: (jobId: string) =>
-    post<{ ok: boolean; jobId: string }>(`/jobs/${jobId}/abort`, {}),
-  /** SCA-011: Reply to an awaiting_input job via session */
+    post<{ ok: boolean; sessionId: string }>(`/sessions/${sessionId}/abort`, {}),
+  /** @internal fallback — Abort execution directly (when session is unavailable) */
+  abortExec: (id: string) =>
+    post<{ ok: boolean }>(`/jobs/${id}/abort`, {}),
+  /** Reply to an awaiting_input execution via session */
   replyToSession: (sessionId: string, message: string, attachments?: ImageAttachment[]) =>
-    post<{ ok: boolean; jobId: string; sessionId: string }>(`/sessions/${sessionId}/reply`, { message, ...(attachments && { attachments }) }),
+    post<{ ok: boolean; sessionId: string }>(`/sessions/${sessionId}/reply`, { message, ...(attachments && { attachments }) }),
 
   // Execution (start only — monitoring/control via Session API)
   execute: (params: { type?: string; roleId?: string; task?: string; directive?: string; sourceRole?: string; readOnly?: boolean; targetRole?: string; targetRoles?: string[]; waveId?: string; attachments?: ImageAttachment[] }) =>
-    post<{ jobId: string; jobIds?: string[]; waveId?: string; sessionId?: string; sessionIds?: string[] }>('/jobs', params),
+    post<{ sessionId?: string; sessionIds?: string[]; waveId?: string; jobId?: string; jobIds?: string[] }>('/jobs', params),
   saveWave: (params: { directive: string; sessionIds: string[]; waveId?: string }) =>
     post<{ ok: boolean; path: string }>('/waves/save', { ...params, jobIds: params.sessionIds }),
 

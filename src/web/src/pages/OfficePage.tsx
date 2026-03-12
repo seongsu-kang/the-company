@@ -75,7 +75,7 @@ export default function OfficePage({ importReq, onImportDone }: { importReq?: Im
 
   /* Phase 2: Execution state — session-centric */
   const [assignModal, setAssignModal] = useState<{ roleId: string; roleName: string; mode: 'assign' | 'ask' } | null>(null);
-  const [execStack, setExecStack] = useState<Array<{ sessionId: string; jobId: string; title: string; color: string }>>([]);
+  const [execStack, setExecStack] = useState<Array<{ sessionId: string; title: string; color: string }>>([]);
   const [showWaveModal, setShowWaveModal] = useState(false);
   const [showWaveCenter, setShowWaveCenter] = useState(false);
   const [waveCenterWaves, setWaveCenterWaves] = useState<Array<{ id: string; directive: string; rootDispatches: Array<{ sessionId: string; roleId: string; roleName: string }>; startedAt: number; sessionIds?: string[] }>>([]);
@@ -336,7 +336,7 @@ export default function OfficePage({ importReq, onImportDone }: { importReq?: Im
       if (waves.length > 0) {
         setWaveCenterWaves(waves.map(w => ({
           ...w,
-          rootDispatches: (w.dispatches ?? w.rootJobs ?? []).map(({ sessionId, roleId, roleName }) => ({ sessionId, roleId, roleName })),
+          rootDispatches: w.dispatches.map(({ sessionId, roleId, roleName }) => ({ sessionId, roleId, roleName })),
         })));
       }
     }).catch(() => {});
@@ -414,7 +414,7 @@ export default function OfficePage({ importReq, onImportDone }: { importReq?: Im
   }, []);
 
   /* Merge streaming chat status into roleStatuses so cards show yellow border.
-     Don't override awaiting_input — it's a more specific active state from a job. */
+     Don't override awaiting_input — it's a more specific active state from execution. */
   const effectiveRoleStatuses = useMemo(() => {
     const result = { ...roleStatuses };
     if (streamingSessionId) {
@@ -475,12 +475,11 @@ export default function OfficePage({ importReq, onImportDone }: { importReq?: Im
 
     try {
       const resp = await api.execute({ type: 'assign', roleId, task, readOnly: isAsk });
-      const jobId = resp.jobId;
-      const sessionId = resp.sessionId ?? `job-${jobId}`;
+      const sessionId = resp.sessionId ?? resp.jobId ?? '';
       const color = ROLE_COLORS[roleId] ?? '#666';
       const title = `${roleId.toUpperCase()} · ${role?.name ?? roleId}`;
       setExecMinimized(false);
-      setExecStack([{ sessionId, jobId, title, color }]);
+      setExecStack([{ sessionId, title, color }]);
       fireQuestTrigger({ type: 'task_executed', condition: { roleId } });
       // Log to #office
       officeChat.pushMessage({
@@ -491,7 +490,7 @@ export default function OfficePage({ importReq, onImportDone }: { importReq?: Im
         targetRoleId: roleId,
       });
     } catch (err) {
-      addToast(`Failed to start job: ${err instanceof Error ? err.message : 'unknown'}`, '#C62828');
+      addToast(`Failed to execute: ${err instanceof Error ? err.message : 'unknown'}`, '#C62828');
     }
   };
 
@@ -610,7 +609,7 @@ export default function OfficePage({ importReq, onImportDone }: { importReq?: Im
       officeChat.pushMessage({
         ts: Date.now(),
         roleId: current.title.split(' · ')[0]?.toLowerCase() ?? 'unknown',
-        text: `[${current.title}] Job completed`,
+        text: `[${current.title}] Completed`,
         type: 'dispatch',
       });
     }
@@ -714,8 +713,9 @@ export default function OfficePage({ importReq, onImportDone }: { importReq?: Im
     try {
       const resp = await api.execute({ type: 'wave', directive, targetRoles, ...(attachments && { attachments }) });
       fireQuestTrigger({ type: 'wave_dispatched' });
-      // Wave returns { jobIds: string[] } — one per C-Level role
-      const jobIds: string[] = resp.jobIds ?? (resp.jobId ? [resp.jobId] : []);
+      // D-014: Extract server-generated waveId and sessionIds
+      const serverWaveId = resp.waveId ?? `wave-${Date.now()}`;
+      const serverSessionIds: string[] = resp.sessionIds ?? resp.jobIds ?? (resp.jobId ? [resp.jobId] : []);
       // Use CEO's direct reports from org tree (not just c-level filter)
       const ceoDirectReports = orgRootId && orgNodes[orgRootId]
         ? orgNodes[orgRootId].children.map(id => roles.find(r => r.id === id)).filter((r): r is typeof roles[number] => !!r)
@@ -724,15 +724,10 @@ export default function OfficePage({ importReq, onImportDone }: { importReq?: Im
         ? ceoDirectReports.filter(r => targetRoles.includes(r.id))
         : ceoDirectReports;
 
-      // D-014: Extract server-generated waveId and sessionIds
-      const serverWaveId = resp.waveId ?? `wave-${Date.now()}`;
-      const serverSessionIds: string[] = resp.sessionIds ?? [];
-
-      const wj = jobIds.map((jid, i) => ({
+      const wj = serverSessionIds.map((sid, i) => ({
         roleId: cLevels[i]?.id ?? `role-${i}`,
         roleName: cLevels[i]?.name ?? `C-Level ${i + 1}`,
-        sessionId: serverSessionIds[i] ?? `wave-${jid}`,
-        _jobId: jid, // internal: needed for legacy session creation
+        sessionId: sid,
       }));
 
       // Log wave to #office
@@ -756,43 +751,24 @@ export default function OfficePage({ importReq, onImportDone }: { importReq?: Im
       // D-014: Use server-created sessions (backend creates them with wave source)
       // If server provided sessionIds, fetch them; otherwise create virtual sessions as fallback
       const now = new Date().toISOString();
-      const waveSessions: Session[] = serverSessionIds.length > 0
-        ? wj.map((w, i) => ({
-            id: serverSessionIds[i] ?? `wave-${w._jobId}`,
-            roleId: w.roleId,
-            title: `WAVE: ${w.roleName}`,
-            mode: 'do' as const,
-            source: 'wave' as const,
-            messages: [{
-              id: `msg-wave-${w._jobId}-ceo`,
-              from: 'ceo' as const,
-              content: directive,
-              type: 'directive' as const,
-              status: 'done' as const,
-              timestamp: now,
-            }],
-            status: 'active' as const,
-            createdAt: now,
-            updatedAt: now,
-          }))
-        : wj.map((w) => ({
-            id: `wave-${w._jobId}`,
-            roleId: w.roleId,
-            title: `WAVE: ${w.roleName}`,
-            mode: 'do' as const,
-            source: 'wave' as const,
-            messages: [{
-              id: `msg-wave-${w._jobId}-ceo`,
-              from: 'ceo' as const,
-              content: directive,
-              type: 'directive' as const,
-              status: 'done' as const,
-              timestamp: now,
-            }],
-            status: 'active' as const,
-            createdAt: now,
-            updatedAt: now,
-          }));
+      const waveSessions: Session[] = wj.map((w) => ({
+        id: w.sessionId,
+        roleId: w.roleId,
+        title: `WAVE: ${w.roleName}`,
+        mode: 'do' as const,
+        source: 'wave' as const,
+        messages: [{
+          id: `msg-${w.sessionId}-ceo`,
+          from: 'ceo' as const,
+          content: directive,
+          type: 'directive' as const,
+          status: 'done' as const,
+          timestamp: now,
+        }],
+        status: 'active' as const,
+        createdAt: now,
+        updatedAt: now,
+      }));
 
       // Add role streaming message to each wave session and connect SSE
       const sessionsWithRoleMsg = waveSessions.map((ws, i) => ({
@@ -800,7 +776,7 @@ export default function OfficePage({ importReq, onImportDone }: { importReq?: Im
         messages: [
           ...ws.messages,
           {
-            id: `msg-wave-${wj[i]._jobId}-role`,
+            id: `msg-${wj[i].sessionId}-role`,
             from: 'role' as const,
             content: '',
             type: 'conversation' as const,
@@ -905,7 +881,7 @@ export default function OfficePage({ importReq, onImportDone }: { importReq?: Im
   // If the role is currently working, open its ActivityPanel instead.
   // Creates a new session if none exists for this role.
   const handleFocusTerminal = async (roleId: string) => {
-    // If role is working, open the ActivityPanel for its active job
+    // If role is working, open the ActivityPanel for its active session
     const exec = activeExecsByRole[roleId];
     const execSessionId = exec?.sessionId ?? exec?.id;
     if (execSessionId && isRoleActive(effectiveRoleStatuses[roleId] as RoleStatus)) {
@@ -915,7 +891,7 @@ export default function OfficePage({ importReq, onImportDone }: { importReq?: Im
       // Find session for this role (from active sessions or wave sessions)
       const activeSession = sessions.find(s => s.roleId === roleId && s.status === 'active');
       const sessionId = activeSession?.id ?? execSessionId;
-      setExecStack([{ sessionId, jobId: execSessionId, title, color }]);
+      setExecStack([{ sessionId, title, color }]);
       setExecMinimized(false);
       return;
     }
@@ -1677,7 +1653,7 @@ export default function OfficePage({ importReq, onImportDone }: { importReq?: Im
               {waveDone ? 'WAVE DONE' : 'WAVE'}
             </button>
           )}
-          {/* Minimized job indicator */}
+          {/* Minimized execution indicator */}
           {execStack.length > 0 && execMinimized && (
             <button
               onClick={() => setExecMinimized(false)}
@@ -1728,7 +1704,7 @@ export default function OfficePage({ importReq, onImportDone }: { importReq?: Im
           onClose={closePanel}
           onFireRole={(id, name) => { setFireTarget({ roleId: id, roleName: name }); closePanel(); }}
           terminalWidth={terminalOpen ? terminalWidth : 0}
-          activeSessionId={execStack.find(j => j.jobId === roleExec?.sessionId)?.sessionId ?? roleExec?.sessionId}
+          activeSessionId={execStack.find(j => j.sessionId === roleExec?.sessionId)?.sessionId ?? roleExec?.sessionId}
           activeTask={roleExec?.task}
           isWorking={isRoleActive(effectiveRoleStatuses[selectedRole.id] as RoleStatus)}
           startedAt={roleExec?.startedAt}
@@ -1815,7 +1791,7 @@ export default function OfficePage({ importReq, onImportDone }: { importReq?: Im
                 onClose={closeProfile}
                 onFireRole={(id, name) => { setFireTarget({ roleId: id, roleName: name }); }}
                 terminalWidth={0}
-                activeSessionId={execStack.find(j => j.jobId === roleExec?.sessionId)?.sessionId ?? roleExec?.sessionId}
+                activeSessionId={execStack.find(j => j.sessionId === roleExec?.sessionId)?.sessionId ?? roleExec?.sessionId}
                 activeTask={roleExec?.task}
                 isWorking={isRoleActive(effectiveRoleStatuses[selectedRole.id] as RoleStatus)}
                 startedAt={roleExec?.startedAt}
@@ -2108,7 +2084,7 @@ export default function OfficePage({ importReq, onImportDone }: { importReq?: Im
                     key={wj.sessionId}
                     onClick={() => {
                       setWaveActiveIdx(i);
-                      setExecStack([{ sessionId: wj.sessionId, jobId: wj.sessionId, title: `CEO WAVE · ${wj.roleId.toUpperCase()}`, color: '#B71C1C' }]);
+                      setExecStack([{ sessionId: wj.sessionId, title: `CEO WAVE · ${wj.roleId.toUpperCase()}`, color: '#B71C1C' }]);
                     }}
                     className="px-3 py-1.5 text-xs font-bold rounded-t-lg cursor-pointer transition-colors"
                     style={{

@@ -157,6 +157,7 @@ export interface Message {
   /* D-014: Session-Centric extensions */
   events?: ActivityEvent[];
   dispatches?: Array<{ sessionId: string; roleId: string }>;
+  /** @deprecated D-014: internal runtime handle, not exposed to UI */
   jobId?: string;
   readOnly?: boolean;
   turns?: number;

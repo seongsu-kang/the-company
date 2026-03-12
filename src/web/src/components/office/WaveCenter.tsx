@@ -344,7 +344,7 @@ export default function WaveCenter({
         // Use the returned sessionId (may be a new continuation session)
         waveTree.connectStream(resp.sessionId || node.sessionId, waveTree.selectedRoleId);
       } else {
-        // Start new job (follow-up for done, replay, or not-dispatched)
+        // Start new execution (follow-up for done, replay, or not-dispatched)
         const waveId = currentActiveWave?.id ?? replayData?.waveId ?? replayData?.id;
         const resp = await api.execute({ type: 'assign', roleId: waveTree.selectedRoleId, task: replyText.trim(), ...(waveId && { waveId }), ...(atts && { attachments: atts }) });
         setReplyText('');
@@ -738,7 +738,7 @@ export default function WaveCenter({
                   )}
                   {selectedNode?.events.map((event, idx) => {
                     const events = selectedNode.events;
-                    // Detect follow-up boundary: job:start that's not the first in the list
+                    // Detect follow-up boundary: msg:start that's not the first in the list
                     const isFollowUpStart = event.type === 'msg:start' && idx > 0;
                     // Hide terminal events (msg:done/error/awaiting_input) right before a follow-up start
                     const nextEvent = events[idx + 1];

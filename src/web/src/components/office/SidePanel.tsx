@@ -185,7 +185,7 @@ export default function SidePanel({
     return { tools, thinkCount, textCount, dispatchCount, total: activityEvents.length };
   })();
 
-  // Derive task description: from job or from last CEO message in session
+  // Derive task description: from active execution or from last CEO message in session
   const effectiveTask = activeTask || (() => {
     if (!roleSession) return null;
     const msgs = roleSession.messages;

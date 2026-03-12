@@ -294,7 +294,7 @@ export default function WaveCommandCenter({
                     onClick={() => handleForceStop(selectedNode.roleId)}
                     className="text-[10px] px-2 py-0.5 rounded font-semibold cursor-pointer ml-1"
                     style={{ background: '#C6282822', color: '#C62828', border: '1px solid #C6282844' }}
-                    title="Force stop this job"
+                    title="Force stop this execution"
                   >
                     Stop
                   </button>

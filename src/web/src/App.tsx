@@ -51,8 +51,8 @@ function AppShell() {
   // Apply saved theme on app mount (before office loads)
   useEffect(() => { applyStoredTheme(); }, []);
 
-  const handleWizardComplete = (job?: ImportRequest) => {
-    if (job) setImportReq(job);
+  const handleWizardComplete = (req?: ImportRequest) => {
+    if (req) setImportReq(req);
     refetch();
   };
 
