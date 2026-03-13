@@ -152,20 +152,73 @@
 
 ---
 
+## TC-W: Wave Dispatch & Recovery
+
+> API 서버 필수. `COMPANY_ROOT` 설정 + claude-cli 실행 엔진 필요.
+
+| ID | 테스트 | 검증 항목 | 상태 |
+|----|--------|----------|------|
+| TC-W01 | Wave dispatch | Wave Center에서 directive 입력 → Dispatch 클릭 → Org Propagation에 C-level role들 "Working" 표시, 타이머 카운트, ACTIVE 섹션에 wave 표시 | PASS |
+| TC-W02 | Wave LIVE 인디케이터 | 실행 중 상단 좌측에 "⚡ {directive} LIVE N/N roles working" 배너, "N live" 뱃지 표시 | PASS |
+| TC-W03 | Wave 중 Chats 전환 | Wave 실행 중 Chats 탭 클릭 → 상단 탭에 "WAVE: {RoleName}" 세션 자동 표시, TEAM 리스트에 wave task 표시 + 활성 점 | PASS |
+| TC-W04 | Wave 중 role 채팅 열기 | TEAM에서 Working 중인 role 클릭 → 스트리밍 채팅 표시, tool 사용 내역 표시, 하단에 "Wave execution · read-only" | PASS |
+| TC-W05 | Wave 중 Office 전환 복귀 | Wave 실행 중 Office 뷰 → Wave Center 복귀 → 진행 상태 유지 | PASS |
+| TC-W06 | Wave 완료 후 상태 | 모든 role 완료 → Org Propagation에 "Complete" 표시, PAST WAVES에 기록 이동, "WAVE DONE" 하단 표시 | PASS |
+| TC-W07 | Past Wave REPLAY | Past Waves에서 완료된 wave 클릭 → REPLAY 모드, role별 응답 + 이벤트 수 + Follow-up 입력란 표시 | PASS |
+| TC-W08 | Wave 새로고침 복구 (실행 중) | Wave 스트리밍 중 페이지 새로고침 → active wave 복구, 스트림 재연결 | **BUG** |
+| TC-W09 | Wave 새로고침 복구 (완료) | Wave 완료 후 새로고침 → Past Waves에 wave 기록 유지 | PASS (1st wave) / **BUG** (2nd wave) |
+| TC-W10 | Wave 연속 dispatch | 이전 wave 완료 → 새 wave dispatch → 정상 실행 + Past Waves에 이전 wave 유지 | PASS |
+| TC-W11 | Wave 파일 영속성 | Wave 완료 후 `operations/waves/{id}.json`에 directive, roles, sessionIds 저장 | **BUG** (sessionIds 빈 배열) |
+
+---
+
+## TC-C: Chat Session Lifecycle
+
+| ID | 테스트 | 검증 항목 | 상태 |
+|----|--------|----------|------|
+| TC-C01 | 1:1 채팅 Talk 모드 | TEAM에서 role 클릭 → Talk 모드 → 메시지 입력 → 전송 → 스트리밍 응답 | PASS |
+| TC-C02 | 1:1 채팅 Do 모드 | Do 모드 전환 → directive 입력 → tool 사용 포함 응답 | PASS |
+| TC-C03 | 채팅 중 role 전환 + 복귀 | CTO 채팅 중 CBO 클릭 → CBO 프로필 표시 → CTO 다시 클릭 → 이전 채팅 내용 유지 | PASS |
+| TC-C04 | 채팅 새로고침 후 히스토리 | 채팅 메시지 전송 후 새로고침 → 해당 세션 탭 유지 + 메시지 히스토리 로드 | **BUG** (세션 유실) |
+| TC-C05 | 세션 탭 닫기 | 세션 탭 × 클릭 → 탭 닫힘, 다시 role 클릭 시 새 세션 생성 | PASS |
+| TC-C06 | Empty 세션 정리 | ··· 메뉴 → "Clear empty sessions" → 메시지 없는 세션 일괄 삭제 | PASS |
+| TC-C07 | #general 시스템 로그 | #general 탭 → wave 실행 기록, 시스템 이벤트 표시 | PASS |
+| TC-C08 | #watercooler 잡담 | #watercooler 탭 → role 간 자연스러운 대화 내용 표시 | PASS |
+| TC-C09 | Wave 세션 → Chats 접근 | Wave에서 생성된 세션을 Chats 탭에서 선택 → 채팅 히스토리 표시 | **BUG** (session-store 미등록) |
+| TC-C10 | 세션 첨부파일 | 채팅에서 이미지 첨부 → 메시지에 첨부파일 표시 | - |
+
+---
+
+## TC-N: Navigation & View Switching
+
+| ID | 테스트 | 검증 항목 | 상태 |
+|----|--------|----------|------|
+| TC-N01 | Chats ↔ Waves 전환 | Chats/Waves 탭 반복 전환 → 각 뷰 상태 유지 | PASS |
+| TC-N02 | Knowledge Base 표시 | Knowledge 탭 → Graph 뷰 + 카테고리 필터 + 검색 | PASS |
+| TC-N03 | Decisions 표시 | Decisions 탭 → 결정 목록 + Waves 탭 전환 | PASS |
+| TC-N04 | Office ↔ PRO 전환 | Office/PRO 토글 → 레이아웃 전환, 세션 상태 유지 | PASS |
+| TC-N05 | Dashboard 버튼 | Dashboard 클릭 → role 대시보드 표시 | PASS |
+| TC-N06 | Profile 버튼 | role Profile 클릭 → 프로필 상세 표시 | PASS |
+
+---
+
 ## 테스트 결과 요약
 
-| 그룹 | 전체 | PASS | 미검증 |
-|------|------|------|--------|
-| Page Load (TC-P) | 4 | 4 | 0 |
-| View Toggle (TC-V) | 8 | 8 | 0 |
-| Hire (TC-H) | 22 | 21 | 1 |
-| Office ISO (TC-O) | 8 | 6 | 2 |
-| Role Panel (TC-R) | 9 | 9 | 0 |
-| Terminal (TC-T) | 3 | 3 | 0 |
-| Floor Template (TC-F) | 7 | 7 | 0 |
-| Pro View (TC-PRO) | 18 | 11 | 7 |
-| Save (TC-S) | 2 | 1 | 1 |
-| **합계** | **81** | **70** | **11** |
+| 그룹 | 전체 | PASS | BUG | 미검증 |
+|------|------|------|-----|--------|
+| Page Load (TC-P) | 4 | 4 | 0 | 0 |
+| View Toggle (TC-V) | 8 | 8 | 0 | 0 |
+| Hire (TC-H) | 22 | 21 | 0 | 1 |
+| Office ISO (TC-O) | 8 | 6 | 0 | 2 |
+| Role Panel (TC-R) | 9 | 9 | 0 | 0 |
+| Terminal (TC-T) | 3 | 3 | 0 | 0 |
+| Floor Template (TC-F) | 7 | 7 | 0 | 0 |
+| Pro View (TC-PRO) | 18 | 11 | 0 | 7 |
+| Save (TC-S) | 2 | 1 | 0 | 1 |
+| Wave (TC-W) | 11 | 8 | 3 | 0 |
+| Chat (TC-C) | 10 | 7 | 2 | 1 |
+| Navigation (TC-N) | 6 | 6 | 0 | 0 |
+| **합계** | **108** | **91** | **5** | **12** |
 
 ---
 
@@ -194,4 +247,5 @@ cd src/web && npx vite --port 5174
 ---
 
 *작성: CTO | 2026-03-10*
+*업데이트: CEO E2E | 2026-03-13 (TC-W, TC-C, TC-N 추가)*
 *관련: [test-strategy](../../../knowledge/test-strategy.md) | [floor-template](../../src/components/office/floor-template.ts)*

@@ -22,6 +22,8 @@
 ## AKB Core Concepts
 
 > **AKB** = A file-based knowledge system where AI uses **search (Grep/Glob)** to find and **contextual links** to navigate
+>
+> Full reference: `methodologies/agentic-knowledge-base.md`
 
 | Layer | Role | AI Usage |
 |-------|------|----------|
@@ -197,8 +199,8 @@ After completing any task, check:
 {company}/
 +-- CLAUDE.md                <- AI entry point (Tycono managed)
 +-- .tycono/
-|   +-- config.json          <- Engine settings
-|   +-- preferences.json     <- UI preferences
+|   +-- config.json          <- Engine settings (auto-generated)
+|   +-- preferences.json     <- UI preferences (auto-generated)
 |   +-- custom-rules.md      <- Company custom rules (user owned)
 |   +-- rules-version        <- Current CLAUDE.md version
 +-- company/
@@ -217,8 +219,14 @@ After completing any task, check:
 |   +-- standup/             <- Daily standups
 |   +-- waves/               <- Wave execution logs
 |   +-- decisions/           <- Decision log
+|   +-- activity-streams/    <- SSE activity event logs
+|   +-- sessions/            <- Session state
+|   +-- cost/                <- Token usage ledger
 +-- knowledge/
 |   +-- knowledge.md         <- Domain knowledge (Hub)
++-- methodologies/
+|   +-- methodologies.md     <- Methodology listing (Hub)
+|   +-- agentic-knowledge-base.md  <- AKB protocol reference
 +-- .claude/skills/
     +-- _shared/             <- Shared skill plugins
     +-- {role-id}/SKILL.md   <- Role-specific skill guides
@@ -226,5 +234,5 @@ After completing any task, check:
 
 ---
 
-<!-- tycono:managed v0.1.65 — This file is managed by Tycono. Do not edit manually. -->
+<!-- tycono:managed v0.1.93-beta.1 — This file is managed by Tycono. Do not edit manually. -->
 <!-- Company-specific rules go in .tycono/custom-rules.md -->

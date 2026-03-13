@@ -1,3 +1,4 @@
 {
-  "engine": "claude-cli"
+  "engine": "claude-cli",
+  "codeRoot": "/Users/nodias/tycono/fixtures/sample-company-code"
 }
