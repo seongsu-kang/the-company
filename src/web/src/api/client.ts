@@ -299,7 +299,7 @@ export const api = {
   cleanupActiveSessions: () => post<{ cleaned: number; remaining: number; sessions: Array<{ sessionId: string; ports: { api: number; vite: number } }> }>('/active-sessions/cleanup', {}),
 
   // Git Status
-  getGitStatus: () => get<GitStatus>('/git/status'),
-  deleteWorktree: (path: string) => del<{ ok: boolean }>(`/git/worktrees/${encodeURIComponent(path)}`),
-  deleteBranch: (name: string) => del<{ ok: boolean }>(`/git/branches/${encodeURIComponent(name)}`),
+  getGitStatus: (repo: 'akb' | 'code' = 'akb') => get<GitStatus>(`/git/status?repo=${repo}`),
+  deleteWorktree: (path: string, repo: 'akb' | 'code' = 'akb') => del<{ ok: boolean }>(`/git/worktrees/${encodeURIComponent(path)}?repo=${repo}`),
+  deleteBranch: (name: string, repo: 'akb' | 'code' = 'akb') => del<{ ok: boolean }>(`/git/branches/${encodeURIComponent(name)}?repo=${repo}`),
 };
