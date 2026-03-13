@@ -1,8 +1,11 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { execSync } from 'node:child_process';
 import { COMPANY_ROOT } from '../services/file-reader.js';
+import { resolveCodeRoot } from '../services/company-config.js';
 
 export const gitRouter = Router();
+
+type RepoType = 'akb' | 'code';
 
 interface WorktreeInfo {
   path: string;
@@ -17,17 +20,42 @@ interface LastCommit {
   date: string;
 }
 
-function git(cmd: string): string {
-  return execSync(`git ${cmd}`, { cwd: COMPANY_ROOT, encoding: 'utf-8', timeout: 5000 }).trim();
+/**
+ * Resolve repository root based on repo type
+ */
+function resolveRepoRoot(repo: RepoType = 'akb'): string {
+  if (repo === 'akb') {
+    return COMPANY_ROOT;
+  }
+  return resolveCodeRoot(COMPANY_ROOT);
 }
 
-// GET /api/git/status
-gitRouter.get('/status', (_req: Request, res: Response, next: NextFunction) => {
+function git(cmd: string, cwd: string): string {
+  return execSync(`git ${cmd}`, { cwd, encoding: 'utf-8', timeout: 5000 }).trim();
+}
+
+// GET /api/git/status?repo=akb|code
+gitRouter.get('/status', (req: Request, res: Response, next: NextFunction) => {
   try {
+    const repoParam = (req.query.repo as string) ?? 'akb';
+    const repo: RepoType = repoParam === 'code' ? 'code' : 'akb';
+
+    let repoRoot: string;
+    try {
+      repoRoot = resolveRepoRoot(repo);
+    } catch (err) {
+      res.status(400).json({
+        error: repo === 'code'
+          ? 'Code root not configured or inaccessible'
+          : 'Company root not found'
+      });
+      return;
+    }
+
     // Current branch
     let currentBranch: string;
     try {
-      currentBranch = git('rev-parse --abbrev-ref HEAD');
+      currentBranch = git('rev-parse --abbrev-ref HEAD', repoRoot);
     } catch {
       res.status(500).json({ error: 'Not a git repository or git is not available' });
       return;
@@ -36,7 +64,7 @@ gitRouter.get('/status', (_req: Request, res: Response, next: NextFunction) => {
     // Worktrees
     let worktrees: WorktreeInfo[] = [];
     try {
-      const raw = git('worktree list --porcelain');
+      const raw = git('worktree list --porcelain', repoRoot);
       const blocks = raw.split('\n\n').filter(Boolean);
       for (const block of blocks) {
         const lines = block.split('\n');
@@ -44,13 +72,13 @@ gitRouter.get('/status', (_req: Request, res: Response, next: NextFunction) => {
         const commitHash = lines.find(l => l.startsWith('HEAD '))?.replace('HEAD ', '') ?? '';
         const branchLine = lines.find(l => l.startsWith('branch '));
         const branch = branchLine ? branchLine.replace('branch refs/heads/', '') : '(detached)';
-        const isMain = lines.some(l => l === 'worktree ' + COMPANY_ROOT) ||
+        const isMain = lines.some(l => l === 'worktree ' + repoRoot) ||
           (!branchLine && lines.some(l => l === 'bare'));
         worktrees.push({
           path: wtPath,
           branch,
           commitHash,
-          isMain: wtPath === COMPANY_ROOT,
+          isMain: wtPath === repoRoot,
         });
       }
     } catch {
@@ -60,7 +88,7 @@ gitRouter.get('/status', (_req: Request, res: Response, next: NextFunction) => {
     // Stale (unmerged) branches
     let staleBranches: string[] = [];
     try {
-      const raw = git('branch --no-merged develop');
+      const raw = git('branch --no-merged develop', repoRoot);
       staleBranches = raw
         .split('\n')
         .map(b => b.trim().replace(/^\*\s*/, ''))
@@ -72,7 +100,7 @@ gitRouter.get('/status', (_req: Request, res: Response, next: NextFunction) => {
     // Unsaved changes count
     let unsavedChanges = 0;
     try {
-      const raw = git('status --porcelain');
+      const raw = git('status --porcelain', repoRoot);
       unsavedChanges = raw ? raw.split('\n').filter(Boolean).length : 0;
     } catch {
       unsavedChanges = 0;
@@ -81,7 +109,7 @@ gitRouter.get('/status', (_req: Request, res: Response, next: NextFunction) => {
     // Last commit
     let lastCommit: LastCommit | null = null;
     try {
-      const raw = git('log -1 --format=%H%n%s%n%aI');
+      const raw = git('log -1 --format=%H%n%s%n%aI', repoRoot);
       const [hash, message, date] = raw.split('\n');
       if (hash) {
         lastCommit = { hash, message: message ?? '', date: date ?? '' };
@@ -113,10 +141,10 @@ gitRouter.delete('/worktree/{*path}', (req: Request, res: Response, next: NextFu
     }
 
     try {
-      git(`worktree remove ${JSON.stringify(worktreePath)}`);
+      git(`worktree remove ${JSON.stringify(worktreePath)}`, COMPANY_ROOT);
     } catch {
       // Try force remove if normal remove fails
-      git(`worktree remove --force ${JSON.stringify(worktreePath)}`);
+      git(`worktree remove --force ${JSON.stringify(worktreePath)}`, COMPANY_ROOT);
     }
 
     res.json({ success: true, removed: worktreePath });
@@ -146,7 +174,7 @@ gitRouter.delete('/branch/{*name}', (req: Request, res: Response, next: NextFunc
 
     // Delete local branch
     try {
-      git(`branch -d ${JSON.stringify(branchName)}`);
+      git(`branch -d ${JSON.stringify(branchName)}`, COMPANY_ROOT);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       // If branch is not fully merged, report but continue to try remote
@@ -159,7 +187,7 @@ gitRouter.delete('/branch/{*name}', (req: Request, res: Response, next: NextFunc
 
     // Delete remote branch
     try {
-      git(`push origin --delete ${JSON.stringify(branchName)}`);
+      git(`push origin --delete ${JSON.stringify(branchName)}`, COMPANY_ROOT);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       if (!msg.includes('remote ref does not exist')) {
