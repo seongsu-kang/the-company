@@ -272,7 +272,7 @@ export default function ProView({
             style={{ background: 'var(--terminal-border, #2E261F)', color: 'var(--terminal-text, #fff5eb)' }}
           >
             <span className="text-[12px]">{'\u{1F3E2}'}</span>
-            <span className="text-[11px] font-medium">Office</span>
+            <span className="text-[11px] font-medium">OFFICE</span>
           </button>
         </div>
       </div>

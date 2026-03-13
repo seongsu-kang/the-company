@@ -32,9 +32,15 @@ saveRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
     const result = gitSave(COMPANY_ROOT, message, getRepo(req));
     res.json({ ok: true, ...result });
   } catch (err) {
-    if (err instanceof Error && err.message === 'No changes to save') {
-      res.status(400).json({ error: err.message });
-      return;
+    if (err instanceof Error) {
+      if (err.message === 'No changes to save') {
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      if (err.message.includes('Not a git repository') || err.message.includes('codeRoot')) {
+        res.status(400).json({ error: 'Repository not initialized. Run git init first.' });
+        return;
+      }
     }
     next(err);
   }
@@ -64,7 +70,7 @@ saveRouter.post('/init', (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-// POST /api/save/restore
+// POST /api/save/restore?repo=akb|code
 saveRouter.post('/restore', (req: Request, res: Response, next: NextFunction) => {
   try {
     const { sha, paths } = req.body ?? {};
@@ -72,9 +78,13 @@ saveRouter.post('/restore', (req: Request, res: Response, next: NextFunction) =>
       res.status(400).json({ error: 'sha is required' });
       return;
     }
-    const result = gitRestore(COMPANY_ROOT, sha, paths);
+    const result = gitRestore(COMPANY_ROOT, sha, paths, getRepo(req));
     res.json({ ok: true, ...result });
   } catch (err) {
+    if (err instanceof Error && (err.message.includes('Not a git repository') || err.message.includes('codeRoot'))) {
+      res.status(400).json({ error: 'Repository not initialized. Run git init first.' });
+      return;
+    }
     next(err);
   }
 });

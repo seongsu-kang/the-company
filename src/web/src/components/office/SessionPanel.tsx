@@ -272,20 +272,35 @@ function SessionRow({ session, removing, onRemove, statusColor }: SessionRowProp
           </div>
         </div>
 
-        <button
-          onClick={onRemove}
-          disabled={removing}
-          style={{
-            background: 'rgba(255,100,100,0.15)', border: '1px solid rgba(255,100,100,0.2)',
-            color: '#ff6b6b', borderRadius: 4, padding: '3px 8px', fontSize: 10,
-            cursor: removing ? 'wait' : 'pointer',
-            opacity: removing ? 0.6 : 1,
-            fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5,
-            flexShrink: 0, marginLeft: 8,
-          }}
-        >
-          {removing ? '...' : 'STOP'}
-        </button>
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginLeft: 8 }}>
+          {ports.vite && (
+            <button
+              onClick={() => window.open(`http://localhost:${ports.vite}`, '_blank')}
+              style={{
+                background: 'rgba(100,200,255,0.15)', border: '1px solid rgba(100,200,255,0.2)',
+                color: '#64B5F6', borderRadius: 4, padding: '3px 8px', fontSize: 10,
+                cursor: 'pointer',
+                fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5,
+              }}
+              title={`Open http://localhost:${ports.vite}`}
+            >
+              OPEN
+            </button>
+          )}
+          <button
+            onClick={onRemove}
+            disabled={removing}
+            style={{
+              background: 'rgba(255,100,100,0.15)', border: '1px solid rgba(255,100,100,0.2)',
+              color: '#ff6b6b', borderRadius: 4, padding: '3px 8px', fontSize: 10,
+              cursor: removing ? 'wait' : 'pointer',
+              opacity: removing ? 0.6 : 1,
+              fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5,
+            }}
+          >
+            {removing ? '...' : 'STOP'}
+          </button>
+        </div>
       </div>
     </div>
   );

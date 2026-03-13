@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { api } from '../api/client';
-import type { Role, RoleDetail, Project, Standup, Wave, Decision, Session, Message, StreamEvent, CreateRoleInput, ImportRequest, KnowledgeDoc, OrgNode, GitStatus, ImageAttachment, RoleStatus } from '../types';
+import type { Role, RoleDetail, Project, Standup, Wave, Decision, Session, Message, StreamEvent, CreateRoleInput, ImportRequest, KnowledgeDoc, OrgNode, GitStatus, ImageAttachment, RoleStatus, ActiveSession } from '../types';
 import { isRoleActive } from '../types';
 import SidePanel from '../components/office/SidePanel';
 import OperationsPanel from '../components/office/OperationsPanel';
@@ -147,6 +147,7 @@ export default function OfficePage({ importReq, onImportDone }: { importReq?: Im
   const [showSyncPanel, setShowSyncPanel] = useState(false);
   const [showGitPanel, setShowGitPanel] = useState(false);
   const [showSessionPanel, setShowSessionPanel] = useState(false);
+  const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [showThemeDropup, setShowThemeDropup] = useState(false);
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
@@ -184,6 +185,22 @@ export default function OfficePage({ importReq, onImportDone }: { importReq?: Im
     const interval = setInterval(fetchGitStatus, 10000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [showGitPanel]);
+
+  // Poll active sessions
+  useEffect(() => {
+    let cancelled = false;
+    const fetchActiveSessions = async () => {
+      try {
+        const data = await api.getActiveSessions();
+        if (!cancelled) setActiveSessions(data.sessions);
+      } catch {
+        // API may not exist yet — silently ignore
+      }
+    };
+    fetchActiveSessions();
+    const interval = setInterval(fetchActiveSessions, 5000); // Poll every 5s
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
 
   /* Knowledge import state */
   interface ImportLogEntry {
@@ -1667,6 +1684,25 @@ export default function OfficePage({ importReq, onImportDone }: { importReq?: Im
             >
               {execStack[execStack.length - 1].title.slice(0, 20)}
               {execStack[execStack.length - 1].title.length > 20 ? '..' : ''}
+            </button>
+          )}
+          {/* Active sessions indicator */}
+          {activeSessions.length > 0 && (
+            <button
+              onClick={() => setShowSessionPanel(true)}
+              className="px-2 py-1 font-black cursor-pointer text-[10px]"
+              style={{
+                background: 'var(--hud-bg-alt)',
+                color: activeSessions.some(s => s.messageStatus === 'awaiting_input') ? '#FFB74D'
+                  : activeSessions.some(s => s.messageStatus === 'streaming') ? '#4FC3F7'
+                  : 'var(--terminal-text-muted)',
+                border: '2px solid var(--pixel-border)',
+                fontFamily: 'var(--pixel-font)',
+                borderRadius: 4,
+              }}
+              title={`${activeSessions.length} active session${activeSessions.length !== 1 ? 's' : ''}`}
+            >
+              {'\uD83D\uDD04'} {activeSessions.length} session{activeSessions.length !== 1 ? 's' : ''}
             </button>
           )}
           <button

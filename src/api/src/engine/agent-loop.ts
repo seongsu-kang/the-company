@@ -595,6 +595,84 @@ export async function runAgentLoop(config: AgentConfig): Promise<AgentResult> {
 
           onTurnComplete?.(turns);
         }
+
+        // ── Post-Knowledging: ④⑤ 수행 프롬프트 (KP-008) ──
+        // Engineer/CTO가 구현 완료 후 The Loop 마무리 (Knowledge 업데이트 + Task 상태 갱신)를 수행하도록 유도
+        const postKPrompt = [
+          '[POST-KNOWLEDGING] 구현이 완료되었습니다. The Loop 마무리를 수행하세요:',
+          '',
+          '## ④ Knowledge 업데이트 (The Loop Step 4)',
+          '다음 중 해당하는 항목을 수행하세요:',
+          '- 본인 journal 업데이트 (`roles/' + roleId + '/journal/YYYY-MM-DD.md` — 오늘 날짜 파일)',
+          '- 구현 중 새로 발견한 패턴/아키텍처 결정이 있다면 관련 문서 업데이트',
+          '  (예: architecture/web-app-ia.md, architecture/session-worktree-isolation.md 등)',
+          '- 중요한 기술 결정은 operations/decisions/ 또는 architecture/ 반영',
+          '',
+          '## ⑤ Task 상태 갱신 (The Loop Step 5)',
+          '- `projects/tycono-platform/tasks.md` (또는 관련 tasks 파일)에서 완료한 태스크 상태를 DONE으로 변경',
+          '- 다음 작업이 있다면 식별하여 메모',
+          '',
+          '⛔ **필수**: ④와 ⑤를 모두 수행해야 The Loop이 완료됩니다.',
+          '이제 ④⑤를 수행하세요 (Read, Edit 도구 사용).',
+        ].join('\n');
+
+        messages.push({ role: 'user', content: postKPrompt });
+
+        // Run Post-K loop (최대 2턴 — C-Level의 3턴보다 짧게)
+        const maxPostKRounds = 2;
+        for (let round = 0; round < maxPostKRounds && turns < maxTurns; round++) {
+          if (abortSignal?.aborted) break;
+          turns++;
+
+          const postKResponse = await llm.chat(context.systemPrompt, messages, tools, abortSignal);
+          totalInput += postKResponse.usage.inputTokens;
+          totalOutput += postKResponse.usage.outputTokens;
+          config.tokenLedger?.record({
+            ts: new Date().toISOString(),
+            sessionId: config.sessionId,
+            roleId,
+            model: config.model ?? 'unknown',
+            inputTokens: postKResponse.usage.inputTokens,
+            outputTokens: postKResponse.usage.outputTokens,
+          });
+
+          messages.push({ role: 'assistant', content: postKResponse.content });
+          for (const block of postKResponse.content) {
+            if (block.type === 'text' && block.text) {
+              outputParts.push(block.text);
+              onText?.(block.text);
+            }
+          }
+
+          // If no tool calls, Post-K is done
+          if (postKResponse.stopReason !== 'tool_use') break;
+
+          // Execute Post-K tool calls
+          const postKToolCalls = postKResponse.content.filter(
+            (b): b is MessageContent & { type: 'tool_use' } => b.type === 'tool_use',
+          );
+          const postKResults: ToolResult[] = [];
+          for (const tc of postKToolCalls) {
+            allToolCalls.push({ name: tc.name, input: tc.input });
+            const result = await executeTool(
+              { id: tc.id, name: tc.name, input: tc.input },
+              toolExecOptions,
+            );
+            postKResults.push(result);
+          }
+
+          messages.push({
+            role: 'user',
+            content: postKResults.map((r) => ({
+              type: 'tool_result' as const,
+              tool_use_id: r.tool_use_id,
+              content: r.content,
+              is_error: r.is_error,
+            })) as unknown as MessageContent[],
+          });
+
+          onTurnComplete?.(turns);
+        }
       }
     }
   }
