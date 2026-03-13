@@ -365,6 +365,9 @@ body {
 /* Office Markdown (Light Theme)                */
 /* ============================================ */
 
+.office-markdown {
+  color: var(--terminal-text-secondary);
+}
 .office-markdown p {
   margin: 0.35em 0;
 }

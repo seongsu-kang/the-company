@@ -8,6 +8,7 @@ import type { OfficeTheme } from './types/appearance';
 import type { ImportRequest } from './types';
 
 const SpritePreview = lazy(() => import('./components/office/sprites/preview-app'));
+const RPGGame = lazy(() => import('./rpg-game'));
 
 function BootScreen() {
   return (
@@ -62,13 +63,19 @@ function AppShell() {
 }
 
 export default function App() {
-  const isSpritePreview = new URLSearchParams(window.location.search).has('sprite-preview');
+  const params = new URLSearchParams(window.location.search);
+  const isSpritePreview = params.has('sprite-preview');
+  const isRPGGame = params.has('rpg-game');
 
   return (
     <ErrorBoundary>
       {isSpritePreview ? (
         <Suspense fallback={<BootScreen />}>
           <SpritePreview />
+        </Suspense>
+      ) : isRPGGame ? (
+        <Suspense fallback={<BootScreen />}>
+          <RPGGame />
         </Suspense>
       ) : (
         <AppShell />

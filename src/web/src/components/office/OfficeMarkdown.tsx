@@ -33,7 +33,7 @@ function CodeBlock({ className, children, ...props }: React.ComponentProps<'code
 
   if (!isBlock) {
     return (
-      <code className="bg-gray-100 text-gray-700 px-1 py-0.5 rounded text-[0.9em] font-mono" {...props}>
+      <code className="px-1 py-0.5 rounded text-[0.9em] font-mono" style={{ background: 'rgba(148,163,184,0.15)', color: 'var(--terminal-text)' }} {...props}>
         {children}
       </code>
     );

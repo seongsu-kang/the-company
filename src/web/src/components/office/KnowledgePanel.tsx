@@ -268,6 +268,7 @@ function KnowledgeGraph({
   const [hoveredNode, setHoveredNode] = useState<GNode | null>(null);
   const [hoveredEdgeIdx, setHoveredEdgeIdx] = useState<number | null>(null);
   const [hoveredNodes, setHoveredNodes] = useState<Set<string>>(new Set()); // Quick Win: highlight connected nodes on edge hover
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null); // Node hover → edge highlight
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   // Zoom/pan state
@@ -635,10 +636,17 @@ function KnowledgeGraph({
               const targetId = typeof link.target === 'string' ? link.target : link.target.id;
               const isEdgeInLocalView = localNodesInView === null ||
                 (localNodesInView.has(sourceId) && localNodesInView.has(targetId));
-              const edgeOpacity = isEdgeInLocalView ? 1 : 0.4;
+              // Node hover → highlight connected edges
+              const isConnectedToHovered = hoveredNodeId !== null &&
+                (sourceId === hoveredNodeId || targetId === hoveredNodeId);
+              const isConnectedToSelected = selectedDocId &&
+                (sourceId === selectedDocId || targetId === selectedDocId);
+              const edgeHighlighted = isEdgeHovered || isConnectedToHovered || isConnectedToSelected;
+              const baseOpacity = isEdgeInLocalView ? 1 : 0.3;
+              const edgeOpacity = edgeHighlighted ? baseOpacity : baseOpacity * 0.15;
 
               return (
-                <g key={i} style={{ opacity: edgeOpacity, transition: 'opacity 0.3s ease' }}>
+                <g key={i} style={{ opacity: edgeOpacity, transition: 'opacity 0.25s ease' }}>
                   {/* Invisible wider hit area for hover */}
                   <line
                     x1={s.x} y1={s.y} x2={t.x} y2={t.y}
@@ -656,8 +664,8 @@ function KnowledgeGraph({
                   />
                   <line
                     x1={s.x} y1={s.y} x2={t.x} y2={t.y}
-                    stroke={isEdgeHovered ? 'rgba(148,163,184,0.7)' : 'rgba(148,163,184,0.6)'}
-                    strokeWidth={isEdgeHovered ? 2 : 1.5}
+                    stroke={edgeHighlighted ? 'rgba(148,163,184,0.8)' : 'rgba(148,163,184,0.4)'}
+                    strokeWidth={edgeHighlighted ? 1.5 : 0.5}
                     pointerEvents="none"
                   />
                   {isEdgeHovered && link.label && (
@@ -713,10 +721,11 @@ function KnowledgeGraph({
                   onMouseDown={(e) => handleNodeMouseDown(e, node)}
                   onMouseEnter={(e) => {
                     setHoveredNode(node);
+                    setHoveredNodeId(node.id);
                     const rect = containerRef.current?.getBoundingClientRect();
                     if (rect) setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
                   }}
-                  onMouseLeave={() => setHoveredNode(null)}
+                  onMouseLeave={() => { setHoveredNode(null); setHoveredNodeId(null); }}
                 >
                   {/* Glow for selected */}
                   {isSelected && (
@@ -2050,6 +2059,9 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
     return (saved === 'graph' || saved === 'tree' || saved === 'list' || saved === 'health') ? saved : 'graph';
   });
   const [graphSelectedDocId, setGraphSelectedDocId] = useState<string | null>(null);
+  const [graphViewingDocId, setGraphViewingDocId] = useState<string | null>(null);
+  const [graphHistory, setGraphHistory] = useState<string[]>([]);
+  const [graphHistoryIndex, setGraphHistoryIndex] = useState<number>(-1);
 
   // KB-008: Local graph mode state
   const [localGraphMode, setLocalGraphMode] = useState<LocalGraphMode>('global');
@@ -2141,6 +2153,51 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
 
   const handleGraphNodeClick = (doc: KnowledgeDoc) => {
     setGraphSelectedDocId(doc.id);
+    handleGraphFileClick(doc.id);
+  };
+
+  const handleGraphFileClick = (docId: string) => {
+    setGraphViewingDocId(docId);
+    const newHistory = graphHistory.slice(0, graphHistoryIndex + 1);
+    newHistory.push(docId);
+    if (newHistory.length > 10) newHistory.shift();
+    setGraphHistory(newHistory);
+    setGraphHistoryIndex(newHistory.length - 1);
+  };
+
+  const handleGraphCloseDetail = () => {
+    setGraphViewingDocId(null);
+  };
+
+  const handleGraphHistoryBack = () => {
+    if (graphHistoryIndex > 0) {
+      const newIndex = graphHistoryIndex - 1;
+      setGraphHistoryIndex(newIndex);
+      setGraphViewingDocId(graphHistory[newIndex]);
+      setGraphSelectedDocId(graphHistory[newIndex]);
+    }
+  };
+
+  const handleGraphHistoryForward = () => {
+    if (graphHistoryIndex < graphHistory.length - 1) {
+      const newIndex = graphHistoryIndex + 1;
+      setGraphHistoryIndex(newIndex);
+      setGraphViewingDocId(graphHistory[newIndex]);
+      setGraphSelectedDocId(graphHistory[newIndex]);
+    }
+  };
+
+  const handleGraphHistoryJump = (docId: string) => {
+    const idx = graphHistory.indexOf(docId);
+    if (idx !== -1) {
+      setGraphHistoryIndex(idx);
+      setGraphViewingDocId(docId);
+      setGraphSelectedDocId(docId);
+    }
+  };
+
+  const handleGraphBreadcrumbClick = (level: string) => {
+    if (level === 'hub') handleGraphCloseDetail();
   };
 
   // Quick Win: Cluster click-to-filter handler
@@ -2294,6 +2351,27 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
         {/* ─── GRAPH VIEW ─── */}
         {view === 'graph' && (
           <div className="flex-1 overflow-hidden flex flex-col animate-fadeIn">
+            {graphViewingDocId && (() => {
+              const viewingDoc = docs.find((d) => d.id === graphViewingDocId);
+              if (!viewingDoc) return null;
+              return (
+                <div className="flex-1 overflow-y-auto">
+                  <DocDetailView
+                    doc={viewingDoc}
+                    onClose={handleGraphCloseDetail}
+                    onBreadcrumbClick={handleGraphBreadcrumbClick}
+                    history={graphHistory}
+                    historyIndex={graphHistoryIndex}
+                    onHistoryBack={handleGraphHistoryBack}
+                    onHistoryForward={handleGraphHistoryForward}
+                    onHistoryJump={handleGraphHistoryJump}
+                    onNavigateDoc={handleGraphFileClick}
+                    allDocs={docs}
+                  />
+                </div>
+              );
+            })()}
+            {!graphViewingDocId && (
             <div className="flex-1 flex overflow-hidden">
               <KnowledgeGraph
                 docs={docs}
@@ -2305,7 +2383,7 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
                 onClusterClick={handleClusterClick}
               />
               {/* Graph detail sidebar */}
-              {selectedGraphDoc && (
+              {selectedGraphDoc && !graphViewingDocId && (
                 <div
                   className="shrink-0 overflow-y-auto p-3"
                   style={{ width: 200, background: 'var(--hud-bg-alt)', borderLeft: '1px solid var(--terminal-border)' }}
@@ -2329,21 +2407,26 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
                       ))}
                     </div>
                   )}
-                  {/* TODO KB-002: Add "Open Document" button when doc detail view is implemented */}
                 </div>
               )}
             </div>
+            )}
             {/* Legend */}
+            {!graphViewingDocId && (
             <div className="shrink-0 p-2" style={{ borderTop: '1px solid var(--terminal-border)' }}>
               <div className="flex flex-wrap gap-2">
-                {Object.entries(DOMAIN_COLORS).map(([name, c]) => (
-                  <div key={name} className="flex items-center gap-1 text-[9px]">
-                    <div className="w-2 h-2" style={{ background: c.border }} />
-                    <span style={{ color: 'var(--terminal-text-muted)' }}>{name}</span>
-                  </div>
-                ))}
+                {docCategories.map((name) => {
+                  const c = getDomainColor(name);
+                  return (
+                    <div key={name} className="flex items-center gap-1 text-[9px]">
+                      <div className="w-2 h-2" style={{ background: c.border }} />
+                      <span style={{ color: 'var(--terminal-text-muted)' }}>{name}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
+            )}
           </div>
         )}
 
