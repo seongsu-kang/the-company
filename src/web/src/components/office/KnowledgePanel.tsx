@@ -9,14 +9,15 @@ import Fuse from 'fuse.js';
 /* ─── Domain color mapping ─────────────────────────── */
 
 const DOMAIN_COLORS: Record<string, { bg: string; border: string; text: string }> = {
-  tech:       { bg: 'rgba(59,130,246,0.15)', border: '#3b82f6', text: '#60a5fa' },
-  market:     { bg: 'rgba(245,158,11,0.15)', border: '#f59e0b', text: '#fbbf24' },
-  strategy:   { bg: 'rgba(139,92,246,0.15)', border: '#8b5cf6', text: '#a78bfa' },
-  financial:  { bg: 'rgba(34,197,94,0.15)',  border: '#22c55e', text: '#4ade80' },
-  process:    { bg: 'rgba(236,72,153,0.15)', border: '#ec4899', text: '#f472b6' },
-  competitor: { bg: 'rgba(239,68,68,0.15)',  border: '#ef4444', text: '#f87171' },
-  domain:     { bg: 'rgba(14,165,233,0.15)', border: '#0ea5e9', text: '#38bdf8' },
-  general:    { bg: 'rgba(148,163,184,0.12)', border: '#64748b', text: '#94a3b8' },
+  architecture:  { bg: 'rgba(59,130,246,0.15)',  border: '#3b82f6', text: '#60a5fa' },
+  knowledge:     { bg: 'rgba(245,158,11,0.15)',  border: '#f59e0b', text: '#fbbf24' },
+  roles:         { bg: 'rgba(139,92,246,0.15)',  border: '#8b5cf6', text: '#a78bfa' },
+  projects:      { bg: 'rgba(34,197,94,0.15)',   border: '#22c55e', text: '#4ade80' },
+  operations:    { bg: 'rgba(236,72,153,0.15)',  border: '#ec4899', text: '#f472b6' },
+  company:       { bg: 'rgba(239,68,68,0.15)',   border: '#ef4444', text: '#f87171' },
+  methodologies: { bg: 'rgba(14,165,233,0.15)',  border: '#0ea5e9', text: '#38bdf8' },
+  src:           { bg: 'rgba(251,146,60,0.15)',  border: '#fb923c', text: '#fdba74' },
+  general:       { bg: 'rgba(148,163,184,0.12)', border: '#64748b', text: '#94a3b8' },
 };
 
 function getDomainColor(cat: string) {
@@ -1100,6 +1101,7 @@ function TreeView({
             onHistoryBack={handleHistoryBack}
             onHistoryForward={handleHistoryForward}
             onHistoryJump={handleHistoryJump}
+            onNavigateDoc={handleFileClick}
             allDocs={docs}
           />
         ) : (
@@ -1246,6 +1248,7 @@ function DocDetailView({
   onHistoryBack,
   onHistoryForward,
   onHistoryJump,
+  onNavigateDoc,
   allDocs,
 }: {
   doc: KnowledgeDocDetail | KnowledgeDoc;
@@ -1256,6 +1259,7 @@ function DocDetailView({
   onHistoryBack: () => void;
   onHistoryForward: () => void;
   onHistoryJump: (docId: string) => void;
+  onNavigateDoc: (docId: string) => void; // KB-018: navigate to any doc (not just history)
   allDocs: KnowledgeDoc[];
 }) {
   const [detailDoc, setDetailDoc] = useState<KnowledgeDocDetail | null>(null);
@@ -1309,6 +1313,44 @@ function DocDetailView({
   const color = getDomainColor(doc.category);
   const isHub = doc.akb_type === 'hub';
   const showToc = toc.length > 0 && !loading && !error;
+
+  // KB-018: Intercept markdown link clicks for KB navigation
+  const docIdSet = useMemo(() => new Set(allDocs.map((d) => d.id)), [allDocs]);
+  const handleContentClick = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const anchor = target.closest('a');
+    if (!anchor) return;
+    const href = anchor.getAttribute('href');
+    if (!href || href.startsWith('http://') || href.startsWith('https://') || href.startsWith('#')) return;
+
+    // Only intercept .md links
+    const cleanHref = href.split('#')[0];
+    if (!cleanHref.endsWith('.md')) return;
+
+    e.preventDefault();
+
+    // Resolve relative path from current doc
+    const currentDir = doc.id.substring(0, doc.id.lastIndexOf('/'));
+    let resolved = cleanHref;
+    if (cleanHref.startsWith('./') || cleanHref.startsWith('../')) {
+      const parts = currentDir.split('/');
+      const hrefParts = cleanHref.split('/');
+      for (const p of hrefParts) {
+        if (p === '..') parts.pop();
+        else if (p !== '.') parts.push(p);
+      }
+      resolved = parts.join('/');
+    }
+
+    // Try exact match first, then basename match
+    if (docIdSet.has(resolved)) {
+      onNavigateDoc(resolved);
+    } else {
+      const basename = resolved.split('/').pop() || '';
+      const match = allDocs.find((d) => d.id.endsWith('/' + basename) || d.id === basename);
+      if (match) onNavigateDoc(match.id);
+    }
+  }, [doc.id, allDocs, docIdSet, onNavigateDoc]);
 
   // KB-010: Get recent docs (last 3, excluding current)
   const recentDocs = history
@@ -1424,7 +1466,8 @@ function DocDetailView({
       {/* Content + TOC */}
       <div className="flex-1 overflow-hidden flex">
         {/* Main Content */}
-        <div ref={contentRef} className="flex-1 overflow-y-auto p-4">
+        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
+        <div ref={contentRef} className="flex-1 overflow-y-auto p-4" onClick={handleContentClick}>
           {loading && (
             <div className="text-xs" style={{ color: 'var(--terminal-text-muted)' }}>Loading...</div>
           )}
@@ -2014,9 +2057,20 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
   // KB-003: Search state
   const [searchQuery, setSearchQuery] = useState('');
 
-  // KB-004: Domain filter state (Set of enabled domains)
+  // KB-004/KB-017: Domain filter — derive categories from actual docs
+  const docCategories = useMemo(() => {
+    const cats = new Set(docs.map((d) => d.category));
+    // Sort: known categories first (have colors), then alphabetical
+    const known = Object.keys(DOMAIN_COLORS);
+    return [...cats].sort((a, b) => {
+      const aKnown = known.includes(a) ? 0 : 1;
+      const bKnown = known.includes(b) ? 0 : 1;
+      return aKnown - bKnown || a.localeCompare(b);
+    });
+  }, [docs]);
+
   const [enabledDomains, setEnabledDomains] = useState<Set<string>>(
-    () => new Set(Object.keys(DOMAIN_COLORS))
+    () => new Set<string>()  // empty = all enabled (handled in matchedIds)
   );
 
   // Save view mode to localStorage when it changes
@@ -2027,7 +2081,7 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
   // KB-003: Fuse.js fuzzy search
   const fuse = useMemo(() => {
     return new Fuse(docs, {
-      keys: ['title', 'tldr', 'tags'],
+      keys: ['title', 'tldr', 'tags', 'id'],
       threshold: 0.3, // 0 = exact match, 1 = match anything
       includeScore: true,
     });
@@ -2043,11 +2097,13 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
       matched = new Set(searchResults.map((r) => r.item.id));
     }
 
-    // Apply domain filter
-    matched = new Set(Array.from(matched).filter((id) => {
-      const doc = docs.find((d) => d.id === id);
-      return doc && enabledDomains.has(doc.category);
-    }));
+    // Apply domain filter (empty enabledDomains = all enabled)
+    if (enabledDomains.size > 0) {
+      matched = new Set(Array.from(matched).filter((id) => {
+        const doc = docs.find((d) => d.id === id);
+        return doc && enabledDomains.has(doc.category);
+      }));
+    }
 
     // If all docs are matched, return null (show all)
     return matched.size === docs.length ? null : matched;
@@ -2059,14 +2115,23 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
     return docs.filter((d) => matchedIds.has(d.id));
   }, [docs, matchedIds]);
 
-  // Toggle domain filter
+  // Toggle domain filter (empty Set = all enabled)
   const toggleDomain = (domain: string) => {
     setEnabledDomains((prev) => {
+      // If all enabled (empty set), switch to "only this domain disabled"
+      if (prev.size === 0) {
+        const allExcept = new Set(docCategories.filter((c) => c !== domain));
+        return allExcept;
+      }
       const next = new Set(prev);
       if (next.has(domain)) {
         next.delete(domain);
+        // If nothing left, reset to all
+        if (next.size === 0) return new Set<string>();
       } else {
         next.add(domain);
+        // If all categories now enabled, reset to empty (= all)
+        if (next.size === docCategories.length) return new Set<string>();
       }
       return next;
     });
@@ -2081,9 +2146,9 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
   // Quick Win: Cluster click-to-filter handler
   const handleClusterClick = (domain: string) => {
     setEnabledDomains((prev) => {
-      // Toggle behavior: if already filtered to only this domain, restore all domains
+      // Toggle behavior: if already filtered to only this domain, restore all
       if (prev.size === 1 && prev.has(domain)) {
-        return new Set(Object.keys(DOMAIN_COLORS));
+        return new Set<string>(); // empty = all enabled
       }
       // Otherwise, filter to only this domain
       return new Set([domain]);
@@ -2195,10 +2260,11 @@ export default function KnowledgePanel({ docs, onClose, onRefresh: _onRefresh, t
             )}
           </div>
 
-          {/* Domain filter chips */}
+          {/* Domain filter chips — KB-017: dynamic from actual categories */}
           <div className="flex flex-wrap gap-1.5">
-            {Object.entries(DOMAIN_COLORS).map(([domain, color]) => {
-              const isEnabled = enabledDomains.has(domain);
+            {docCategories.map((domain) => {
+              const color = getDomainColor(domain);
+              const isEnabled = enabledDomains.size === 0 || enabledDomains.has(domain);
               return (
                 <button
                   key={domain}
