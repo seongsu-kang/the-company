@@ -16,7 +16,7 @@ const DISPATCH_SCRIPT = `#!/usr/bin/env python3
 
 3가지 모드:
   dispatch <roleId> "<task>"           — Job 시작 (즉시 반환, 대기하지 않음)
-  dispatch --check <jobId>             — Job 상태 및 결과 조회
+  dispatch --check <sessionId>         — Session 상태 및 결과 조회
   dispatch --wait <roleId> "<task>"    — Job 시작 + 완료 대기 (최대 300초)
 
 환경변수:
@@ -79,9 +79,9 @@ def start_job(role_id, task):
     body = json.dumps(payload).encode()
     req = urllib.request.Request(f'{api}/api/jobs', body, {'Content-Type': 'application/json'})
     resp = json.loads(urllib.request.urlopen(req, timeout=10).read())
-    return resp['jobId']
+    return resp.get('sessionId') or resp.get('jobId')
 
-# Mode: --check <jobId>
+# Mode: --check <sessionId>
 if len(sys.argv) >= 3 and sys.argv[1] == '--check':
     job_id = sys.argv[2]
     try:
@@ -113,7 +113,7 @@ if args and args[0] == '--wait':
 # Usage check
 if len(args) < 2:
     log('Usage: dispatch <roleId> "<task>"          — Start job (returns immediately)')
-    log('       dispatch --check <jobId>            — Check job status/result')
+    log('       dispatch --check <sessionId>        — Check job status/result')
     subs = os.environ.get('DISPATCH_SUBORDINATES', '')
     if subs:
         log(f'Available subordinates: {subs}')
@@ -131,7 +131,7 @@ except Exception as e:
 
 log(f'=== Dispatched to {role_id.upper()} ===')
 log(f'Task: {task[:120]}')
-log(f'Job ID: {job_id}')
+log(f'Session ID: {job_id}')
 log(f'')
 log(f'⛔ Job is running async. Use --check to poll for result:')
 log(f'  python3 "$DISPATCH_CMD" --check {job_id}')
@@ -146,11 +146,11 @@ const CONSULT_SCRIPT = `#!/usr/bin/env python3
 
 사용법:
   consult <roleId> "<question>"          — Job 시작 (readOnly) + 결과 대기 (최대 90초)
-  consult --check <jobId>                — 완료된 Job 결과 조회
+  consult --check <sessionId>            — Session 결과 조회
 
 환경변수:
   CONSULT_API_URL    — API 서버 URL (default: http://localhost:3001)
-  CONSULT_PARENT_JOB — 부모 Job ID (자동 설정)
+  CONSULT_PARENT_JOB — 부모 Session ID (자동 설정)
   CONSULT_SOURCE_ROLE — 현재 Role ID (자동 설정)
 """
 import sys, os, json, time, urllib.request, urllib.error
@@ -212,7 +212,7 @@ if len(sys.argv) >= 3 and sys.argv[1] == '--check':
 # Mode: consult <roleId> "<question>"
 if len(sys.argv) < 3:
     log('Usage: consult <roleId> "<question>"')
-    log('       consult --check <jobId>')
+    log('       consult --check <sessionId>')
     sys.exit(1)
 
 role_id = sys.argv[1]
@@ -234,14 +234,14 @@ body = json.dumps({
 try:
     req = urllib.request.Request(f'{api}/api/jobs', body, {'Content-Type': 'application/json'})
     resp = json.loads(urllib.request.urlopen(req, timeout=10).read())
-    job_id = resp['jobId']
+    job_id = resp.get('sessionId') or resp.get('jobId')
 except Exception as e:
     log(f'ERROR: Failed to start consult job: {e}')
     sys.exit(1)
 
 log(f'=== Consulting {role_id.upper()} ===')
 log(f'Question: {question[:120]}')
-log(f'Job ID: {job_id}')
+log(f'Session ID: {job_id}')
 log(f'')
 log(f'Consult job started. Use --check to get the answer:')
 log(f'  python3 "$CONSULT_CMD" --check {job_id}')
