@@ -14,7 +14,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: `http://localhost:${process.env.VITE_API_PORT || '3001'}`,
         // SSE 지원: 프록시에서 응답 버퍼링 비활성화
         configure: (proxy) => {
           proxy.on('proxyRes', (proxyRes) => {
