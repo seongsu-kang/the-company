@@ -5,5 +5,5 @@
 | Item | Value |
 |------|-------|
 | ID | pm |
-| Level | team-lead |
+| Level | member |
 | Reports To | cto |

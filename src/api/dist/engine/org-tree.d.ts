@@ -15,7 +15,7 @@ export interface RoleSource {
 export interface OrgNode {
     id: string;
     name: string;
-    level: 'c-level' | 'team-lead' | 'member';
+    level: 'c-level' | 'member';
     reportsTo: string;
     children: string[];
     persona: string;

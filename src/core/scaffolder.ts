@@ -52,7 +52,7 @@ const DEFAULT_ROLES: Role[] = [
   {
     id: 'pm',
     name: 'Product Manager',
-    level: 'team-lead',
+    level: 'member',
     reports_to: 'cto',
     persona: 'User-centric thinker. Data-driven decision maker.\nAlways asks "Why are we building this?" first.\nGuards against scope creep and prioritizes rapid MVP validation above all.\n\nFollows The Loop in every task — always updates Knowledge and cleans up Task status after completing work.',
     knowledge: {

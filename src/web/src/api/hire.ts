@@ -49,7 +49,6 @@ export async function hireCharacter(
 function levelBasedReads(level: string): string[] {
   switch (level) {
     case 'c-level': return ['architecture/', 'projects/', 'knowledge/', 'operations/'];
-    case 'team-lead': return ['projects/', 'architecture/'];
     default: return ['projects/'];
   }
 }
@@ -57,7 +56,6 @@ function levelBasedReads(level: string): string[] {
 function levelBasedWrites(level: string): string[] {
   switch (level) {
     case 'c-level': return ['architecture/', 'projects/', 'knowledge/'];
-    case 'team-lead': return ['projects/'];
     default: return ['projects/'];
   }
 }

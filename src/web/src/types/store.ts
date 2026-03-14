@@ -44,7 +44,7 @@ export interface StoreCharacter {
 
   // Skills (SkillRef[] = legacy, SkillExport = new format with SKILL.md content)
   skills: SkillRef[] | SkillExport;
-  level: 'c-level' | 'team-lead' | 'member';
+  level: 'c-level' | 'member';
   authority: {
     autonomous: string[];
     needsApproval: string[];

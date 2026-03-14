@@ -1185,7 +1185,7 @@ export default function OfficePage({ importReq, onImportDone }: { importReq?: Im
         if (trimmed.startsWith('|') || trimmed.startsWith('{') || trimmed.startsWith('[')
           || trimmed.startsWith('```') || trimmed.startsWith('---')
           || trimmed.includes('Journal') || trimmed.includes('(c-level)')
-          || trimmed.includes('(team-lead)') || trimmed.includes('(member)')
+          || trimmed.includes('(member)')
           || /^(CEO |작업 결과|생성\/수정|APPROVAL|비고|상황 보고|태스크$)/.test(trimmed)) continue;
         if (trimmed.length > 15 && trimmed.length < 120) {
           return trimmed;

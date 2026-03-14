@@ -12,7 +12,7 @@ export interface SkillExportDef {
 export interface RoleDefinition {
     id: string;
     name: string;
-    level: 'c-level' | 'team-lead' | 'member';
+    level: 'c-level' | 'member';
     reportsTo: string;
     persona: string;
     skills?: string[];

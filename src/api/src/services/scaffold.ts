@@ -18,12 +18,30 @@ const TEMPLATES_DIR = path.resolve(__dirname, '../../../../templates');
 /* ─── Default Appearances ─── */
 
 const DEFAULT_ROLE_APPEARANCES: Record<string, { skinColor: string; hairColor: string; shirtColor: string; pantsColor: string; shoeColor: string; hairStyle: string; outfitStyle: string; accessory: string }> = {
-  cto:       { skinColor: '#F5CBA7', hairColor: '#2C1810', shirtColor: '#1565C0', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'short', outfitStyle: 'tshirt', accessory: 'glasses' },
-  cbo:       { skinColor: '#FDEBD0', hairColor: '#1A0A00', shirtColor: '#E65100', pantsColor: '#37474F', shoeColor: '#1A1A1A', hairStyle: 'slicked', outfitStyle: 'suit', accessory: 'lapels' },
-  pm:        { skinColor: '#FDEBD0', hairColor: '#6D4C41', shirtColor: '#2E7D32', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'bun', outfitStyle: 'tshirt', accessory: 'blush' },
-  engineer:  { skinColor: '#F5CBA7', hairColor: '#1A1A1A', shirtColor: '#4A148C', pantsColor: '#37474F', shoeColor: '#7B1FA2', hairStyle: 'messy', outfitStyle: 'hoodie', accessory: 'headphones' },
-  designer:  { skinColor: '#FDEBD0', hairColor: '#AD1457', shirtColor: '#AD1457', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'bob', outfitStyle: 'tshirt', accessory: 'beret' },
-  qa:        { skinColor: '#F5CBA7', hairColor: '#4E342E', shirtColor: '#00695C', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'short', outfitStyle: 'tshirt', accessory: 'badge' },
+  // Shared across templates
+  cto:               { skinColor: '#F5CBA7', hairColor: '#2C1810', shirtColor: '#1565C0', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'short', outfitStyle: 'tshirt', accessory: 'glasses' },
+  cbo:               { skinColor: '#FDEBD0', hairColor: '#1A0A00', shirtColor: '#E65100', pantsColor: '#37474F', shoeColor: '#1A1A1A', hairStyle: 'slicked', outfitStyle: 'suit', accessory: 'lapels' },
+  pm:                { skinColor: '#FDEBD0', hairColor: '#6D4C41', shirtColor: '#2E7D32', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'bun', outfitStyle: 'tshirt', accessory: 'blush' },
+  engineer:          { skinColor: '#F5CBA7', hairColor: '#1A1A1A', shirtColor: '#4A148C', pantsColor: '#37474F', shoeColor: '#7B1FA2', hairStyle: 'messy', outfitStyle: 'hoodie', accessory: 'headphones' },
+  designer:          { skinColor: '#FDEBD0', hairColor: '#AD1457', shirtColor: '#AD1457', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'bob', outfitStyle: 'tshirt', accessory: 'beret' },
+  qa:                { skinColor: '#F5CBA7', hairColor: '#4E342E', shirtColor: '#00695C', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'short', outfitStyle: 'tshirt', accessory: 'badge' },
+  // Startup template
+  'be-engineer':     { skinColor: '#F5CBA7', hairColor: '#1A1A1A', shirtColor: '#4A148C', pantsColor: '#37474F', shoeColor: '#7B1FA2', hairStyle: 'messy', outfitStyle: 'hoodie', accessory: 'headphones' },
+  'fe-engineer':     { skinColor: '#FDEBD0', hairColor: '#5D4037', shirtColor: '#00838F', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'wavy', outfitStyle: 'tshirt', accessory: 'glasses' },
+  po:                { skinColor: '#F5CBA7', hairColor: '#6D4C41', shirtColor: '#2E7D32', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'bun', outfitStyle: 'tshirt', accessory: 'blush' },
+  // Research template
+  'lead-researcher': { skinColor: '#F5CBA7', hairColor: '#4E342E', shirtColor: '#1565C0', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'short', outfitStyle: 'suit', accessory: 'glasses' },
+  'lead-analyst':    { skinColor: '#FDEBD0', hairColor: '#1A0A00', shirtColor: '#6A1B9A', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'slicked', outfitStyle: 'suit', accessory: 'glasses' },
+  researcher:        { skinColor: '#F5CBA7', hairColor: '#3E2723', shirtColor: '#00695C', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'messy', outfitStyle: 'tshirt', accessory: 'badge' },
+  analyst:           { skinColor: '#FDEBD0', hairColor: '#4E342E', shirtColor: '#0277BD', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'bob', outfitStyle: 'tshirt', accessory: 'glasses' },
+  writer:            { skinColor: '#F5CBA7', hairColor: '#6D4C41', shirtColor: '#558B2F', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'wavy', outfitStyle: 'tshirt', accessory: 'blush' },
+  editor:            { skinColor: '#FDEBD0', hairColor: '#3E2723', shirtColor: '#BF360C', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'short', outfitStyle: 'tshirt', accessory: 'badge' },
+  // Agency template
+  'creative-director': { skinColor: '#FDEBD0', hairColor: '#AD1457', shirtColor: '#6A1B9A', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'wavy', outfitStyle: 'tshirt', accessory: 'beret' },
+  'account-director':  { skinColor: '#F5CBA7', hairColor: '#1A0A00', shirtColor: '#37474F', pantsColor: '#37474F', shoeColor: '#1A1A1A', hairStyle: 'slicked', outfitStyle: 'suit', accessory: 'lapels' },
+  copywriter:          { skinColor: '#F5CBA7', hairColor: '#5D4037', shirtColor: '#E65100', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'messy', outfitStyle: 'hoodie', accessory: 'headphones' },
+  developer:           { skinColor: '#FDEBD0', hairColor: '#1A1A1A', shirtColor: '#1565C0', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'short', outfitStyle: 'hoodie', accessory: 'glasses' },
+  strategist:          { skinColor: '#F5CBA7', hairColor: '#4E342E', shirtColor: '#00695C', pantsColor: '#37474F', shoeColor: '#212121', hairStyle: 'bun', outfitStyle: 'tshirt', accessory: 'badge' },
 };
 
 const AKB_METHODOLOGY_CONTENT = `# Agentic Knowledge Base (AKB)
