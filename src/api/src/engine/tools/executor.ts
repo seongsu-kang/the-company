@@ -8,6 +8,8 @@ import type { OrgTree } from '../org-tree.js';
 import { buildKnowledgeGateWarning } from '../knowledge-gate.js';
 import { ActivityStream } from '../../services/activity-stream.js';
 import { digest, quietDigest, type DigestResult } from '../../services/digest-engine.js';
+import { supervisorHeartbeat } from '../../services/supervisor-heartbeat.js';
+import { getSession } from '../../services/session-store.js';
 import type { ActivityEvent } from '../../../../shared/types.js';
 
 /* ─── Types ──────────────────────────────────── */
@@ -433,6 +435,15 @@ async function consultTask(
 const MAX_WATCH_DURATION = 300;
 const DEFAULT_WATCH_DURATION = 120;
 
+/** Find the waveId for a set of session IDs (for CEO directive injection) */
+function findWaveIdForSessions(sessionIds: string[]): string | undefined {
+  for (const sid of sessionIds) {
+    const session = getSession(sid);
+    if (session?.waveId) return session.waveId;
+  }
+  return undefined;
+}
+
 /**
  * heartbeat_watch: Block for N seconds collecting events from activity streams.
  * Returns a DigestEngine summary. Early-returns on alert events.
@@ -516,13 +527,35 @@ async function heartbeatWatch(
   // Run DigestEngine
   const result: DigestResult = digest(collectedEvents);
 
-  // SV-10: Quiet tick gate
+  // SV: Inject pending CEO directives (Dispatch Protocol Principle 3: CEO directive = Priority 1)
+  const waveId = findWaveIdForSessions(sessionIds);
+  let ceoDirectiveText = '';
+  if (waveId) {
+    const pendingDirectives = supervisorHeartbeat.getPendingDirectives(waveId);
+    if (pendingDirectives.length > 0) {
+      // CEO directives override quiet tick gate — always surface them
+      result.significanceScore = 10;
+      for (const d of pendingDirectives) {
+        result.anomalies.push({
+          type: 'ceo_directive',
+          sessionId: 'ceo',
+          message: d.text,
+          severity: 10,
+        });
+      }
+      ceoDirectiveText = '\n\n### 🔴 [CEO DIRECTIVE] (PRIORITY 1 — process before anything else)\n' +
+        pendingDirectives.map(d => `- ${d.text}`).join('\n');
+      supervisorHeartbeat.markDirectivesDelivered(waveId);
+    }
+  }
+
+  // SV-10: Quiet tick gate (skipped if CEO directives pending)
   if (result.significanceScore < 2 && result.anomalies.length === 0) {
     const quietText = quietDigest(sessionIds.length, result.eventCount, result.errorCount);
     return { tool_use_id: id, content: quietText };
   }
 
-  return { tool_use_id: id, content: result.text };
+  return { tool_use_id: id, content: result.text + ceoDirectiveText };
 }
 
 /**

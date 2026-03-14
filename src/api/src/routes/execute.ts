@@ -20,6 +20,8 @@ import { ActivityStream, type ActivityEvent, type ActivitySubscriber } from '../
 import { earnCoinsInternal } from './coins.js';
 import { appendFollowUpToWave } from '../services/wave-tracker.js';
 import { waveMultiplexer } from '../services/wave-multiplexer.js';
+import { supervisorHeartbeat } from '../services/supervisor-heartbeat.js';
+import { readConfig } from '../services/company-config.js';
 
 /* ─── Auto-attach child executions to wave multiplexer ── */
 executionManager.onExecutionCreated((exec) => {
@@ -84,6 +86,28 @@ export function handleExecRequest(req: IncomingMessage, res: ServerResponse): vo
   // ── /api/jobs/* routes (internal) ──
   if (url.startsWith('/api/jobs')) {
     handleJobsRequest(url, method, req, res);
+    return;
+  }
+
+  // ── /api/waves/:waveId/directive — CEO adds directive mid-execution ──
+  const directiveMatch = url.match(/^\/api\/waves\/([^/]+)\/directive$/);
+  if (method === 'POST' && directiveMatch) {
+    readBody(req).then((body) => handleWaveDirective(directiveMatch[1], body, res));
+    return;
+  }
+
+  // ── /api/waves/:waveId/question — Supervisor asks CEO, CEO answers ──
+  const questionMatch = url.match(/^\/api\/waves\/([^/]+)\/question$/);
+  if (method === 'POST' && questionMatch) {
+    readBody(req).then((body) => handleWaveQuestion(questionMatch[1], body, res));
+    return;
+  }
+
+  // ── /api/waves/:waveId/questions — Get pending questions ──
+  const questionsMatch = url.match(/^\/api\/waves\/([^/]+)\/questions$/);
+  if (method === 'GET' && questionsMatch) {
+    const questions = supervisorHeartbeat.getUnansweredQuestions(questionsMatch[1]);
+    jsonResponse(res, 200, { questions });
     return;
   }
 
@@ -630,10 +654,53 @@ function handleWave(body: Record<string, unknown>, req: IncomingMessage, res: Se
     return;
   }
 
+  const targetRoles = body.targetRoles as string[] | undefined;
+
+  // Check supervision mode from config
+  const config = readConfig(COMPANY_ROOT);
+  const supervisionMode = config.supervision?.mode ?? 'direct';
+
+  if (supervisionMode === 'supervisor') {
+    handleWaveSupervisor(directive, targetRoles, req, res);
+  } else {
+    handleWaveDirect(directive, targetRoles, req, res);
+  }
+}
+
+/**
+ * Supervisor mode: Start a single CEO Supervisor session that dispatches C-Levels.
+ * The supervisor uses dispatch/watch/amend tools — same pattern as any supervisor node.
+ */
+function handleWaveSupervisor(directive: string, targetRoles: string[] | undefined, req: IncomingMessage, res: ServerResponse): void {
+  const state = supervisorHeartbeat.start(
+    `wave-${Date.now()}`,
+    directive,
+    targetRoles && targetRoles.length > 0 ? targetRoles : undefined,
+  );
+
+  if (state.status === 'error') {
+    jsonResponse(res, 500, { error: 'Failed to start supervisor' });
+    return;
+  }
+
+  // Return immediately with wave info — supervisor runs in background
+  // Frontend subscribes to /api/waves/:waveId/stream for SSE
+  jsonResponse(res, 200, {
+    waveId: state.waveId,
+    supervisorSessionId: state.supervisorSessionId,
+    mode: 'supervisor',
+    directive,
+  });
+}
+
+/**
+ * Direct mode (legacy): Dispatch all C-Levels simultaneously.
+ * No CEO Supervisor — each C-Level runs independently.
+ */
+function handleWaveDirect(directive: string, targetRoles: string[] | undefined, req: IncomingMessage, res: ServerResponse): void {
   const orgTree = buildOrgTree(COMPANY_ROOT);
   let cLevelRoles = getSubordinates(orgTree, 'ceo');
 
-  const targetRoles = body.targetRoles as string[] | undefined;
   if (targetRoles && Array.isArray(targetRoles) && targetRoles.length > 0) {
     const allowed = new Set(targetRoles);
     cLevelRoles = cLevelRoles.filter(r => allowed.has(r));
@@ -723,6 +790,46 @@ function handleWave(body: Record<string, unknown>, req: IncomingMessage, res: Se
       exec.stream.unsubscribe(sub);
     }
   });
+}
+
+/* ─── POST /api/waves/:waveId/directive ──────── */
+
+function handleWaveDirective(waveId: string, body: Record<string, unknown>, res: ServerResponse): void {
+  const text = body.text as string ?? body.directive as string;
+  if (!text) {
+    jsonResponse(res, 400, { error: 'text is required' });
+    return;
+  }
+
+  const directive = supervisorHeartbeat.addDirective(waveId, text);
+  if (!directive) {
+    jsonResponse(res, 404, { error: `No active supervisor for wave ${waveId}` });
+    return;
+  }
+
+  jsonResponse(res, 200, { directive });
+}
+
+/* ─── POST /api/waves/:waveId/question ──────── */
+
+function handleWaveQuestion(waveId: string, body: Record<string, unknown>, res: ServerResponse): void {
+  const questionId = body.questionId as string;
+  const answer = body.answer as string;
+
+  if (!questionId || !answer) {
+    jsonResponse(res, 400, { error: 'questionId and answer are required' });
+    return;
+  }
+
+  const success = supervisorHeartbeat.answerQuestion(waveId, questionId, answer);
+  if (!success) {
+    jsonResponse(res, 404, { error: 'Question not found' });
+    return;
+  }
+
+  // Deliver answer as a directive so supervisor picks it up at next tick
+  supervisorHeartbeat.addDirective(waveId, `[CEO Answer to Q:${questionId}] ${answer}`);
+  jsonResponse(res, 200, { success: true });
 }
 
 /* ─── GET /api/exec/status ───────────────────── */

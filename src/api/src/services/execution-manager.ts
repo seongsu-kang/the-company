@@ -619,8 +619,9 @@ class ExecutionManager {
 
   /**
    * Get children of a parent session that are still running.
+   * Public for supervisor heartbeat done-guard (Principle 5).
    */
-  private getRunningChildren(parentSessionId: string): Execution[] {
+  getRunningChildren(parentSessionId: string): Execution[] {
     const running: Execution[] = [];
     for (const exec of this.executions.values()) {
       if (exec.parentSessionId === parentSessionId && exec.status === 'running') {

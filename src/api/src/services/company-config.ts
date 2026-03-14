@@ -21,6 +21,9 @@ export interface CompanyConfig {
   apiKey?: string;
   codeRoot?: string;  // 코드 프로젝트 경로 (AKB와 분리된 코드 repo)
   conversationLimits?: Partial<ConversationLimits>;
+  supervision?: {
+    mode: 'supervisor' | 'direct';
+  };
 }
 
 export const TYCONO_DIR = '.tycono';

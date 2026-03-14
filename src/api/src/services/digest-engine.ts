@@ -12,7 +12,7 @@ import type { ActivityEvent, ActivityEventType } from '../../../shared/types.js'
 /* ─── Types ──────────────────────────────────── */
 
 export interface Anomaly {
-  type: 'error' | 'stall' | 'scope_creep' | 'awaiting_input' | 'budget_warning';
+  type: 'error' | 'stall' | 'scope_creep' | 'awaiting_input' | 'budget_warning' | 'ceo_directive';
   sessionId: string;
   message: string;
   severity: number; // 0-10
