@@ -211,17 +211,30 @@ function handleRoleAttached(
 
     if (existing) {
       // Update existing node with session info
-      // Don't override status if the node already has a more advanced state
-      // (e.g., awaiting_input or done from replayed events)
-      const keepStatus = existing.status === 'awaiting_input'
-        || existing.status === 'done'
-        || existing.status === 'error';
-      next.set(roleId, {
-        ...existing,
-        sessionId,
-        status: keepStatus ? existing.status : 'streaming',
-        streamStatus: keepStatus ? existing.streamStatus : 'streaming',
-      });
+      // If the sessionId changed (re-dispatch), always reset status and clear events
+      // so the node reflects the new session's state, not the old one.
+      const isNewSession = sessionId !== existing.sessionId && !!existing.sessionId;
+      if (isNewSession) {
+        next.set(roleId, {
+          ...existing,
+          sessionId,
+          status: 'streaming',
+          streamStatus: 'streaming',
+          events: [],
+        });
+      } else {
+        // Same session or first attach — don't override advanced states
+        // (e.g., awaiting_input or done from replayed events)
+        const keepStatus = existing.status === 'awaiting_input'
+          || existing.status === 'done'
+          || existing.status === 'error';
+        next.set(roleId, {
+          ...existing,
+          sessionId,
+          status: keepStatus ? existing.status : 'streaming',
+          streamStatus: keepStatus ? existing.streamStatus : 'streaming',
+        });
+      }
     } else {
       // Create new node for dynamically discovered role
       const org = orgNodes[roleId];

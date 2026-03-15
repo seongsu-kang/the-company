@@ -583,7 +583,7 @@ export default function WaveCenter({
                   </div>
                 )}
               </div>
-              <div className="overflow-x-auto overflow-y-auto px-3 pb-2" style={{ maxHeight: '30vh' }}>
+              <div className="px-3 pb-2" style={{ height: '38vh' }}>
                 <OrgTreeLive
                   nodes={waveTree.nodes}
                   rootId={rootRoleId}
@@ -592,6 +592,7 @@ export default function WaveCenter({
                   checkedRoles={waveTree.checkedRoles}
                   onToggleCheck={waveTree.toggleCheck}
                   eligibleRoles={eligibleRoles}
+                  orgNodes={orgNodes}
                 />
               </div>
             </div>
@@ -727,6 +728,59 @@ export default function WaveCenter({
                         Stop
                       </button>
                     )}
+                  </div>
+                )}
+
+                {/* Session info panel */}
+                {selectedNode && (
+                  <div className="px-4 py-2 border-b shrink-0" style={{ borderColor: 'var(--terminal-border)', background: 'var(--hud-bg-alt)' }}>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-mono">
+                      {selectedNode.sessionId && (
+                        <div>
+                          <span className="text-[var(--terminal-text-muted)]">Session </span>
+                          <span className="text-[var(--terminal-text-secondary)]">{selectedNode.sessionId.slice(0, 8)}</span>
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-[var(--terminal-text-muted)]">Events </span>
+                        <span className="text-[var(--terminal-text-secondary)]">{selectedNode.events.length}</span>
+                      </div>
+                      <div>
+                        <span className="text-[var(--terminal-text-muted)]">Stream </span>
+                        <span className="text-[var(--terminal-text-secondary)]">{selectedNode.streamStatus}</span>
+                      </div>
+                      {(() => {
+                        const lastEvent = selectedNode.events[selectedNode.events.length - 1];
+                        if (!lastEvent?.ts) return null;
+                        const ago = Math.floor((Date.now() - new Date(lastEvent.ts).getTime()) / 1000);
+                        if (isNaN(ago) || ago < 0) return null;
+                        const label = ago < 60 ? `${ago}s ago` : ago < 3600 ? `${Math.floor(ago / 60)}m ago` : `${Math.floor(ago / 3600)}h ago`;
+                        return (
+                          <div>
+                            <span className="text-[var(--terminal-text-muted)]">Last activity </span>
+                            <span className="text-[var(--terminal-text-secondary)]">{label}</span>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                    {/* Recent text preview */}
+                    {(() => {
+                      const textEvents = selectedNode.events.filter(e => e.type === 'text' || e.type === 'tool:result');
+                      const lastText = textEvents[textEvents.length - 1];
+                      if (!lastText) return null;
+                      const preview = typeof lastText.data?.text === 'string'
+                        ? lastText.data.text
+                        : typeof lastText.data?.content === 'string'
+                          ? lastText.data.content
+                          : null;
+                      if (!preview) return null;
+                      const trimmed = preview.length > 120 ? preview.slice(0, 120) + '...' : preview;
+                      return (
+                        <div className="mt-1.5 text-[10px] text-[var(--terminal-text-muted)] italic truncate" title={preview}>
+                          {trimmed}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 
