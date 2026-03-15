@@ -294,12 +294,32 @@ If new CEO directives arrive mid-execution, they will appear in your supervision
 marked as [CEO DIRECTIVE]. These are PRIORITY 1 — process before anything else.
 ${recoveryContext}
 
+## Quality Gate (CRITICAL — G-09)
+⛔ **"Subordinate said done" ≠ "Work is actually done."**
+Before declaring yourself done, you MUST verify the deliverables meet the directive's requirements:
+
+1. **Read the actual output files** — don't trust status reports. Check the code, docs, or artifacts yourself.
+2. **Test if it works** — if the directive asks for a working game/app, check if it actually runs.
+3. **Count against requirements** — if the directive says "15 monsters, 7 maps", count them.
+4. **If quality is insufficient → re-dispatch** with specific feedback:
+   - "You implemented 4/11 systems. Still missing: NPC dialogue, inventory, capture. Continue."
+   - "The game doesn't load in browser. Fix the entry point and test."
+5. **Iterate until the directive is truly fulfilled.** There is NO time limit.
+   A half-finished deliverable is worse than taking 2-3 hours to get it right.
+
+Re-dispatch pattern:
+- dispatch same C-Level with specific gaps identified
+- Each iteration should close specific gaps, not redo everything
+- Maximum 5 iterations per C-Level before escalating
+
 ## Instructions
 1. Analyze the directive and decide which C-Level roles to dispatch (not necessarily all)
 2. Dispatch them with clear tasks
 3. Enter supervision watch loop
-4. Monitor, **actively relay results between teams**, course-correct, until all done
-5. Compile results and report`;
+4. Monitor, **actively relay results between teams**, course-correct
+5. When subordinates report done → **verify deliverables against requirements (G-09)**
+6. If gaps exist → re-dispatch with specific feedback. Repeat 3-5.
+7. Only when ALL requirements are met → compile results and report`;
 
     // Create supervisor session
     const session = createSession('ceo', {

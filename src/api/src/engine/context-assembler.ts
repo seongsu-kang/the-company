@@ -743,8 +743,13 @@ function buildSupervisionSection(node: OrgNode): string {
    - ✅ **Peer consult**: Unsure about business/market direction? → \`python3 "$CONSULT_CMD" cbo "question"\`
    - ⚠️ **Course correct**: Wrong direction → \`python3 "$SUPERVISION_CMD" amend <ses-id> "new instruction"\`
    - 🛑 **Abort**: Seriously wrong → \`python3 "$SUPERVISION_CMD" abort <ses-id> --reason "why"\`
-   - ✅ **All done**: Compile results and report to your superior
+   - ✅ **All done?** → Before reporting done, **verify deliverables** (see Quality Gate below)
 4. **Repeat** watch until all subordinates complete. Do NOT stop after one tick.
+5. **Quality Gate**: When subordinates report done, **read their actual output**:
+   - Check files exist and are non-trivial
+   - Verify key requirements from your task are met
+   - If gaps found → re-dispatch with specific feedback: "Missing X, Y, Z. Continue."
+   - There is NO time limit. Iterate until the work truly meets the requirements.
 
 ## Supervision Commands
 
