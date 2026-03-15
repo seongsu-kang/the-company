@@ -254,9 +254,15 @@ export function updateSession(id: string, updates: Partial<Pick<Session, 'title'
   return session;
 }
 
-export function deleteSession(id: string): boolean {
+export function deleteSession(id: string, force = false): boolean {
   const session = cache.get(id);
   if (!session) return false;
+
+  // BUG-008 fix: protect wave sessions from accidental deletion
+  if (session.waveId && !force) {
+    console.warn(`[SessionStore] BLOCKED deletion of wave session ${id} (waveId=${session.waveId}, roleId=${session.roleId}). Use force=true to override.`);
+    return false;
+  }
 
   console.log(`[SessionStore] Deleting session ${id} (roleId=${session.roleId}, waveId=${session.waveId ?? 'none'}, messages=${session.messages.length})`);
   cache.delete(id);

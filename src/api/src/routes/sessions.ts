@@ -56,6 +56,7 @@ sessionsRouter.patch('/:id', (req, res) => {
 
 /* DELETE /api/sessions — bulk delete (body: { ids }) or ?empty=true */
 sessionsRouter.delete('/', (req, res) => {
+  console.log(`[Sessions] DELETE / called (empty=${req.query.empty}, origin=${req.headers.origin ?? req.headers.referer ?? 'unknown'})`);
   if (req.query.empty === 'true') {
     const result = deleteEmpty();
     res.json(result);
@@ -72,6 +73,7 @@ sessionsRouter.delete('/', (req, res) => {
 
 /* DELETE /api/sessions/:id — delete session */
 sessionsRouter.delete('/:id', (req, res) => {
+  console.log(`[Sessions] DELETE /${req.params.id} called (origin=${req.headers.origin ?? req.headers.referer ?? 'unknown'})`);
   const ok = deleteSession(req.params.id);
   if (!ok) {
     res.status(404).json({ error: 'Session not found' });
