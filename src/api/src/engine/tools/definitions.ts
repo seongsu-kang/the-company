@@ -174,12 +174,15 @@ export const CONSULT_TOOL: ToolDefinition = {
  * Role에 따른 도구 목록 반환
  * @param heartbeatEnabled - C-Level supervision mode enabled (provides heartbeat_watch, amend_session, abort_session)
  */
-export function getToolsForRole(hasSubordinates: boolean, readOnly: boolean, hasBash = false, heartbeatEnabled = false): ToolDefinition[] {
+export function getToolsForRole(hasSubordinates: boolean, readOnly: boolean, hasBash = false, heartbeatEnabled = false, hasPeers = false): ToolDefinition[] {
   if (readOnly) {
     return [...READ_TOOLS];
   }
 
-  const tools = [...READ_TOOLS, ...WRITE_TOOLS, CONSULT_TOOL];
+  const tools = [...READ_TOOLS, ...WRITE_TOOLS];
+  if (hasPeers) {
+    tools.push(CONSULT_TOOL);
+  }
 
   if (hasBash) {
     tools.push(BASH_TOOL);

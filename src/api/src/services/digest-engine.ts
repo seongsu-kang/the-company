@@ -42,7 +42,7 @@ const EVENT_TIER_MAP: Partial<Record<ActivityEventType, EventTier>> = {
   'thinking': 'medium',
   'text': 'low',
   'stderr': 'medium',
-  'turn:complete': 'low',
+  'msg:turn-complete': 'low',
   'turn:warning': 'high',
   'turn:limit': 'critical',
 };

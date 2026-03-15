@@ -187,7 +187,7 @@ operationsRouter.delete('/decisions/:id', (req: Request, res: Response, next: Ne
  *
  * Query params:
  *   ?chain=true  — include all jobs in the same trace (default: true)
- *   ?type=trace  — filter to trace:prompt and trace:response events only
+ *   ?type=trace  — filter to trace:response events (use ?type=prompt for prompt:assembled)
  */
 operationsRouter.get('/traces/:jobId', (req: Request, res: Response, next: NextFunction) => {
   try {

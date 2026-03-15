@@ -172,7 +172,12 @@ export async function runAgentLoop(config: AgentConfig): Promise<AgentResult> {
   const hasBash = !readOnly && !!config.codeRoot;
   const node = orgTree.nodes.get(roleId);
   const heartbeatEnabled = node?.heartbeat?.enabled === true && subordinates.length > 0;
-  const tools = getToolsForRole(subordinates.length > 0, readOnly, hasBash, heartbeatEnabled);
+  // Peers = other roles with the same reportsTo (same parent in org tree)
+  const parentId = node?.reportsTo;
+  const hasPeers = parentId
+    ? (getSubordinates(orgTree, parentId).filter(id => id !== roleId).length > 0)
+    : false;
+  const tools = getToolsForRole(subordinates.length > 0, readOnly, hasBash, heartbeatEnabled, hasPeers);
 
   // 3. Set up tool executor
   const toolExecOptions: ToolExecutorOptions = {
@@ -550,163 +555,63 @@ export async function runAgentLoop(config: AgentConfig): Promise<AgentResult> {
       }
     }
 
-    // Phase B: Engineer/CTO Verification — type checking + visual verification
-    const verifiableRoles = ['engineer', 'cto'];
-    if (verifiableRoles.includes(roleId)) {
-      const hasFileChanges = allToolCalls.some((tc) =>
-        ['write', 'edit', 'bash'].includes(tc.name.toLowerCase()),
-      );
+    // Detect file changes once — used by Phase B and Post-K
+    const hasFileChanges = allToolCalls.some((tc) =>
+      ['write', 'edit', 'bash'].includes(tc.name.toLowerCase()),
+    );
 
-      if (hasFileChanges) {
-        const verifyPrompt = [
-          '[AUTO-VERIFICATION] 작업이 완료되었습니다. 아래 검증을 수행하세요:',
-          '1. `cd src/api && npx tsc --noEmit` — 타입 에러 확인',
-          '2. `cd src/web && npx tsc --noEmit` — 프론트엔드 타입 에러 확인',
-          '3. UI/CSS 변경이 있었다면 Playwright MCP로 스크린샷을 촬영하여 시각 검증',
-          '검증 결과를 간단히 보고하세요.',
-        ].join('\n');
+    // Phase B: Member Self-Verification — type checking + visual verification
+    // Any non-C-Level role that made file changes gets verification (no hardcoded role IDs)
+    if (!isCLevel && hasFileChanges) {
+      const verifyPrompt = [
+        '[AUTO-VERIFICATION] 작업이 완료되었습니다. 아래 검증을 수행하세요:',
+        '1. `cd src/api && npx tsc --noEmit` — 타입 에러 확인',
+        '2. `cd src/web && npx tsc --noEmit` — 프론트엔드 타입 에러 확인',
+        '3. UI/CSS 변경이 있었다면 Playwright MCP로 스크린샷을 촬영하여 시각 검증',
+        '검증 결과를 간단히 보고하세요.',
+      ].join('\n');
 
-        messages.push({ role: 'user', content: verifyPrompt });
+      messages.push({ role: 'user', content: verifyPrompt });
 
-        if (turns < maxTurns) {
-          turns++;
-          const verifyResponse = await llm.chat(context.systemPrompt, messages, tools, abortSignal);
-          totalInput += verifyResponse.usage.inputTokens;
-          totalOutput += verifyResponse.usage.outputTokens;
-          config.tokenLedger?.record({
-            ts: new Date().toISOString(),
-            sessionId: config.sessionId,
-            roleId,
-            model: config.model ?? 'unknown',
-            inputTokens: verifyResponse.usage.inputTokens,
-            outputTokens: verifyResponse.usage.outputTokens,
-          });
+      if (turns < maxTurns) {
+        turns++;
+        const verifyResponse = await llm.chat(context.systemPrompt, messages, tools, abortSignal);
+        totalInput += verifyResponse.usage.inputTokens;
+        totalOutput += verifyResponse.usage.outputTokens;
+        config.tokenLedger?.record({
+          ts: new Date().toISOString(),
+          sessionId: config.sessionId,
+          roleId,
+          model: config.model ?? 'unknown',
+          inputTokens: verifyResponse.usage.inputTokens,
+          outputTokens: verifyResponse.usage.outputTokens,
+        });
 
-          messages.push({ role: 'assistant', content: verifyResponse.content });
-          for (const block of verifyResponse.content) {
-            if (block.type === 'text' && block.text) {
-              outputParts.push(block.text);
-              onText?.(block.text);
-            }
+        messages.push({ role: 'assistant', content: verifyResponse.content });
+        for (const block of verifyResponse.content) {
+          if (block.type === 'text' && block.text) {
+            outputParts.push(block.text);
+            onText?.(block.text);
           }
-
-          // Execute verification tool calls if needed
-          if (verifyResponse.stopReason === 'tool_use') {
-            const verifyToolCalls = verifyResponse.content.filter(
-              (b): b is MessageContent & { type: 'tool_use' } => b.type === 'tool_use',
-            );
-            const verifyResults: ToolResult[] = [];
-            for (const tc of verifyToolCalls) {
-              allToolCalls.push({ name: tc.name, input: tc.input });
-              const result = await executeTool(
-                { id: tc.id, name: tc.name, input: tc.input },
-                toolExecOptions,
-              );
-              verifyResults.push(result);
-            }
-            messages.push({
-              role: 'user',
-              content: verifyResults.map((r) => ({
-                type: 'tool_result' as const,
-                tool_use_id: r.tool_use_id,
-                content: r.content,
-                is_error: r.is_error,
-              })) as unknown as MessageContent[],
-            });
-
-            if (turns < maxTurns) {
-              turns++;
-              const summaryResponse = await llm.chat(context.systemPrompt, messages, tools, abortSignal);
-              totalInput += summaryResponse.usage.inputTokens;
-              totalOutput += summaryResponse.usage.outputTokens;
-              config.tokenLedger?.record({
-                ts: new Date().toISOString(),
-                sessionId: config.sessionId,
-                roleId,
-                model: config.model ?? 'unknown',
-                inputTokens: summaryResponse.usage.inputTokens,
-                outputTokens: summaryResponse.usage.outputTokens,
-              });
-              for (const block of summaryResponse.content) {
-                if (block.type === 'text' && block.text) {
-                  outputParts.push(block.text);
-                  onText?.(block.text);
-                }
-              }
-            }
-          }
-
-          onTurnComplete?.(turns);
         }
 
-        // ── Post-Knowledging: ④⑤ 수행 프롬프트 (KP-008) ──
-        // Engineer/CTO가 구현 완료 후 The Loop 마무리 (Knowledge 업데이트 + Task 상태 갱신)를 수행하도록 유도
-        const postKPrompt = [
-          '[POST-KNOWLEDGING] 구현이 완료되었습니다. The Loop 마무리를 수행하세요:',
-          '',
-          '## ④ Knowledge 업데이트 (The Loop Step 4)',
-          '다음 중 해당하는 항목을 수행하세요:',
-          '- 본인 journal 업데이트 (`roles/' + roleId + '/journal/YYYY-MM-DD.md` — 오늘 날짜 파일)',
-          '- 구현 중 새로 발견한 패턴/아키텍처 결정이 있다면 관련 문서 업데이트',
-          '  (예: architecture/web-app-ia.md, architecture/session-worktree-isolation.md 등)',
-          '- 중요한 기술 결정은 operations/decisions/ 또는 architecture/ 반영',
-          '',
-          '## ⑤ Task 상태 갱신 (The Loop Step 5)',
-          '- `projects/tycono-platform/tasks.md` (또는 관련 tasks 파일)에서 완료한 태스크 상태를 DONE으로 변경',
-          '- 다음 작업이 있다면 식별하여 메모',
-          '',
-          '⛔ **필수**: ④와 ⑤를 모두 수행해야 The Loop이 완료됩니다.',
-          '이제 ④⑤를 수행하세요 (Read, Edit 도구 사용).',
-        ].join('\n');
-
-        messages.push({ role: 'user', content: postKPrompt });
-
-        // Run Post-K loop (최대 2턴 — C-Level의 3턴보다 짧게)
-        const maxPostKRounds = 2;
-        for (let round = 0; round < maxPostKRounds && turns < maxTurns; round++) {
-          if (abortSignal?.aborted) break;
-          turns++;
-
-          const postKResponse = await llm.chat(context.systemPrompt, messages, tools, abortSignal);
-          totalInput += postKResponse.usage.inputTokens;
-          totalOutput += postKResponse.usage.outputTokens;
-          config.tokenLedger?.record({
-            ts: new Date().toISOString(),
-            sessionId: config.sessionId,
-            roleId,
-            model: config.model ?? 'unknown',
-            inputTokens: postKResponse.usage.inputTokens,
-            outputTokens: postKResponse.usage.outputTokens,
-          });
-
-          messages.push({ role: 'assistant', content: postKResponse.content });
-          for (const block of postKResponse.content) {
-            if (block.type === 'text' && block.text) {
-              outputParts.push(block.text);
-              onText?.(block.text);
-            }
-          }
-
-          // If no tool calls, Post-K is done
-          if (postKResponse.stopReason !== 'tool_use') break;
-
-          // Execute Post-K tool calls
-          const postKToolCalls = postKResponse.content.filter(
+        // Execute verification tool calls if needed
+        if (verifyResponse.stopReason === 'tool_use') {
+          const verifyToolCalls = verifyResponse.content.filter(
             (b): b is MessageContent & { type: 'tool_use' } => b.type === 'tool_use',
           );
-          const postKResults: ToolResult[] = [];
-          for (const tc of postKToolCalls) {
+          const verifyResults: ToolResult[] = [];
+          for (const tc of verifyToolCalls) {
             allToolCalls.push({ name: tc.name, input: tc.input });
             const result = await executeTool(
               { id: tc.id, name: tc.name, input: tc.input },
               toolExecOptions,
             );
-            postKResults.push(result);
+            verifyResults.push(result);
           }
-
           messages.push({
             role: 'user',
-            content: postKResults.map((r) => ({
+            content: verifyResults.map((r) => ({
               type: 'tool_result' as const,
               tool_use_id: r.tool_use_id,
               content: r.content,
@@ -714,8 +619,110 @@ export async function runAgentLoop(config: AgentConfig): Promise<AgentResult> {
             })) as unknown as MessageContent[],
           });
 
-          onTurnComplete?.(turns);
+          if (turns < maxTurns) {
+            turns++;
+            const summaryResponse = await llm.chat(context.systemPrompt, messages, tools, abortSignal);
+            totalInput += summaryResponse.usage.inputTokens;
+            totalOutput += summaryResponse.usage.outputTokens;
+            config.tokenLedger?.record({
+              ts: new Date().toISOString(),
+              sessionId: config.sessionId,
+              roleId,
+              model: config.model ?? 'unknown',
+              inputTokens: summaryResponse.usage.inputTokens,
+              outputTokens: summaryResponse.usage.outputTokens,
+            });
+            for (const block of summaryResponse.content) {
+              if (block.type === 'text' && block.text) {
+                outputParts.push(block.text);
+                onText?.(block.text);
+              }
+            }
+          }
         }
+
+        onTurnComplete?.(turns);
+      }
+    }
+
+    // ── Post-K: ④⑤ Knowledge/Task update (KP-008) ──
+    // ALL roles (C-Level and members) update journal/tasks after significant work.
+    // Runs for: members who made file changes, C-Level who dispatched work.
+    if (hasFileChanges || dispatches.length > 0) {
+      const postKPrompt = [
+        '[POST-KNOWLEDGING] 작업이 완료되었습니다. The Loop 마무리를 수행하세요:',
+        '',
+        '## ④ Knowledge 업데이트 (The Loop Step 4)',
+        '다음 중 해당하는 항목을 수행하세요:',
+        '- 본인 journal 업데이트 (`roles/' + roleId + '/journal/YYYY-MM-DD.md` — 오늘 날짜 파일)',
+        '- 구현 중 새로 발견한 패턴/아키텍처 결정이 있다면 관련 문서 업데이트',
+        '  (예: architecture/web-app-ia.md, architecture/session-worktree-isolation.md 등)',
+        '- 중요한 기술 결정은 operations/decisions/ 또는 architecture/ 반영',
+        '',
+        '## ⑤ Task 상태 갱신 (The Loop Step 5)',
+        '- `projects/tycono-platform/tasks.md` (또는 관련 tasks 파일)에서 완료한 태스크 상태를 DONE으로 변경',
+        '- 다음 작업이 있다면 식별하여 메모',
+        '',
+        '⛔ **필수**: ④와 ⑤를 모두 수행해야 The Loop이 완료됩니다.',
+        '이제 ④⑤를 수행하세요 (Read, Edit 도구 사용).',
+      ].join('\n');
+
+      messages.push({ role: 'user', content: postKPrompt });
+
+      // Run Post-K loop (최대 2턴)
+      const maxPostKRounds = 2;
+      for (let round = 0; round < maxPostKRounds && turns < maxTurns; round++) {
+        if (abortSignal?.aborted) break;
+        turns++;
+
+        const postKResponse = await llm.chat(context.systemPrompt, messages, tools, abortSignal);
+        totalInput += postKResponse.usage.inputTokens;
+        totalOutput += postKResponse.usage.outputTokens;
+        config.tokenLedger?.record({
+          ts: new Date().toISOString(),
+          sessionId: config.sessionId,
+          roleId,
+          model: config.model ?? 'unknown',
+          inputTokens: postKResponse.usage.inputTokens,
+          outputTokens: postKResponse.usage.outputTokens,
+        });
+
+        messages.push({ role: 'assistant', content: postKResponse.content });
+        for (const block of postKResponse.content) {
+          if (block.type === 'text' && block.text) {
+            outputParts.push(block.text);
+            onText?.(block.text);
+          }
+        }
+
+        // If no tool calls, Post-K is done
+        if (postKResponse.stopReason !== 'tool_use') break;
+
+        // Execute Post-K tool calls
+        const postKToolCalls = postKResponse.content.filter(
+          (b): b is MessageContent & { type: 'tool_use' } => b.type === 'tool_use',
+        );
+        const postKResults: ToolResult[] = [];
+        for (const tc of postKToolCalls) {
+          allToolCalls.push({ name: tc.name, input: tc.input });
+          const result = await executeTool(
+            { id: tc.id, name: tc.name, input: tc.input },
+            toolExecOptions,
+          );
+          postKResults.push(result);
+        }
+
+        messages.push({
+          role: 'user',
+          content: postKResults.map((r) => ({
+            type: 'tool_result' as const,
+            tool_use_id: r.tool_use_id,
+            content: r.content,
+            is_error: r.is_error,
+          })) as unknown as MessageContent[],
+        });
+
+        onTurnComplete?.(turns);
       }
     }
   }

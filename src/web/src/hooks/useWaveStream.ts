@@ -5,8 +5,10 @@ import type { WaveNode, WaveNodeStatus } from './useWaveTree';
 /* ─── SSE Envelope Types ────────────────── */
 
 interface WaveStreamEnvelope {
+  waveId: string;
   waveSeq: number;
   sessionId: string;
+  roleId: string;
   event: ActivityEvent;
 }
 

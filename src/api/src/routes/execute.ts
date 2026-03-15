@@ -218,10 +218,38 @@ function handleStartJob(body: Record<string, unknown>, res: ServerResponse): voi
       return;
     }
 
+    const targetRoles = body.targetRoles as string[] | undefined;
+
+    // Check supervision mode from config (same as legacy /api/exec/wave)
+    const config = readConfig(COMPANY_ROOT);
+    const supervisionMode = config.supervision?.mode ?? 'direct';
+
+    if (supervisionMode === 'supervisor') {
+      // Supervisor mode: start a single CEO Supervisor session that dispatches C-Levels
+      const state = supervisorHeartbeat.start(
+        `wave-${Date.now()}`,
+        directive,
+        targetRoles && targetRoles.length > 0 ? targetRoles : undefined,
+      );
+
+      if (state.status === 'error') {
+        jsonResponse(res, 500, { error: 'Failed to start supervisor' });
+        return;
+      }
+
+      jsonResponse(res, 200, {
+        waveId: state.waveId,
+        supervisorSessionId: state.supervisorSessionId,
+        mode: 'supervisor',
+        directive,
+      });
+      return;
+    }
+
+    // Direct mode (default): dispatch all C-Levels simultaneously
     const orgTree = buildOrgTree(COMPANY_ROOT);
     let cLevelRoles = getSubordinates(orgTree, 'ceo');
 
-    const targetRoles = body.targetRoles as string[] | undefined;
     if (targetRoles && Array.isArray(targetRoles) && targetRoles.length > 0) {
       const allowed = new Set(targetRoles);
       cLevelRoles = cLevelRoles.filter(r => allowed.has(r));
@@ -612,7 +640,7 @@ function handleAssign(body: Record<string, unknown>, req: IncomingMessage, res: 
       case 'dispatch:start':
         sendSSE(res, 'dispatch', { roleId: event.data.targetRoleId, task: event.data.task, childSessionId: event.data.childSessionId });
         break;
-      case 'turn:complete':
+      case 'msg:turn-complete':
         sendSSE(res, 'turn', { turn: event.data.turn });
         break;
       case 'stderr':
@@ -753,7 +781,7 @@ function handleWaveDirect(directive: string, targetRoles: string[] | undefined, 
         case 'dispatch:start':
           sendSSE(res, 'dispatch', { roleId: rolePrefix, targetRoleId: event.data.targetRoleId, task: event.data.task, childSessionId: event.data.childSessionId });
           break;
-        case 'turn:complete':
+        case 'msg:turn-complete':
           sendSSE(res, 'turn', { roleId: rolePrefix, turn: event.data.turn });
           break;
         case 'stderr':

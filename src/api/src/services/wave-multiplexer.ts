@@ -6,8 +6,10 @@ import type { Response } from 'express';
 /* ─── Types ──────────────────────────────── */
 
 export interface WaveStreamEnvelope {
+  waveId: string;
   waveSeq: number;
   sessionId: string;
+  roleId: string;
   event: ActivityEvent;
 }
 
@@ -44,7 +46,7 @@ class WaveMultiplexer {
     if (clients) {
       for (const client of clients) {
         if (!client.closed) {
-          this.subscribeSessionToClient(client, execution, true);
+          this.subscribeSessionToClient(waveId, client, execution, true);
         }
       }
     }
@@ -101,8 +103,10 @@ class WaveMultiplexer {
         client.sentEvents.add(key);
 
         sendSSE(client, 'wave:event', {
+          waveId,
           waveSeq,
           sessionId: item.sessionId,
+          roleId: item.event.roleId,
           event: item.event,
         } as WaveStreamEnvelope);
       }
@@ -110,7 +114,7 @@ class WaveMultiplexer {
       // Phase 2: Subscribe to live events for active sessions
       for (const [, exec] of sessions) {
         if (exec.status === 'running' || exec.status === 'awaiting_input') {
-          this.subscribeSessionToClient(client, exec, true);
+          this.subscribeSessionToClient(waveId, client, exec, true);
         }
       }
     }
@@ -119,7 +123,7 @@ class WaveMultiplexer {
     return client;
   }
 
-  private subscribeSessionToClient(client: WaveStreamClient, execution: Execution, sendNotification: boolean): void {
+  private subscribeSessionToClient(waveId: string, client: WaveStreamClient, execution: Execution, sendNotification: boolean): void {
     if (client.attachedSessions.has(execution.sessionId)) return;
 
     const sessionId = execution.sessionId;
@@ -140,8 +144,10 @@ class WaveMultiplexer {
 
         const waveSeq = client.waveSeq++;
         sendSSE(client, 'wave:event', {
+          waveId,
           waveSeq,
           sessionId,
+          roleId: event.roleId,
           event,
         } as WaveStreamEnvelope);
       }
@@ -156,8 +162,10 @@ class WaveMultiplexer {
 
       const waveSeq = client.waveSeq++;
       sendSSE(client, 'wave:event', {
+        waveId,
         waveSeq,
         sessionId,
+        roleId: event.roleId,
         event,
       } as WaveStreamEnvelope);
 

@@ -143,7 +143,7 @@ export default function EventRow({ event, isThinkingCollapsed, onToggleThinking,
         </div>
       );
 
-    case 'turn:complete':
+    case 'msg:turn-complete':
       return (
         <div className="border-t border-[var(--terminal-border)] my-2 relative">
           <span className="absolute -top-2 left-2 bg-[var(--terminal-bg)] px-2 text-[9px] text-[var(--terminal-text-muted)]">

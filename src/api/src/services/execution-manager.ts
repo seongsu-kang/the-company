@@ -16,7 +16,7 @@ import { type MessageStatus, isMessageActive, canTransition, messageStatusToRole
 
 /* ─── Types ─── */
 
-export type ExecStatus = 'running' | 'done' | 'error' | 'awaiting_input';
+export type ExecStatus = 'idle' | 'running' | 'done' | 'error' | 'awaiting_input' | 'interrupted';
 export type ExecType = 'assign' | 'wave' | 'consult';
 
 export { canTransition, messageStatusToRoleStatus } from '../../../shared/types.js';
@@ -355,7 +355,7 @@ class ExecutionManager {
         },
         onTurnComplete: (turn) => {
           harnessTurnCount++;
-          execution.stream.emit('turn:complete', params.roleId, {
+          execution.stream.emit('msg:turn-complete', params.roleId, {
             turn: harnessTurnCount,
             runnerTurn: turn,
           });
@@ -385,14 +385,14 @@ class ExecutionManager {
           }
         },
         onPromptAssembled: (systemPrompt, userTask) => {
-          execution.stream.emit('trace:prompt', params.roleId, {
+          execution.stream.emit('prompt:assembled', params.roleId, {
             systemPrompt,
             userTask,
             systemPromptLength: systemPrompt.length,
           });
         },
         onError: (error) => {
-          execution.stream.emit('stderr', params.roleId, { message: error });
+          execution.stream.emit('msg:error', params.roleId, { message: error });
         },
       },
     );

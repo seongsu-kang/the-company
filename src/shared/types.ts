@@ -71,17 +71,18 @@ export type ActivityEventType =
   // Message lifecycle (D-014: 구 job:* → msg:*)
   | 'msg:start' | 'msg:done' | 'msg:error'
   | 'msg:awaiting_input' | 'msg:reply'
+  | 'msg:turn-complete'
   // Execution
   | 'text' | 'thinking'
   | 'tool:start' | 'tool:result'
   // Dispatch (child session)
   | 'dispatch:start' | 'dispatch:done'
   // Harness (turn limits)
-  | 'turn:complete' | 'turn:warning' | 'turn:limit'
+  | 'turn:warning' | 'turn:limit'
   // Knowledge import
   | 'import:scan' | 'import:process' | 'import:created'
   // Trace (full prompt/response capture for AI debugging)
-  | 'trace:prompt' | 'trace:response'
+  | 'prompt:assembled' | 'trace:response'
   // Supervision (C-Level heartbeat)
   | 'heartbeat:tick' | 'heartbeat:skip'
   // Other
